@@ -148,6 +148,26 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
     await loadData();
   }
 }
+
+function subscriptionUrl(code: string) {
+  if (!import.meta.client) {
+    return '';
+  }
+  return `${window.location.origin}/sub/${encodeURIComponent(code)}`;
+}
+
+async function copySubscriptionLink(code: string) {
+  if (!import.meta.client) {
+    return;
+  }
+  const url = subscriptionUrl(code);
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.add({ title: 'Ссылка на подписку скопирована', color: 'success' });
+  } catch {
+    toast.add({ title: 'Не удалось скопировать в буфер', color: 'error' });
+  }
+}
 </script>
 
 <template>
@@ -171,7 +191,20 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
         class="w-full"
       >
         <template #code-cell="{ row }">
-          <code class="text-xs">{{ row.original.code }}</code>
+          <div class="flex items-center gap-1.5 min-w-0 max-w-full">
+            <code class="text-xs truncate">{{ row.original.code }}</code>
+            <UTooltip text="Скопировать ссылку на подписку">
+              <UButton
+                color="primary"
+                variant="soft"
+                size="xs"
+                class="shrink-0 rounded-lg p-1.5 min-w-8 min-h-8"
+                icon="i-lucide-link-2"
+                aria-label="Скопировать ссылку на подписку"
+                @click="copySubscriptionLink(row.original.code)"
+              />
+            </UTooltip>
+          </div>
         </template>
 
         <template #enabled-cell="{ row }">
