@@ -91,21 +91,11 @@ const columns: TableColumn<UserItem>[] = [
     }
   },
   {
-    id: 'requireHwid',
-    header: 'Обязательно HWID',
+    id: 'hwidPolicy',
+    header: 'HWID',
     meta: {
       class: {
-        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
-        td: 'align-middle'
-      }
-    }
-  },
-  {
-    id: 'requireNoHwid',
-    header: 'Обязательно без HWID',
-    meta: {
-      class: {
-        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
+        th: 'text-xs max-w-[8.5rem] whitespace-normal align-bottom',
         td: 'align-middle'
       }
     }
@@ -137,6 +127,67 @@ const columns: TableColumn<UserItem>[] = [
 ];
 
 const groupOptions = computed(() => groups.value.map(group => group.name));
+
+type HwidPolicy = 'require' | 'forbid' | 'any';
+
+const HWID_POLICY_OPTIONS: {
+  value: HwidPolicy;
+  label: string;
+  icon: string;
+  tooltip: string;
+}[] = [
+  {
+    value: 'require',
+    label: 'Нужен',
+    icon: 'i-lucide-fingerprint',
+    tooltip: 'HWID обязателен: без него — заглушка «Нет подключений»',
+  },
+  {
+    value: 'forbid',
+    label: 'Запрет',
+    icon: 'i-lucide-fingerprint-off',
+    tooltip: 'HWID запрещён: если передан — заглушка «Отключите HWID»',
+  },
+  {
+    value: 'any',
+    label: 'Любой',
+    icon: 'i-lucide-circle-minus',
+    tooltip: 'HWID не проверяется — выдаётся обычная подписка',
+  },
+];
+
+function hwidPolicyFromUser(user: UserItem): HwidPolicy {
+  if (user.requireNoHwid) {
+    return 'forbid';
+  }
+  if (user.requireHwid) {
+    return 'require';
+  }
+  return 'any';
+}
+
+async function setHwidPolicy(user: UserItem, policy: HwidPolicy) {
+  if (hwidPolicyFromUser(user) === policy) {
+    return;
+  }
+  const body =
+    policy === 'require'
+      ? { requireHwid: true, requireNoHwid: false }
+      : policy === 'forbid'
+        ? { requireHwid: false, requireNoHwid: true }
+        : { requireHwid: false, requireNoHwid: false };
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body,
+    });
+    user.requireHwid = body.requireHwid;
+    user.requireNoHwid = body.requireNoHwid;
+  } catch {
+    toast.add({ title: 'Не удалось сохранить политику HWID', color: 'error' });
+    await loadData();
+  }
+}
 
 function formatLastSubscriptionActivity(iso: string | null | undefined): string {
   if (!iso) {
@@ -345,32 +396,14 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
 
 async function patchAccessFlags(
   user: UserItem,
-  patch: {
-    allowAllUserAgents?: boolean;
-    requireHwid?: boolean;
-    requireNoHwid?: boolean;
-  },
+  patch: { allowAllUserAgents: boolean },
 ) {
   try {
     await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
       method: 'PATCH',
       body: patch,
     });
-    if (patch.allowAllUserAgents !== undefined) {
-      user.allowAllUserAgents = patch.allowAllUserAgents;
-    }
-    if (patch.requireHwid !== undefined) {
-      user.requireHwid = patch.requireHwid;
-      if (patch.requireHwid) {
-        user.requireNoHwid = false;
-      }
-    }
-    if (patch.requireNoHwid !== undefined) {
-      user.requireNoHwid = patch.requireNoHwid;
-      if (patch.requireNoHwid) {
-        user.requireHwid = false;
-      }
-    }
+    user.allowAllUserAgents = patch.allowAllUserAgents;
   } catch {
     toast.add({ title: 'Не удалось сохранить настройки доступа', color: 'error' });
     await loadData();
@@ -481,41 +514,43 @@ async function copySubscriptionLink(code: string) {
           </UTooltip>
         </template>
 
-        <template #requireHwid-cell="{ row }">
-          <UTooltip
-            text="Без HWID в запросе (?hwid=… или заголовок) клиент получит одну строку с ошибкой вместо списка серверов"
+        <template #hwidPolicy-cell="{ row }">
+          <div
+            class="flex justify-center"
+            role="radiogroup"
+            :aria-label="'Политика HWID для ' + row.original.name"
           >
-            <div class="flex justify-center">
-              <USwitch
-                :disabled="Boolean(row.original.requireNoHwid)"
-                :model-value="Boolean(row.original.requireHwid)"
-                @update:model-value="
-                  patchAccessFlags(row.original, { requireHwid: Boolean($event) })
-                "
-              />
+            <div
+              class="inline-flex flex-row items-stretch gap-0.5 rounded-lg border border-default bg-elevated/50 p-0.5"
+            >
+              <UTooltip
+                v-for="opt in HWID_POLICY_OPTIONS"
+                :key="opt.value"
+                :text="opt.tooltip"
+              >
+                <UButton
+                  size="xs"
+                  :icon="opt.icon"
+                  :variant="
+                    hwidPolicyFromUser(row.original) === opt.value ? 'solid' : 'ghost'
+                  "
+                  :color="
+                    hwidPolicyFromUser(row.original) === opt.value ? 'primary' : 'neutral'
+                  "
+                  class="min-w-8 min-h-8 justify-center rounded-md sm:min-w-9"
+                  :aria-label="opt.label"
+                  :aria-checked="hwidPolicyFromUser(row.original) === opt.value"
+                  role="radio"
+                  @click="setHwidPolicy(row.original, opt.value)"
+                />
+              </UTooltip>
             </div>
-          </UTooltip>
-        </template>
-
-        <template #requireNoHwid-cell="{ row }">
-          <UTooltip
-            text="Если в запросе есть HWID — заглушка «Отключите HWID». Несовместимо с «Обязательно HWID»"
-          >
-            <div class="flex justify-center">
-              <USwitch
-                :disabled="Boolean(row.original.requireHwid)"
-                :model-value="Boolean(row.original.requireNoHwid)"
-                @update:model-value="
-                  patchAccessFlags(row.original, { requireNoHwid: Boolean($event) })
-                "
-              />
-            </div>
-          </UTooltip>
+          </div>
         </template>
 
         <template #hwidLimit-cell="{ row }">
           <UTooltip
-            text="Слева — уникальные HWID в логах подписки. Справа — лимит: при превышении клиент получит «Превышен лимит HWID» (не действует при «Обязательно без HWID»). 0 — без лимита."
+            text="Слева — уникальные HWID в логах подписки. Справа — лимит: при превышении клиент получит «Превышен лимит HWID» (не действует в режиме «Запрет HWID»). 0 — без лимита."
           >
             <div
               class="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-sm tabular-nums"
