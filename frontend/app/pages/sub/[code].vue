@@ -10,6 +10,7 @@ type PublicUser = {
   enabled: boolean;
   subscriptionDisplayName: string | null;
   profileTitle: string | null;
+  appLinks?: { name: string; url: string }[];
 };
 
 const route = useRoute();
@@ -50,6 +51,7 @@ const subscriptionDisplayName = computed(
   () => publicUser.value?.subscriptionDisplayName ?? null,
 );
 const profileTitle = computed(() => publicUser.value?.profileTitle?.trim() || null);
+const appLinks = computed(() => publicUser.value?.appLinks ?? []);
 
 const headTitle = computed(() => {
   if (loading.value) {
@@ -115,6 +117,34 @@ useSeoMeta({
         <p class="text-lg font-medium">
           {{ userName }}
         </p>
+      </div>
+
+      <div
+        v-if="appLinks.length > 0"
+        class="space-y-2 border-t border-default pt-4"
+      >
+        <p class="text-sm text-muted">
+          Приложения
+        </p>
+        <ul class="space-y-2 list-none p-0 m-0">
+          <li
+            v-for="(item, idx) in appLinks"
+            :key="`${item.url}-${idx}`"
+          >
+            <a
+              :href="item.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary hover:underline font-medium text-sm sm:text-base inline-flex items-center gap-1.5 break-all"
+            >
+              <span>{{ item.name }}</span>
+              <UIcon
+                name="i-lucide-external-link"
+                class="size-4 shrink-0 opacity-70"
+              />
+            </a>
+          </li>
+        </ul>
       </div>
     </div>
 

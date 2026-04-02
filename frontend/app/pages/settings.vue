@@ -14,6 +14,28 @@ type GroupItem = {
 
 const titleFieldSchema = yup.string().max(200, 'Не более 200 символов');
 
+const appLinkFormSchema = yup.object({
+  name: yup.string().trim().required('Укажите название').max(120, 'Не более 120 символов'),
+  urlTemplate: yup
+    .string()
+    .trim()
+    .required('Укажите ссылку')
+    .max(2000, 'Не более 2000 символов')
+    .test(
+      'has-link-token',
+      'В ссылке должна быть подстановка {link}',
+      (v) => (v ?? '').includes('{link}'),
+    ),
+});
+
+type AppLinkItem = {
+  id: string;
+  name: string;
+  urlTemplate: string;
+  sortOrder: number;
+  createdAt: string;
+};
+
 const config = useRuntimeConfig();
 const toast = useToast();
 const groups = ref<GroupItem[]>([]);
@@ -21,8 +43,16 @@ const loading = ref(false);
 const draftTitles = ref<Record<string, string>>({});
 const savingId = ref<string | null>(null);
 
+const appLinks = ref<AppLinkItem[]>([]);
+const appLinksLoading = ref(false);
+const appLinkSavingId = ref<string | null>(null);
+const appLinkDeletingId = ref<string | null>(null);
+const newAppLink = ref({ name: '', urlTemplate: '' });
+const newAppLinkSaving = ref(false);
+
 onMounted(() => {
   loadGroups();
+  loadAppLinks();
 });
 
 async function loadGroups() {
@@ -47,6 +77,94 @@ function resetDraft(group: GroupItem) {
     ...draftTitles.value,
     [group.id]: group.subscriptionDisplayName ?? ''
   };
+}
+
+async function loadAppLinks() {
+  appLinksLoading.value = true;
+  try {
+    appLinks.value = await $fetch<AppLinkItem[]>(
+      `${config.public.apiBaseUrl}/subscription-app-links`,
+    );
+  } catch {
+    toast.add({ title: 'Не удалось загрузить приложения', color: 'error' });
+  } finally {
+    appLinksLoading.value = false;
+  }
+}
+
+async function saveAppLink(link: AppLinkItem) {
+  try {
+    await appLinkFormSchema.validate({
+      name: link.name,
+      urlTemplate: link.urlTemplate,
+    });
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+  appLinkSavingId.value = link.id;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/subscription-app-links/${link.id}`, {
+      method: 'PATCH',
+      body: {
+        name: link.name.trim(),
+        urlTemplate: link.urlTemplate.trim(),
+      },
+    });
+    toast.add({ title: 'Сохранено', color: 'success' });
+    await loadAppLinks();
+  } catch {
+    toast.add({ title: 'Не удалось сохранить', color: 'error' });
+  } finally {
+    appLinkSavingId.value = null;
+  }
+}
+
+async function deleteAppLink(id: string) {
+  appLinkDeletingId.value = id;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/subscription-app-links/${id}`, {
+      method: 'DELETE',
+    });
+    toast.add({ title: 'Удалено', color: 'success' });
+    await loadAppLinks();
+  } catch {
+    toast.add({ title: 'Не удалось удалить', color: 'error' });
+  } finally {
+    appLinkDeletingId.value = null;
+  }
+}
+
+async function createAppLink() {
+  try {
+    await appLinkFormSchema.validate(newAppLink.value);
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+  newAppLinkSaving.value = true;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/subscription-app-links`, {
+      method: 'POST',
+      body: {
+        name: newAppLink.value.name.trim(),
+        urlTemplate: newAppLink.value.urlTemplate.trim(),
+      },
+    });
+    toast.add({ title: 'Приложение добавлено', color: 'success' });
+    newAppLink.value = { name: '', urlTemplate: '' };
+    await loadAppLinks();
+  } catch {
+    toast.add({ title: 'Не удалось добавить', color: 'error' });
+  } finally {
+    newAppLinkSaving.value = false;
+  }
 }
 
 async function saveGroupTitle(groupId: string) {
@@ -159,6 +277,116 @@ async function saveGroupTitle(groupId: string) {
                 @click="saveGroupTitle(group.id)"
               >
                 Сохранить
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+      </div>
+    </UCard>
+
+    <UCard>
+      <template #header>
+        <div class="space-y-1">
+          <h3 class="text-base font-semibold">
+            Приложения
+          </h3>
+          <p class="text-sm text-muted">
+            Ссылки показываются на публичной странице подписки <code class="text-xs font-mono text-highlighted">/sub/…</code>.
+            В поле «Ссылка» используйте шаблон: подставьте <code class="text-xs font-mono text-highlighted">{link}</code> там, где должен быть полный URL страницы подписки (например <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/CODE</code>).
+          </p>
+        </div>
+      </template>
+
+      <div v-if="appLinksLoading" class="space-y-3">
+        <USkeleton class="h-20 w-full rounded-lg" />
+      </div>
+
+      <div v-else class="space-y-4">
+        <UCard
+          v-for="link in appLinks"
+          :key="link.id"
+        >
+          <div class="space-y-3">
+            <UFormField
+              label="Название"
+              class="w-full"
+            >
+              <UInput
+                v-model="link.name"
+                class="w-full"
+                placeholder="Например: Happ"
+              />
+            </UFormField>
+            <UFormField
+              label="Ссылка"
+              description="Обязательно включите {link}"
+              class="w-full"
+            >
+              <UInput
+                v-model="link.urlTemplate"
+                class="w-full font-mono text-sm"
+                placeholder="happ://import-remote-profile?url={link}"
+              />
+            </UFormField>
+          </div>
+          <template #footer>
+            <div class="flex flex-wrap gap-2 justify-end w-full">
+              <UButton
+                color="error"
+                variant="ghost"
+                size="sm"
+                :loading="appLinkDeletingId === link.id"
+                :disabled="appLinkSavingId === link.id"
+                @click="deleteAppLink(link.id)"
+              >
+                Удалить
+              </UButton>
+              <UButton
+                size="sm"
+                :loading="appLinkSavingId === link.id"
+                :disabled="appLinkDeletingId === link.id"
+                @click="saveAppLink(link)"
+              >
+                Сохранить
+              </UButton>
+            </div>
+          </template>
+        </UCard>
+
+        <UCard>
+          <p class="text-sm font-medium text-muted mb-3">
+            Добавить приложение
+          </p>
+          <div class="space-y-3">
+            <UFormField
+              label="Название"
+              class="w-full"
+            >
+              <UInput
+                v-model="newAppLink.name"
+                class="w-full"
+                placeholder="Название"
+              />
+            </UFormField>
+            <UFormField
+              label="Ссылка"
+              description="Шаблон с {link}"
+              class="w-full"
+            >
+              <UInput
+                v-model="newAppLink.urlTemplate"
+                class="w-full font-mono text-sm"
+                placeholder="https://example.com/add?sub={link}"
+              />
+            </UFormField>
+          </div>
+          <template #footer>
+            <div class="flex justify-end">
+              <UButton
+                :loading="newAppLinkSaving"
+                @click="createAppLink"
+              >
+                Добавить
               </UButton>
             </div>
           </template>

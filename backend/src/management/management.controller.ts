@@ -4,6 +4,8 @@ import {
   Delete,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -12,8 +14,10 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { setProfileTitleResponseHeaders } from '../common/profile-title-header';
+import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
+import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
 import { ManagementService } from './management.service';
 
 @ApiTags('Управление')
@@ -94,13 +98,55 @@ export class ManagementController {
     return this.managementService.setConnectGroups(id, body.groupNames ?? []);
   }
 
+  @Get('subscription-app-links')
+  @ApiOperation({
+    summary: 'Список приложений для страницы подписки',
+    description:
+      'Элементы с полями name и urlTemplate ({link} в шаблоне). Порядок — sortOrder, затем дата создания.',
+  })
+  listSubscriptionAppLinks() {
+    return this.managementService.listSubscriptionAppLinks();
+  }
+
+  @Post('subscription-app-links')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Добавить приложение',
+    description:
+      'В urlTemplate обязательна подстрока {link}; она заменяется на полный URL вида PUBLIC_SUBSCRIPTION_BASE_URL/sub/{code}.',
+  })
+  @ApiResponse({ status: 201, description: 'Создано' })
+  @ApiResponse({ status: 400, description: 'Нет {link} или пустое название' })
+  createSubscriptionAppLink(@Body() body: CreateSubscriptionAppLinkDto) {
+    return this.managementService.createSubscriptionAppLink(body);
+  }
+
+  @Patch('subscription-app-links/:id')
+  @ApiOperation({ summary: 'Изменить приложение' })
+  @ApiResponse({ status: 404, description: 'Не найдено' })
+  updateSubscriptionAppLink(
+    @Param('id') id: string,
+    @Body() body: UpdateSubscriptionAppLinkDto,
+  ) {
+    return this.managementService.updateSubscriptionAppLink(id, body);
+  }
+
+  @Delete('subscription-app-links/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Удалить приложение' })
+  @ApiResponse({ status: 204, description: 'Удалено' })
+  @ApiResponse({ status: 404, description: 'Не найдено' })
+  async deleteSubscriptionAppLink(@Param('id') id: string) {
+    await this.managementService.deleteSubscriptionAppLink(id);
+  }
+
   @Get('public/users/:code')
   @Header('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя.',
+      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя. Массив appLinks — названия и готовые ссылки для блока «Приложения» (шаблоны из админки с подстановкой {link}).',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);

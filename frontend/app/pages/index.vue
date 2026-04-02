@@ -56,7 +56,7 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     id: 'subscriptionTitle',
-    header: 'Название подписки'
+    header: 'Группа'
   },
   {
     id: 'enabled',

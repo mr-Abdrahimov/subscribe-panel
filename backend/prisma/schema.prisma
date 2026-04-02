@@ -72,3 +72,13 @@ model PanelUser {
   updatedAt DateTime @updatedAt
 }
 
+/// Ссылки на приложения для страницы /sub: в urlTemplate подставляется {link} → публичный URL подписки
+model SubscriptionAppLink {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  urlTemplate String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+

@@ -3,12 +3,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
 
 @Injectable()
 export class ManagementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   listGroups() {
     return this.prisma.group.findMany({
@@ -177,12 +181,92 @@ export class ManagementService {
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
 
+    const appLinks = await this.getPublicAppLinksForCode(user.code);
+
     return {
       ...user,
       subscriptionDisplayName: trimmedSub || null,
       /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,
+      /** Название и готовая ссылка для блока «Приложения» на /sub */
+      appLinks,
     };
+  }
+
+  listSubscriptionAppLinks() {
+    return this.prisma.subscriptionAppLink.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async createSubscriptionAppLink(dto: {
+    name: string;
+    urlTemplate: string;
+    sortOrder?: number;
+  }) {
+    const name = dto.name.trim();
+    const urlTemplate = dto.urlTemplate.trim();
+    if (!name) {
+      throw new BadRequestException('Название не может быть пустым');
+    }
+    if (!urlTemplate.includes('{link}')) {
+      throw new BadRequestException(
+        'В поле «Ссылка» обязательно укажите подстановку {link} — на её место подставится URL страницы подписки',
+      );
+    }
+    let sortOrder = dto.sortOrder;
+    if (sortOrder === undefined) {
+      const agg = await this.prisma.subscriptionAppLink.aggregate({
+        _max: { sortOrder: true },
+      });
+      sortOrder = (agg._max.sortOrder ?? -1) + 1;
+    }
+    return this.prisma.subscriptionAppLink.create({
+      data: { name, urlTemplate, sortOrder },
+    });
+  }
+
+  async updateSubscriptionAppLink(
+    id: string,
+    dto: { name?: string; urlTemplate?: string; sortOrder?: number },
+  ) {
+    await this.ensureSubscriptionAppLink(id);
+    const data: {
+      name?: string;
+      urlTemplate?: string;
+      sortOrder?: number;
+    } = {};
+    if (dto.name !== undefined) {
+      const n = dto.name.trim();
+      if (!n) {
+        throw new BadRequestException('Название не может быть пустым');
+      }
+      data.name = n;
+    }
+    if (dto.urlTemplate !== undefined) {
+      const u = dto.urlTemplate.trim();
+      if (!u.includes('{link}')) {
+        throw new BadRequestException(
+          'В поле «Ссылка» обязательно укажите подстановку {link}',
+        );
+      }
+      data.urlTemplate = u;
+    }
+    if (dto.sortOrder !== undefined) {
+      data.sortOrder = dto.sortOrder;
+    }
+    if (Object.keys(data).length === 0) {
+      return this.prisma.subscriptionAppLink.findUnique({ where: { id } });
+    }
+    return this.prisma.subscriptionAppLink.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async deleteSubscriptionAppLink(id: string) {
+    await this.ensureSubscriptionAppLink(id);
+    await this.prisma.subscriptionAppLink.delete({ where: { id } });
   }
 
   async updateGroupSettings(
@@ -227,6 +311,55 @@ export class ManagementService {
       throw new NotFoundException('Группа не найдена');
     }
     return group;
+  }
+
+  private async ensureSubscriptionAppLink(id: string) {
+    const row = await this.prisma.subscriptionAppLink.findUnique({
+      where: { id },
+    });
+    if (!row) {
+      throw new NotFoundException('Запись не найдена');
+    }
+    return row;
+  }
+
+  private subscriptionPageBaseUrl(): string {
+    return (this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? '')
+      .trim()
+      .replace(/\/$/, '');
+  }
+
+  /** Полный URL страницы подписки (PUBLIC_SUBSCRIPTION_BASE_URL + /sub/code) */
+  private buildSubscriptionPageUrl(code: string): string {
+    const base = this.subscriptionPageBaseUrl();
+    const path = `/sub/${encodeURIComponent(code)}`;
+    if (!base) {
+      return path;
+    }
+    return `${base}${path}`;
+  }
+
+  private resolveAppLinkUrl(
+    template: string,
+    subscriptionPageUrl: string,
+  ): string {
+    return template.replaceAll('{link}', subscriptionPageUrl);
+  }
+
+  private async getPublicAppLinksForCode(
+    code: string,
+  ): Promise<{ name: string; url: string }[]> {
+    const links = await this.prisma.subscriptionAppLink.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    if (links.length === 0) {
+      return [];
+    }
+    const subscriptionPageUrl = this.buildSubscriptionPageUrl(code);
+    return links.map((l) => ({
+      name: l.name,
+      url: this.resolveAppLinkUrl(l.urlTemplate, subscriptionPageUrl),
+    }));
   }
 
   /**
