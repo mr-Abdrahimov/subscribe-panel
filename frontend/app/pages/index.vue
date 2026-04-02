@@ -82,7 +82,7 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     id: 'allowAllUserAgents',
-    header: 'Выдавать всем приложениям',
+    header: 'Все приложения',
     meta: {
       class: {
         th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
