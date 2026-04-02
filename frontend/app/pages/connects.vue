@@ -7,10 +7,11 @@ definePageMeta({
 <template>
   <UCard>
     <h2 class="text-xl font-semibold mb-2">
-      Пользователи
+      Коннекты
     </h2>
     <p class="text-sm text-muted">
-      Раздел пользователей в разработке.
+      Раздел коннектов в разработке.
     </p>
   </UCard>
 </template>
+
