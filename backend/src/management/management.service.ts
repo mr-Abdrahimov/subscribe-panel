@@ -209,10 +209,8 @@ export class ManagementService {
     if (!name) {
       throw new BadRequestException('Название не может быть пустым');
     }
-    if (!urlTemplate.includes('{link}')) {
-      throw new BadRequestException(
-        'В поле «Ссылка» обязательно укажите подстановку {link} — на её место подставится URL страницы подписки',
-      );
+    if (!urlTemplate) {
+      throw new BadRequestException('Ссылка не может быть пустой');
     }
     let sortOrder = dto.sortOrder;
     if (sortOrder === undefined) {
@@ -245,10 +243,8 @@ export class ManagementService {
     }
     if (dto.urlTemplate !== undefined) {
       const u = dto.urlTemplate.trim();
-      if (!u.includes('{link}')) {
-        throw new BadRequestException(
-          'В поле «Ссылка» обязательно укажите подстановку {link}',
-        );
+      if (!u) {
+        throw new BadRequestException('Ссылка не может быть пустой');
       }
       data.urlTemplate = u;
     }
@@ -323,15 +319,25 @@ export class ManagementService {
     return row;
   }
 
-  private subscriptionPageBaseUrl(): string {
-    return (this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? '')
+  /**
+   * База для полного URL страницы подписки: сначала PUBLIC_SUBSCRIPTION_BASE_URL,
+   * иначе FRONTEND_ORIGIN (чтобы всегда получать https://домен/sub/CODE при наличии env).
+   */
+  private subscriptionPublicOrigin(): string {
+    const primary = (this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? '')
+      .trim()
+      .replace(/\/$/, '');
+    if (primary) {
+      return primary;
+    }
+    return (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
       .trim()
       .replace(/\/$/, '');
   }
 
-  /** Полный URL страницы подписки (PUBLIC_SUBSCRIPTION_BASE_URL + /sub/code) */
+  /** Полный абсолютный URL: origin + /sub/{code} (code — подписка пользователя панели) */
   private buildSubscriptionPageUrl(code: string): string {
-    const base = this.subscriptionPageBaseUrl();
+    const base = this.subscriptionPublicOrigin();
     const path = `/sub/${encodeURIComponent(code)}`;
     if (!base) {
       return path;

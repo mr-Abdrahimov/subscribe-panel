@@ -72,7 +72,7 @@ model PanelUser {
   updatedAt DateTime @updatedAt
 }
 
-/// Ссылки на приложения для страницы /sub: в urlTemplate подставляется {link} → публичный URL подписки
+/// Ссылки для страницы /sub: в urlTemplate каждое {link} → полный URL https://origin/sub/CODE (origin из env); {link} необязателен
 model SubscriptionAppLink {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String

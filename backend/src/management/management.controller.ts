@@ -102,7 +102,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Список приложений для страницы подписки',
     description:
-      'Элементы с полями name и urlTemplate ({link} в шаблоне). Порядок — sortOrder, затем дата создания.',
+      'Элементы: name и urlTemplate (необязательно с {link}). Порядок — sortOrder, затем дата создания.',
   })
   listSubscriptionAppLinks() {
     return this.managementService.listSubscriptionAppLinks();
@@ -113,10 +113,10 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Добавить приложение',
     description:
-      'В urlTemplate обязательна подстрока {link}; она заменяется на полный URL вида PUBLIC_SUBSCRIPTION_BASE_URL/sub/{code}.',
+      'Подстрока {link} в urlTemplate заменяется на полный URL подписки (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN + /sub/{code}). Без {link} ссылка не меняется.',
   })
   @ApiResponse({ status: 201, description: 'Создано' })
-  @ApiResponse({ status: 400, description: 'Нет {link} или пустое название' })
+  @ApiResponse({ status: 400, description: 'Пустое название или пустая ссылка' })
   createSubscriptionAppLink(@Body() body: CreateSubscriptionAppLinkDto) {
     return this.managementService.createSubscriptionAppLink(body);
   }
@@ -146,7 +146,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя. Массив appLinks — названия и готовые ссылки для блока «Приложения» (шаблоны из админки с подстановкой {link}).',
+      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя. Массив appLinks: name и url — в url каждое вхождение {link} заменено на полный URL https://…/sub/{code}.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);

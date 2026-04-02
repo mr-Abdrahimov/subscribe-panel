@@ -20,12 +20,7 @@ const appLinkFormSchema = yup.object({
     .string()
     .trim()
     .required('Укажите ссылку')
-    .max(2000, 'Не более 2000 символов')
-    .test(
-      'has-link-token',
-      'В ссылке должна быть подстановка {link}',
-      (v) => (v ?? '').includes('{link}'),
-    ),
+    .max(2000, 'Не более 2000 символов'),
 });
 
 type AppLinkItem = {
@@ -291,8 +286,8 @@ async function saveGroupTitle(groupId: string) {
             Приложения
           </h3>
           <p class="text-sm text-muted">
-            Ссылки показываются на публичной странице подписки <code class="text-xs font-mono text-highlighted">/sub/…</code>.
-            В поле «Ссылка» используйте шаблон: подставьте <code class="text-xs font-mono text-highlighted">{link}</code> там, где должен быть полный URL страницы подписки (например <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/CODE</code>).
+            Ссылки показываются на публичной странице <code class="text-xs font-mono text-highlighted">/sub/…</code>.
+            По желанию вставьте в ссылку <code class="text-xs font-mono text-highlighted">{link}</code> — при открытии страницы подписки это будет заменено на полный URL вида <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/КОД_ПОЛЬЗОВАТЕЛЯ</code> (домен из настроек бэкенда). Без <code class="text-xs font-mono text-highlighted">{link}</code> ссылка остаётся как вы ввели.
           </p>
         </div>
       </template>
@@ -319,7 +314,7 @@ async function saveGroupTitle(groupId: string) {
             </UFormField>
             <UFormField
               label="Ссылка"
-              description="Обязательно включите {link}"
+              description="При необходимости используйте {link} для подстановки URL подписки"
               class="w-full"
             >
               <UInput
@@ -370,7 +365,7 @@ async function saveGroupTitle(groupId: string) {
             </UFormField>
             <UFormField
               label="Ссылка"
-              description="Шаблон с {link}"
+              description="Опционально {link} → полный URL подписки"
               class="w-full"
             >
               <UInput

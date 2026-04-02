@@ -13,7 +13,7 @@ export class UpdateSubscriptionAppLinkDto {
 
   @ApiPropertyOptional({
     description:
-      'Шаблон ссылки; должна остаться подстрока {link} для подстановки URL подписки',
+      'Ссылка или шаблон; при наличии {link} — подстановка полного URL страницы подписки',
     maxLength: 2000,
   })
   @IsOptional()
