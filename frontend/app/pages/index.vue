@@ -145,7 +145,7 @@ const HWID_POLICY_OPTIONS: {
   {
     value: 'forbid',
     label: 'Запрет',
-    icon: 'i-lucide-fingerprint-off',
+    icon: 'i-lucide-ban',
     tooltip: 'HWID запрещён: если передан — заглушка «Отключите HWID»',
   },
   {
@@ -603,7 +603,7 @@ async function copySubscriptionLink(code: string) {
                 color="neutral"
                 variant="ghost"
                 size="xs"
-                icon="i-lucide-fingerprint-off"
+                icon="i-lucide-eraser"
                 class="rounded-lg p-1.5 min-w-8 min-h-8"
                 aria-label="Очистить логи HWID"
                 @click="askClearSubscriptionLogs(row.original)"
