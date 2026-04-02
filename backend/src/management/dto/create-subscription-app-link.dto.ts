@@ -13,8 +13,8 @@ export class CreateSubscriptionAppLinkDto {
 
   @ApiProperty({
     description:
-      'Ссылка или шаблон. Если указать подстроку {link}, она будет заменена на полный URL страницы подписки (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN + /sub/CODE, например https://inv.avtlk.ru/sub/CODE). Без {link} — ссылка отдаётся как есть.',
-    example: 'happ://import-remote-profile?url={link}',
+      'Ссылка или шаблон. {link} → полный URL страницы подписки (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN + /sub/CODE). {crypto} → ссылка happ://… из сервиса crypto.happ.su, сохранённая у пользователя при создании; если у пользователя нет значения — подстановка пустая. Плейсхолдеры необязательны.',
+    example: 'happ://import-remote-profile?url={crypto}',
     maxLength: 2000,
   })
   @IsString()

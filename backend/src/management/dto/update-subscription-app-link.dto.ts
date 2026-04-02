@@ -13,7 +13,7 @@ export class UpdateSubscriptionAppLinkDto {
 
   @ApiPropertyOptional({
     description:
-      'Ссылка или шаблон; при наличии {link} — подстановка полного URL страницы подписки',
+      'Ссылка или шаблон: {link} — URL подписки; {crypto} — happ://… из БД пользователя (см. описание создания приложения)',
     maxLength: 2000,
   })
   @IsOptional()

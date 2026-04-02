@@ -76,6 +76,8 @@ model PanelUser {
   requireNoHwid       Boolean                @default(false)
   /// Макс. число уникальных HWID по логам подписки; 0 — не проверять. Не действует при включённом requireNoHwid
   maxUniqueHwids      Int                    @default(0)
+  /// Ссылка happ://… от crypto.happ.su для шаблонов приложений с плейсхолдером {crypto}; заполняется при создании пользователя
+  happCryptoUrl       String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]
@@ -103,7 +105,7 @@ model PanelUserAccessLog {
   @@index([panelUserId, createdAt])
 }
 
-/// Ссылки для страницы /sub: в urlTemplate каждое {link} → полный URL https://origin/sub/CODE (origin из env); {link} необязателен
+/// Ссылки для страницы /sub: в urlTemplate {link} → полный URL https://origin/sub/CODE; {crypto} → happCryptoUrl пользователя (если есть); плейсхолдеры необязательны
 model SubscriptionAppLink {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String

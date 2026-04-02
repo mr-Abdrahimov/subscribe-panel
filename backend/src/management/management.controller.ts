@@ -76,7 +76,11 @@ export class ManagementController {
   }
 
   @Post('panel-users')
-  @ApiOperation({ summary: 'Создать пользователя панели' })
+  @ApiOperation({
+    summary: 'Создать пользователя панели',
+    description:
+      'После создания записи бэкенд запрашивает у crypto.happ.su зашифрованную ссылку happ://… для URL подписки (PUBLIC_SUBSCRIPTION_BASE_URL/sub/CODE) и сохраняет в поле happCryptoUrl. При недоступности API пользователь всё равно создаётся, поле может быть пустым.',
+  })
   createUser(@Body() body: { name: string; code: string; groupName: string }) {
     return this.managementService.createUser(body.name, body.code, body.groupName);
   }
@@ -171,7 +175,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Список приложений для страницы подписки',
     description:
-      'Элементы: name и urlTemplate (необязательно с {link}). Порядок — sortOrder, затем дата создания.',
+      'Элементы: name и urlTemplate (опционально плейсхолдеры {link}, {crypto}). Порядок — sortOrder, затем дата создания.',
   })
   listSubscriptionAppLinks() {
     return this.managementService.listSubscriptionAppLinks();
@@ -182,7 +186,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Добавить приложение',
     description:
-      'Подстрока {link} в urlTemplate заменяется на полный URL подписки (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN + /sub/{code}). Без {link} ссылка не меняется.',
+      'В urlTemplate: {link} → полный URL подписки; {crypto} → happ://… пользователя (crypto.happ.su при создании пользователя). Без плейсхолдеров ссылка не меняется.',
   })
   @ApiResponse({ status: 201, description: 'Создано' })
   @ApiResponse({ status: 400, description: 'Пустое название или пустая ссылка' })
@@ -215,7 +219,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle — subscriptionDisplayName группы пользователя (заголовок ленты). Поле groups — названия групп для страницы /sub: привязка пользователя (groupName) и все группы из активных коннектов его ленты, без дублей, сортировка по-русски. subscriptionDisplayName остаётся в ответе для совместимости. Массив appLinks: подстановка {link} в полный URL подписки.',
+      'Поле profileTitle — subscriptionDisplayName группы пользователя (заголовок ленты). Поле groups — названия групп для страницы /sub: привязка пользователя (groupName) и все группы из активных коннектов его ленты, без дублей, сортировка по-русски. subscriptionDisplayName остаётся в ответе для совместимости. Массив appLinks: в шаблонах подставляются {link} (URL подписки) и при наличии у пользователя {crypto} (happ://…).',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);

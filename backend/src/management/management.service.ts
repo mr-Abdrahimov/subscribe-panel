@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +13,8 @@ import type { SubscriptionAccessMeta } from '../common/subscription-client-meta'
 
 @Injectable()
 export class ManagementService {
+  private readonly logger = new Logger(ManagementService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -85,18 +88,84 @@ export class ManagementService {
     }));
   }
 
-  createUser(name: string, code: string, groupName: string) {
+  async createUser(name: string, code: string, groupName: string) {
+    const trimmedCode = code.trim();
+    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(trimmedCode);
+    const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
     return this.prisma.panelUser.create({
       data: {
         name: name.trim(),
-        code: code.trim(),
+        code: trimmedCode,
         groupName: groupName.trim(),
         allowAllUserAgents: false,
         requireHwid: true,
         requireNoHwid: false,
         maxUniqueHwids: 0,
+        ...(happCryptoUrl !== null ? { happCryptoUrl } : {}),
       },
     });
+  }
+
+  /**
+   * POST https://crypto.happ.su/api-v2.php — в ответе JSON с полем encrypted_link (happ://…).
+   */
+  private async fetchHappCryptoLink(subscriptionPageUrl: string): Promise<string | null> {
+    const apiUrl = (
+      this.config.get<string>('HAPP_CRYPTO_API_URL') ??
+      'https://crypto.happ.su/api-v2.php'
+    ).trim();
+    const url = subscriptionPageUrl.trim();
+    if (!apiUrl || !url.startsWith('http')) {
+      this.logger.warn(
+        'Пропуск запроса к HAPP crypto: неверный URL подписки или endpoint',
+      );
+      return null;
+    }
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) {
+        this.logger.warn(`HAPP crypto API: HTTP ${res.status}`);
+        return null;
+      }
+      const data = (await res.json()) as { encrypted_link?: unknown };
+      const link =
+        typeof data.encrypted_link === 'string'
+          ? data.encrypted_link.trim()
+          : '';
+      if (link.startsWith('happ://')) {
+        return link;
+      }
+      this.logger.warn('HAPP crypto API: в ответе нет валидного encrypted_link');
+      return null;
+    } catch (e) {
+      this.logger.warn(
+        `HAPP crypto API: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Абсолютный URL страницы /sub/{code} для передачи в crypto API */
+  private buildAbsoluteSubscriptionPageUrlForCrypto(code: string): string {
+    let full = this.buildSubscriptionPageUrl(code);
+    if (full.startsWith('http')) {
+      return full;
+    }
+    const fallback = (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
+      .trim()
+      .replace(/\/$/, '');
+    if (fallback) {
+      return `${fallback}${full.startsWith('/') ? full : `/${full}`}`;
+    }
+    return full;
   }
 
   async deleteUser(id: string) {
@@ -483,11 +552,19 @@ export class ManagementService {
   async getPublicUserByCode(code: string) {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },
-      select: { name: true, code: true, enabled: true, groupName: true },
+      select: {
+        name: true,
+        code: true,
+        enabled: true,
+        groupName: true,
+        happCryptoUrl: true,
+      },
     });
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
     }
+
+    const { happCryptoUrl, ...publicUser } = user;
 
     const groups = await this.collectPublicDisplayGroupNames(user.groupName);
 
@@ -498,10 +575,13 @@ export class ManagementService {
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
 
-    const appLinks = await this.getPublicAppLinksForCode(user.code);
+    const appLinks = await this.getPublicAppLinksForCode(
+      user.code,
+      happCryptoUrl,
+    );
 
     return {
-      ...user,
+      ...publicUser,
       subscriptionDisplayName: trimmedSub || null,
       /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,
@@ -736,12 +816,17 @@ export class ManagementService {
   private resolveAppLinkUrl(
     template: string,
     subscriptionPageUrl: string,
+    happCryptoUrl: string | null | undefined,
   ): string {
-    return template.replaceAll('{link}', subscriptionPageUrl);
+    const crypto = (happCryptoUrl ?? '').trim();
+    return template
+      .replaceAll('{link}', subscriptionPageUrl)
+      .replaceAll('{crypto}', crypto);
   }
 
   private async getPublicAppLinksForCode(
     code: string,
+    happCryptoUrl: string | null | undefined,
   ): Promise<{ name: string; url: string }[]> {
     const links = await this.prisma.subscriptionAppLink.findMany({
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -752,7 +837,11 @@ export class ManagementService {
     const subscriptionPageUrl = this.buildSubscriptionPageUrl(code);
     return links.map((l) => ({
       name: l.name,
-      url: this.resolveAppLinkUrl(l.urlTemplate, subscriptionPageUrl),
+      url: this.resolveAppLinkUrl(
+        l.urlTemplate,
+        subscriptionPageUrl,
+        happCryptoUrl,
+      ),
     }));
   }
 

@@ -287,7 +287,13 @@ async function saveGroupTitle(groupId: string) {
           </h3>
           <p class="text-sm text-muted">
             Ссылки показываются на публичной странице <code class="text-xs font-mono text-highlighted">/sub/…</code>.
-            По желанию вставьте в ссылку <code class="text-xs font-mono text-highlighted">{link}</code> — при открытии страницы подписки это будет заменено на полный URL вида <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/КОД_ПОЛЬЗОВАТЕЛЯ</code> (домен из настроек бэкенда). Без <code class="text-xs font-mono text-highlighted">{link}</code> ссылка остаётся как вы ввели.
+            <code class="text-xs font-mono text-highlighted">{link}</code> заменяется на полный URL подписки вида
+            <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/КОД</code>
+            (домен из настроек бэкенда).
+            <code class="text-xs font-mono text-highlighted">{crypto}</code> — на зашифрованную ссылку
+            <code class="text-xs font-mono text-highlighted">happ://…</code>, которую бэкенд запрашивает у
+            crypto.happ.su при создании пользователя и хранит в базе; у старых пользователей без ссылки подстановка будет пустой.
+            Плейсхолдеры необязательны: без них ссылка отдаётся как введена.
           </p>
         </div>
       </template>
@@ -314,13 +320,13 @@ async function saveGroupTitle(groupId: string) {
             </UFormField>
             <UFormField
               label="Ссылка"
-              description="При необходимости используйте {link} для подстановки URL подписки"
+              description="{link} — URL подписки; {crypto} — happ://… из crypto.happ.su для этого пользователя"
               class="w-full"
             >
               <UInput
                 v-model="link.urlTemplate"
                 class="w-full font-mono text-sm"
-                placeholder="happ://import-remote-profile?url={link}"
+                placeholder="happ://import-remote-profile?url={crypto}"
               />
             </UFormField>
           </div>
@@ -365,13 +371,13 @@ async function saveGroupTitle(groupId: string) {
             </UFormField>
             <UFormField
               label="Ссылка"
-              description="Опционально {link} → полный URL подписки"
+              description="{link} и/или {crypto} — см. текст выше"
               class="w-full"
             >
               <UInput
                 v-model="newAppLink.urlTemplate"
                 class="w-full font-mono text-sm"
-                placeholder="https://example.com/add?sub={link}"
+                placeholder="happ://import-remote-profile?url={crypto}"
               />
             </UFormField>
           </div>

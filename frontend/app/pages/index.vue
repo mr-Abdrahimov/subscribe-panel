@@ -24,6 +24,8 @@ type UserItem = {
   code: string;
   groupName: string;
   enabled: boolean;
+  /** happ://… от crypto.happ.su, подстановка {crypto} в приложениях */
+  happCryptoUrl?: string | null;
   allowAllUserAgents?: boolean;
   requireHwid?: boolean;
   requireNoHwid?: boolean;
