@@ -35,6 +35,48 @@ function setProfileTitleHeadersFromString(
   setHeader(event, 'profile-title', formatHappProfileTitleHeaderValue(short));
 }
 
+/**
+ * JSON-обёртка подписки для VPN-клиентов (Happ и др.): то же base64, что и в plain-теле,
+ * плюс дублирование meta из HTTP-заголовков в поля объекта ([Happ meta](https://www.happ.su/main/ru/dev-docs/meta-info)).
+ * Браузер с Accept: text/html по-прежнему получает HTML-страницу /sub/…
+ */
+function wantsSubscriptionJson(
+  accept: string,
+  userAgent: string,
+  formatParam: string | null,
+): boolean {
+  if (formatParam === 'json') {
+    return true;
+  }
+  if (/\bapplication\/json\b/i.test(accept)) {
+    return true;
+  }
+  const ua = userAgent.trim();
+  return /^Happ/i.test(ua);
+}
+
+function buildSubscriptionJsonBody(
+  base64Body: string,
+  profileTitleStar: string | null,
+  profileTitlePlain: string | null,
+): string {
+  const payload: Record<string, string> = {
+    /** то же значение, что в plain-ответе (UTF-8 → base64 одной строкой) */
+    data: base64Body,
+    /** синоним для клиентов, ожидающих поле subscription */
+    subscription: base64Body,
+  };
+  if (profileTitlePlain) {
+    payload['profile-title'] = profileTitlePlain;
+    payload.profileTitle = profileTitlePlain;
+  }
+  if (profileTitleStar) {
+    payload['profile-title*'] = profileTitleStar;
+    payload.profileTitleStar = profileTitleStar;
+  }
+  return JSON.stringify(payload);
+}
+
 async function attachProfileTitleHeadersForHtml(
   event: H3Event,
   apiRoot: string,
@@ -71,6 +113,12 @@ export default defineEventHandler(async (event) => {
 
   const accept = getRequestHeader(event, 'accept') ?? '';
   const isHtmlRequest = accept.includes('text/html');
+  const userAgent = getRequestHeader(event, 'user-agent') ?? '';
+  const wantsJson = wantsSubscriptionJson(
+    accept,
+    userAgent,
+    url.searchParams.get('format'),
+  );
 
   const apiRoot = getNestApiRoot(event);
 
@@ -105,7 +153,10 @@ export default defineEventHandler(async (event) => {
     proxyHeaders['x-forwarded-for'] = clientIp;
   }
 
-  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${url.search || ''}`;
+  const forwardParams = new URLSearchParams(url.search);
+  forwardParams.delete('format');
+  const forwardQuery = forwardParams.toString();
+  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${forwardQuery ? `?${forwardQuery}` : ''}`;
   let res: Awaited<ReturnType<typeof $fetch.raw>>;
   try {
     res = await $fetch.raw(endpoint, { headers: proxyHeaders });
@@ -117,13 +168,21 @@ export default defineEventHandler(async (event) => {
     };
     const status = e.statusCode ?? 502;
     setResponseStatus(event, status);
-    setHeader(event, 'content-type', 'text/plain; charset=utf-8');
     const body =
       typeof e.data === 'string'
         ? e.data
         : e.data != null
           ? JSON.stringify(e.data)
           : (e.statusMessage ?? 'Ошибка прокси подписки');
+    if (wantsJson) {
+      setHeader(event, 'content-type', 'application/json; charset=utf-8');
+      return JSON.stringify({
+        error: true,
+        statusCode: status,
+        message: body,
+      });
+    }
+    setHeader(event, 'content-type', 'text/plain; charset=utf-8');
     return body;
   }
 
@@ -131,7 +190,6 @@ export default defineEventHandler(async (event) => {
   const data = (res._data ?? '') as string;
   const profileTitleStar = res.headers.get('profile-title*');
   const profileTitlePlain = res.headers.get('profile-title');
-  setHeader(event, 'content-type', 'text/plain; charset=utf-8');
   setHeader(
     event,
     'cache-control',
@@ -144,6 +202,15 @@ export default defineEventHandler(async (event) => {
   if (profileTitlePlain) {
     setHeader(event, 'profile-title', profileTitlePlain);
   }
+  if (wantsJson) {
+    setHeader(event, 'content-type', 'application/json; charset=utf-8');
+    return buildSubscriptionJsonBody(
+      data,
+      profileTitleStar,
+      profileTitlePlain,
+    );
+  }
+  setHeader(event, 'content-type', 'text/plain; charset=utf-8');
   return data;
 });
 
