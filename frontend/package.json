@@ -7,14 +7,14 @@
     "build:dev": "NODE_OPTIONS=--max-old-space-size=3072 nuxt build --dotenv .env.development",
     "build": "NODE_OPTIONS=--max-old-space-size=3072 nuxt build --dotenv .env.production",
     "preview": "nuxt preview --dotenv .env.production",
-    "start:prod": "sh -c 'test -f .output/server/index.mjs || { echo \"Нет .output/server/index.mjs — выполните в каталоге frontend: npm ci && npm run build\" >&2; exit 1; }; exec dotenv -e .env.production -- node .output/server/index.mjs'",
+    "start:prod": "sh -c 'test -f .output/server/index.mjs || { echo \"Нет .output/server/index.mjs — выполните в каталоге frontend: npm ci && npm run build\" >&2; exit 1; }; exec ./node_modules/.bin/dotenv -e .env.production -- node .output/server/index.mjs'",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
-    "prisma:generate": "dotenv -e .env.development -- prisma generate",
-    "prisma:generate:prod": "dotenv -e .env.production -- prisma generate",
-    "prisma:push": "dotenv -e .env.development -- prisma db push",
-    "prisma:studio": "dotenv -e .env.development -- prisma studio"
+    "prisma:generate": "./node_modules/.bin/dotenv -e .env.development -- prisma generate",
+    "prisma:generate:prod": "./node_modules/.bin/dotenv -e .env.production -- prisma generate",
+    "prisma:push": "./node_modules/.bin/dotenv -e .env.development -- prisma db push",
+    "prisma:studio": "./node_modules/.bin/dotenv -e .env.development -- prisma studio"
   },
   "dependencies": {
     "@nuxt/icon": "^2.2.1",
@@ -25,13 +25,13 @@
     "@vueuse/integrations": "^14.2.1",
     "nuxt": "^4.4.2",
     "prisma": "^6.19.3",
+    "dotenv-cli": "^11.0.0",
     "sortablejs": "^1.15.7",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.15.2",
     "@types/sortablejs": "^1.15.9",
-    "dotenv-cli": "^11.0.0",
     "eslint": "^10.1.0",
     "typescript": "^5.9.2",
     "vue-tsc": "^3.2.6"

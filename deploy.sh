@@ -21,8 +21,9 @@ fi
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export NODE_ENV="${NODE_ENV:-production}"
 
+# Не экспортировать NODE_ENV=production до npm ci: иначе npm опускает devDependencies,
+# а в backend нужны dotenv-cli, @nestjs/cli, typescript и т.д.
 PRISMA_PUSH=0
 for arg in "$@"; do
   if [[ "$arg" == "--prisma-push" ]]; then
@@ -39,9 +40,9 @@ echo "==> git pull"
 cd "${ROOT}"
 git pull
 
-echo "==> Backend: npm ci"
+echo "==> Backend: npm ci (включая devDependencies для сборки и Prisma)"
 cd "${ROOT}/backend"
-npm ci
+npm ci --include=dev
 
 echo "==> Backend: Prisma generate (всегда)"
 npm run prisma:generate:prod
@@ -52,17 +53,17 @@ if [[ "${PRISMA_PUSH}" -eq 1 ]]; then
 fi
 
 echo "==> Backend: build"
-npm run build
+NODE_ENV=production npm run build
 
-echo "==> Frontend: npm ci"
+echo "==> Frontend: npm ci (включая devDependencies)"
 cd "${ROOT}/frontend"
-npm ci
+npm ci --include=dev
 
 echo "==> Frontend: Prisma generate (всегда)"
 npm run prisma:generate:prod
 
 echo "==> Frontend: build"
-npm run build
+NODE_ENV=production npm run build
 
 echo "==> PM2"
 ECOSYSTEM="${ROOT}/ecosystem.config.cjs"
