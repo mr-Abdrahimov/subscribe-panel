@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --dotenv .env.development",
-    "build:dev": "nuxt build --dotenv .env.development",
-    "build": "nuxt build --dotenv .env.production",
+    "build:dev": "NODE_OPTIONS=--max-old-space-size=2048 nuxt build --dotenv .env.development",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 nuxt build --dotenv .env.production",
     "preview": "nuxt preview --dotenv .env.production",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
