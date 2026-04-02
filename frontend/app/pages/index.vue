@@ -49,7 +49,13 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     accessorKey: 'code',
-    header: 'Код'
+    header: 'Код',
+    meta: {
+      class: {
+        th: 'w-px',
+        td: 'w-px whitespace-nowrap'
+      }
+    }
   },
   {
     accessorKey: 'groupName',
@@ -319,8 +325,7 @@ async function copySubscriptionLink(code: string) {
         class="w-full"
       >
         <template #code-cell="{ row }">
-          <div class="flex items-center gap-1.5 min-w-0 max-w-full">
-            <code class="text-xs truncate">{{ row.original.code }}</code>
+          <div class="flex items-center justify-center">
             <UTooltip text="Скопировать ссылку на подписку">
               <UButton
                 color="primary"
