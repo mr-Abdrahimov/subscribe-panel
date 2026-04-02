@@ -50,8 +50,8 @@ useSeoMeta({
   title: headTitle,
   description: computed(() =>
     displayName.value
-      ? `Страница подписки ${displayName.value}: обычная ссылка (base64) и вариант с ?format=json.`
-      : 'Страница подписки: base64 и JSON.',
+      ? `Страница подписки ${displayName.value}: группы и приложения.`
+      : 'Страница подписки.',
   ),
 })
 
@@ -62,37 +62,12 @@ const subscriptionUrl = computed(() => {
   return ''
 })
 
-/** Та же подписка в JSON (см. server/middleware/sub-feed.ts — ?format=json). */
-const subscriptionUrlJson = computed(() => {
-  if (!import.meta.client) {
-    return ''
-  }
-  try {
-    const u = new URL(window.location.href)
-    u.searchParams.set('format', 'json')
-    return u.toString()
-  } catch {
-    return ''
-  }
-})
-
 async function copyToClipboard() {
   const url = subscriptionUrl.value
   if (!url) return
   try {
     await navigator.clipboard.writeText(url)
     useToast().add({ title: 'Ссылка скопирована', color: 'success' })
-  } catch {
-    useToast().add({ title: 'Не удалось скопировать', color: 'error' })
-  }
-}
-
-async function copyJsonUrlToClipboard() {
-  const url = subscriptionUrlJson.value
-  if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
-    useToast().add({ title: 'JSON-ссылка скопирована', color: 'success' })
   } catch {
     useToast().add({ title: 'Не удалось скопировать', color: 'error' })
   }
@@ -141,34 +116,11 @@ async function copyJsonUrlToClipboard() {
         </div>
 
         <div class="cp__url-block">
-          <div class="cp__label-row">
-            <label class="cp__label">ENDPOINT</label>
-            <span class="cp__chip cp__chip--tag">Обычная · base64</span>
-          </div>
+          <label class="cp__label">ENDPOINT</label>
           <div class="cp__url-row">
             <code class="cp__url">{{ subscriptionUrl || '…' }}</code>
             <button type="button" class="cp__btn cp__btn--ghost" @click="copyToClipboard">
               КОПИРОВАТЬ
-            </button>
-          </div>
-        </div>
-
-        <div class="cp__url-block cp__json-block">
-          <div class="cp__label-row">
-            <label class="cp__label">ТОТ ЖЕ АДРЕС · JSON</label>
-            <span class="cp__chip cp__chip--tag cp__chip--json">Поддержка JSON</span>
-          </div>
-          <p class="cp__json-hint">
-            Для клиентов и сценариев с ответом <code class="cp__code-inline">application/json</code>.
-            Если подписка подключена как JSON, в приложении часто нельзя скопировать отдельную vless-строку —
-            оставьте эту страницу под рукой: ниже полный URL с
-            <code class="cp__code-inline">?format=json</code>
-            (тот же лимит HWID и заголовки профиля, что у обычной ссылки).
-          </p>
-          <div class="cp__url-row">
-            <code class="cp__url cp__url--json">{{ subscriptionUrlJson || '…' }}</code>
-            <button type="button" class="cp__btn cp__btn--json" @click="copyJsonUrlToClipboard">
-              КОПИРОВАТЬ JSON
             </button>
           </div>
         </div>
@@ -465,77 +417,6 @@ async function copyJsonUrlToClipboard() {
 
 .cp__url-block {
   margin-bottom: 1.5rem;
-}
-
-.cp__label-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin-bottom: 0.5rem;
-}
-
-.cp__label-row .cp__label {
-  margin-bottom: 0;
-}
-
-.cp__chip--tag {
-  font-size: 0.58rem;
-  padding: 0.2rem 0.45rem;
-  letter-spacing: 0.08em;
-  color: rgba(232, 244, 255, 0.7);
-  border-color: rgba(0, 245, 255, 0.35);
-}
-
-.cp__chip--json {
-  border-color: var(--cp-violet);
-  color: var(--cp-violet);
-  box-shadow: inset 0 0 10px rgba(188, 19, 254, 0.12);
-}
-
-.cp__json-block {
-  padding: 1rem 1rem 1.1rem;
-  border: 1px solid rgba(188, 19, 254, 0.45);
-  background:
-    linear-gradient(145deg, rgba(188, 19, 254, 0.1) 0%, transparent 50%),
-    rgba(0, 0, 0, 0.35);
-  box-shadow:
-    0 0 0 1px rgba(0, 245, 255, 0.06),
-    0 0 28px rgba(188, 19, 254, 0.1);
-}
-
-.cp__json-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.82rem;
-  line-height: 1.55;
-  color: rgba(232, 244, 255, 0.65);
-  font-weight: 500;
-}
-
-.cp__json-hint .cp__code-inline {
-  white-space: normal;
-  word-break: break-word;
-}
-
-.cp__url--json {
-  border-color: rgba(188, 19, 254, 0.45);
-  color: rgba(210, 195, 255, 0.95);
-}
-
-.cp__btn--json {
-  background: linear-gradient(135deg, rgba(188, 19, 254, 0.28), rgba(0, 245, 255, 0.12));
-  color: #fff;
-  border: 1px solid rgba(188, 19, 254, 0.55);
-  box-shadow: 0 0 18px rgba(188, 19, 254, 0.2);
-}
-
-.cp__btn--json:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 26px rgba(188, 19, 254, 0.35);
-}
-
-.cp__btn--json:active {
-  transform: translateY(0);
 }
 
 .cp__label {
