@@ -130,10 +130,6 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
-    const groupTitle = groupMeta?.subscriptionDisplayName?.trim() ?? '';
-    const profileTitle = (groupTitle || user.name.trim() || '').trim();
-
     const connects = await this.prisma.connect.findMany({
       where: {
         status: 'ACTIVE',
@@ -142,10 +138,24 @@ export class ManagementService {
         },
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { raw: true, name: true },
+      select: { raw: true, name: true, groupNames: true },
     });
 
-    /** Фрагмент # в каждой строке — всегда кастомное имя коннекта (Connect.name). Заголовок profile-title — из настроек группы или имени пользователя панели, не из коннектов */
+    const allGroups = await this.prisma.group.findMany({
+      select: { name: true, subscriptionDisplayName: true },
+    });
+    const candidates = this.buildSubscriptionProfileGroupCandidates(
+      user.groupName,
+      connects,
+    );
+    const groupTitle =
+      this.resolveSubscriptionDisplayNameFromCandidates(
+        candidates,
+        allGroups,
+      ) ?? '';
+    const profileTitle = (groupTitle || user.name.trim() || '').trim();
+
+    /** Фрагмент # в каждой строке — всегда кастомное имя коннекта (Connect.name). Заголовок profile-title — из настроек группы (сначала группа пользователя, затем группы коннектов ленты) или имени пользователя панели */
     const payload = connects
       .map((c) => this.applyCustomNameToUri(c.raw, c.name))
       .join('\n');
@@ -164,14 +174,32 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
-    const sub = groupMeta?.subscriptionDisplayName?.trim() ?? '';
+    const connects = await this.prisma.connect.findMany({
+      where: {
+        status: 'ACTIVE',
+        groupNames: { has: user.groupName },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      select: { groupNames: true },
+    });
+    const allGroups = await this.prisma.group.findMany({
+      select: { name: true, subscriptionDisplayName: true },
+    });
+    const candidates = this.buildSubscriptionProfileGroupCandidates(
+      user.groupName,
+      connects,
+    );
+    const sub =
+      this.resolveSubscriptionDisplayNameFromCandidates(
+        candidates,
+        allGroups,
+      ) ?? '';
     const profileTitle = (sub || user.name.trim() || '').trim() || null;
 
     return {
       ...user,
       subscriptionDisplayName: sub || null,
-      /** Как в заголовке profile-title ленты: настройка группы или имя пользователя */
+      /** Как в заголовке profile-title ленты */
       profileTitle,
     };
   }
@@ -221,42 +249,62 @@ export class ManagementService {
   }
 
   /**
-   * Ищем настройки группы по строке groupName у пользователя панели.
-   * Сначала точное совпадение (после trim), затем сравнение с нормализацией Unicode (NFC),
-   * чтобы учесть расхождения с записями в Group.name без поломки фильтра connect.groupNames.
+   * Порядок имён групп для выбора subscriptionDisplayName: сначала группа пользователя панели,
+   * затем остальные группы из коннектов ленты (в порядке коннектов и поля groupNames).
    */
-  private async findGroupSubscriptionSettings(
-    panelGroupName: string,
-  ): Promise<{ subscriptionDisplayName: string | null } | null> {
-    const trimmed = panelGroupName.trim();
-    if (!trimmed) {
-      return null;
+  private buildSubscriptionProfileGroupCandidates(
+    userGroupName: string,
+    connects: { groupNames: string[] }[],
+  ): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const push = (name: string) => {
+      const t = name.trim();
+      if (!t || seen.has(t)) {
+        return;
+      }
+      seen.add(t);
+      out.push(t);
+    };
+    push(userGroupName);
+    for (const c of connects) {
+      for (const g of c.groupNames) {
+        push(g);
+      }
     }
-    const normalizedTarget = trimmed.normalize('NFC');
+    return out;
+  }
 
-    const exact = await this.prisma.group.findUnique({
-      where: { name: trimmed },
-      select: { subscriptionDisplayName: true },
-    });
-    if (exact) {
-      return exact;
+  /**
+   * Первое непустое subscriptionDisplayName среди кандидатов (совпадение имени группы:
+   * trim → точное → NFC → без учёта регистра), как при привязке PanelUser к Group.
+   */
+  private resolveSubscriptionDisplayNameFromCandidates(
+    candidates: string[],
+    groups: { name: string; subscriptionDisplayName: string | null }[],
+  ): string | null {
+    for (const raw of candidates) {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const normalizedTarget = trimmed.normalize('NFC');
+      const targetLower = normalizedTarget.toLowerCase();
+      const row =
+        groups.find((g) => g.name.trim() === trimmed) ??
+        groups.find(
+          (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+        ) ??
+        groups.find(
+          (g) =>
+            g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+        );
+      const sub = row?.subscriptionDisplayName?.trim();
+      if (sub) {
+        return sub;
+      }
     }
-
-    const groups = await this.prisma.group.findMany({
-      select: { name: true, subscriptionDisplayName: true },
-    });
-    const targetLower = normalizedTarget.toLowerCase();
-    const loose =
-      groups.find(
-        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
-      ) ??
-      groups.find(
-        (g) =>
-          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
-      );
-    return loose
-      ? { subscriptionDisplayName: loose.subscriptionDisplayName }
-      : null;
+    return null;
   }
 
   /**

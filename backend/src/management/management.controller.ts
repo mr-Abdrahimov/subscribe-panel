@@ -100,7 +100,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle совпадает с логикой заголовка profile-title ленты: subscriptionDisplayName из настроек группы или имя пользователя панели.',
+      'Поле profileTitle совпадает с логикой заголовка profile-title ленты: сначала subscriptionDisplayName группы пользователя панели, иначе — первое непустое значение среди групп коннектов ленты (порядок как в ленте), иначе имя пользователя панели.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
@@ -110,12 +110,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Каждая строка — URI коннекта; во фрагменте (#) всегда кастомное имя коннекта из панели (Connect.name). Заголовки profile-title* / profile-title — «название профиля подписки»: из настроек группы или имя пользователя панели, не из коннектов.",
+      "Каждая строка — URI коннекта; во фрагменте (#) всегда кастомное имя коннекта из панели (Connect.name). Заголовки profile-title* / profile-title — «название профиля подписки»: сначала настройка группы пользователя панели, иначе первая подходящая настройка среди групп коннектов ленты, иначе имя пользователя панели.",
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8). Заголовки profile-title — настройка группы / имя пользователя; в строках ленты # — только name коннекта.',
+      'Тело: base64 (UTF-8). Заголовки profile-title — настройка группы (см. описание эндпоинта) / имя пользователя; в строках ленты # — только name коннекта.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const { encoded, profileTitle } =
