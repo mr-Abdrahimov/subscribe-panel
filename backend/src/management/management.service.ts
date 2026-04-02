@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
@@ -140,15 +141,11 @@ export class ManagementService {
     });
   }
 
-  /** Активный пользователь панели по коду подписки (для выдачи /public/sub) */
-  async findEnabledPanelUserByCode(code: string): Promise<PanelUser | null> {
-    const user = await this.prisma.panelUser.findUnique({
+  /** Пользователь панели по коду подписки (в т.ч. отключённый — для решения, что отдавать в /public/sub) */
+  async findPanelUserByCode(code: string): Promise<PanelUser | null> {
+    return this.prisma.panelUser.findUnique({
       where: { code },
     });
-    if (!user || !user.enabled) {
-      return null;
-    }
-    return user;
   }
 
   /**
@@ -191,20 +188,21 @@ export class ManagementService {
   }
 
   /**
-   * Одна строка «коннекта» с сообщением об ошибке, если включено «Обязательно HWID», а HWID в запросе нет.
+   * Заглушка при ошибках доступа: случайный vless (не из БД), в клиенте — одна запись «Нет подключений».
+   * Код неизвестен — panelUserId null (лог не пишем).
    */
-  buildHwidMissingSubscriptionFeed(user: PanelUser): {
+  buildNoConnectionsPlaceholderFeed(panelUserId: string | null): {
     encoded: string;
     profileTitle: string;
-    panelUserId: string;
+    panelUserId: string | null;
   } {
-    const errName = encodeURIComponent('Ошибка: требуется HWID');
-    const line = `vless://00000000-0000-0000-0000-000000000001@127.0.0.1:1?encryption=none&security=none&type=tcp#${errName}`;
-    const bodyText = `# Ошибка доступа: для этой подписки обязателен HWID. Добавьте параметр ?hwid=… в URL или заголовок X-HWID / X-Device-ID.\n${line}`;
+    const line = this.buildRandomPlaceholderVlessLine();
+    const title = 'Нет подключений';
+    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(title)}\n${line}`;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
-      profileTitle: 'Ошибка HWID',
-      panelUserId: user.id,
+      profileTitle: title,
+      panelUserId,
     };
   }
 
@@ -602,6 +600,14 @@ export class ManagementService {
     const hash = raw.indexOf('#');
     const base = hash >= 0 ? raw.slice(0, hash) : raw;
     return `${base}#${encodeURIComponent(label)}`;
+  }
+
+  /** Случайный несуществующий vless для заглушки «Нет подключений» */
+  private buildRandomPlaceholderVlessLine(): string {
+    const id = randomUUID();
+    const port = 10000 + Math.floor(Math.random() * 55536);
+    const raw = `vless://${id}@127.0.0.1:${port}?encryption=none&security=none&type=tcp`;
+    return this.applyCustomNameToUri(raw, 'Нет подключений');
   }
 }
 

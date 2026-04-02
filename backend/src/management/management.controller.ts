@@ -188,31 +188,19 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (Happ; до 25 символов), далее URI коннектов. По умолчанию подписка отдаётся только если User-Agent начинается с «Happ»; у пользователя панели можно включить «Выдавать всем» (allowAllUserAgents). Если включено «Обязательно HWID» и в запросе нет HWID (query или заголовки), вместо списка отдаётся одна строка с текстом ошибки. Заголовки profile-title — из настроек группы (кроме режима ошибки HWID). Обращения пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Если код не найден, пользователь отключён, User-Agent не Happ (и не включено «Выдавать всем»), либо нет обязательного HWID — вместо списка отдаётся один случайный vless из БД не берётся, имя в клиенте «Нет подключений», profile-title то же. Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8), см. описание эндпоинта (#profile-title + строки подписки). Заголовки profile-title для клиентов вроде Happ.',
+      'Тело: base64 (UTF-8): либо полная подписка, либо заглушка «Нет подключений».',
   })
-  @ApiResponse({
-    status: 403,
-    description:
-      'User-Agent не разрешён: нужен префикс «Happ» или у пользователя панели включено «Выдавать всем».',
-  })
-  @ApiResponse({ status: 404, description: 'Пользователь не найден или отключён' })
   async getPublicSubscription(
     @Param('code') code: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const user = await this.managementService.findEnabledPanelUserByCode(code);
-    if (!user) {
-      res.status(404);
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.send('Пользователь не найден');
-      return;
-    }
+    const user = await this.managementService.findPanelUserByCode(code);
 
     const uaHeader = req.headers['user-agent'];
     const ua =
@@ -222,32 +210,48 @@ export class ManagementController {
           ? String(uaHeader[0]).trim()
           : '';
 
-    const allowAll = user.allowAllUserAgents === true;
-    if (!allowAll && !ua.startsWith('Happ')) {
-      res.status(403);
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.send(
-        'Подписка доступна только приложению Happ (User-Agent должен начинаться с «Happ»). Для доступа из браузера или других клиентов включите у пользователя опцию «Выдавать всем» в панели.',
+    let payload: {
+      encoded: string;
+      profileTitle: string;
+      panelUserId: string | null;
+    };
+
+    if (!user) {
+      payload =
+        this.managementService.buildNoConnectionsPlaceholderFeed(null);
+    } else if (!user.enabled) {
+      payload = this.managementService.buildNoConnectionsPlaceholderFeed(
+        user.id,
       );
-      return;
+    } else {
+      const allowAll = user.allowAllUserAgents === true;
+      const requireHwid = user.requireHwid === true;
+      if (!allowAll && !ua.startsWith('Happ')) {
+        payload = this.managementService.buildNoConnectionsPlaceholderFeed(
+          user.id,
+        );
+      } else if (requireHwid && !hasSubscriptionHwid(req)) {
+        payload = this.managementService.buildNoConnectionsPlaceholderFeed(
+          user.id,
+        );
+      } else {
+        payload = await this.managementService.buildPublicFeedForPanelUser(user);
+      }
     }
 
-    const requireHwid = user.requireHwid === true;
-    const payload =
-      requireHwid && !hasSubscriptionHwid(req)
-        ? this.managementService.buildHwidMissingSubscriptionFeed(user)
-        : await this.managementService.buildPublicFeedForPanelUser(user);
-
-    try {
-      await this.managementService.logPanelUserSubscriptionAccess(
-        payload.panelUserId,
-        extractSubscriptionAccessMeta(req),
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Не удалось записать лог обращения к подписке: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    if (payload.panelUserId) {
+      try {
+        await this.managementService.logPanelUserSubscriptionAccess(
+          payload.panelUserId,
+          extractSubscriptionAccessMeta(req),
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Не удалось записать лог обращения к подписке: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
+
     res.status(200);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
