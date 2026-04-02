@@ -111,7 +111,9 @@ sudo ln -sf /etc/nginx/sites-available/inv.avtlk.ru /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Конфиг Nginx содержит отдельный `location /api/_nuxt_icon/` на Nuxt: иначе запросы иконок попадали бы в Nest и отдавали 404 (префикс `/api/` общий). В **`nuxt.config.ts`** для фронта задан **`icon.localApiEndpoint: '/_nuxt_icon'`**, чтобы иконки шли на путь без конфликта с API. С главной снят **`prerender`** (раньше клиент запрашивал `/_payload.json` и получал 404 в этом сценарии).
+Известный конфликт: [@nuxt/icon по умолчанию использует `/api/_nuxt_icon`](https://github.com/nuxt/icon/issues/185), а Nginx часто проксирует весь `/api/` в Nest → **404**. В проекте: **`app.config.ts`** и модуль **`@nuxt/icon`** с **`localApiEndpoint: '/_nuxt_icon'`** (клиентский плагин читает `appConfig.icon`). В Nginx оставлен запасной **`location ^~ /api/_nuxt_icon`** на порт фронта для старых билдов. В **`nuxt.config`** включено **`experimental.payloadExtraction: false`**, чтобы не запрашивался **`/_payload.json`**.
+
+Если используете **certbot**, проверьте, что блок **`server { listen 443 ssl; }`** содержит те же **`location`**, что и порт **80** (или общий **`include`**).
 
 Ожидается:
 

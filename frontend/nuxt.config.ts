@@ -1,6 +1,13 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules: [
+    // До @nuxt/ui: задаём путь API иконок (конфликт с прокси /api на бэкенд — nuxt/icon#185).
+    [
+      '@nuxt/icon',
+      {
+        localApiEndpoint: '/_nuxt_icon'
+      }
+    ],
     '@nuxt/eslint',
     '@nuxt/ui'
   ],
@@ -11,9 +18,8 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  // Nuxt Icon по умолчанию вешает API на /api/_nuxt_icon — на проде тот же префикс у Nest (Nginx → 404).
-  icon: {
-    localApiEndpoint: '/_nuxt_icon'
+  experimental: {
+    payloadExtraction: false
   },
 
   runtimeConfig: {

@@ -16,6 +16,7 @@
     "prisma:studio": "dotenv -e .env.development -- prisma studio"
   },
   "dependencies": {
+    "@nuxt/icon": "^2.2.1",
     "@iconify-json/lucide": "^1.2.100",
     "@iconify-json/simple-icons": "^1.2.75",
     "@nuxt/ui": "^4.6.0",
