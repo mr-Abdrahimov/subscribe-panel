@@ -49,7 +49,7 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     accessorKey: 'code',
-    header: 'Код',
+    header: 'Ссылка',
     meta: {
       class: {
         th: 'w-px',
