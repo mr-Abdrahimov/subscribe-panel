@@ -68,7 +68,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить список пользователей панели',
     description:
-      'В каждом элементе поле lastSubscriptionActivityAt — дата и время последнего успешного запроса подписки GET /public/sub/:code (запись в логе PanelUserAccessLog), либо null, если обращений не было.',
+      'В каждом элементе: lastSubscriptionActivityAt — последний успешный GET /public/sub/:code; subscriptionUniqueHwidCount — число уникальных HWID в логах подписки; maxUniqueHwids — настраиваемый лимит (0 = не ограничивать).',
   })
   listUsers() {
     return this.managementService.listUsers();
@@ -90,7 +90,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: name, groupName, allowAllUserAgents (выдавать подписку всем User-Agent), requireHwid (без HWID — заглушка «Нет подключений»), requireNoHwid (с HWID — заглушка «Отключите HWID»; при включении сбрасывает requireHwid). Код подписки (code) не меняется.',
+      'Частичное обновление: name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids (лимит уникальных HWID по логам; 0 — не проверять). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
@@ -126,6 +126,21 @@ export class ManagementController {
       ? 200
       : Math.min(500, Math.max(1, parsed));
     return this.managementService.listPanelUserSubscriptionAccessLogs(id, limit);
+  }
+
+  @Delete('panel-users/:id/subscription-access-logs')
+  @ApiOperation({
+    summary: 'Очистить логи обращений к подписке',
+    description:
+      'Удаляет все записи PanelUserAccessLog пользователя (HWID, IP, User-Agent и пр. при запросах base64 GET /public/sub/:code). Счётчик уникальных HWID в списке пользователей обнулится после перезагрузки списка.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Объект { deleted: число удалённых записей }',
+  })
+  @ApiResponse({ status: 404, description: 'Пользователь не найден' })
+  clearSubscriptionAccessLogs(@Param('id') id: string) {
+    return this.managementService.deleteAllPanelUserSubscriptionAccessLogs(id);
   }
 
   @Patch('connects/:id/groups')
@@ -192,12 +207,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Если код не найден, пользователь отключён, User-Agent не Happ (и не включено «Выдавать всем»), нет обязательного HWID при requireHwid, либо передан HWID при requireNoHwid — вместо списка отдаётся один случайный vless (не из БД): «Нет подключений» или «Отключите HWID». Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8): полная подписка или заглушка («Нет подключений» / «Отключите HWID»).',
+      'Тело: base64 (UTF-8): полная подписка или заглушка («Нет подключений» / «Отключите HWID» / «Превышен лимит HWID»).',
   })
   async getPublicSubscription(
     @Param('code') code: string,
@@ -243,6 +258,20 @@ export class ManagementController {
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
           user.id,
+        );
+      } else if (
+        requireNoHwid !== true &&
+        (user.maxUniqueHwids ?? 0) > 0 &&
+        (await this.managementService.isUniqueHwidLimitExceeded(
+          user.id,
+          user.maxUniqueHwids ?? 0,
+          requireNoHwid,
+          extractSubscriptionAccessMeta(req).hwid,
+        ))
+      ) {
+        payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
+          user.id,
+          'Превышен лимит HWID',
         );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(user);

@@ -74,6 +74,8 @@ model PanelUser {
   requireHwid          Boolean                @default(true)
   /// Если true — при наличии HWID в запросе отдаётся заглушка «Отключите HWID»; несовместимо с requireHwid
   requireNoHwid       Boolean                @default(false)
+  /// Макс. число уникальных HWID по логам подписки; 0 — не проверять. Не действует при включённом requireNoHwid
+  maxUniqueHwids      Int                    @default(0)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]

@@ -26,6 +26,10 @@ type UserItem = {
   allowAllUserAgents?: boolean;
   requireHwid?: boolean;
   requireNoHwid?: boolean;
+  /** Лимит уникальных HWID (0 — не проверять) */
+  maxUniqueHwids?: number;
+  /** Уникальных HWID в логах GET /public/sub (из API) */
+  subscriptionUniqueHwidCount?: number;
   createdAt: string;
   /** ISO-8601, последний запрос подписки из логов */
   lastSubscriptionActivityAt?: string | null;
@@ -44,6 +48,8 @@ const formCode = ref('');
 const formGroupName = ref('');
 const isDeleteConfirmOpen = ref(false);
 const pendingDeleteUserId = ref<string | null>(null);
+const isClearLogsConfirmOpen = ref(false);
+const pendingClearLogsUserId = ref<string | null>(null);
 
 const columns: TableColumn<UserItem>[] = [
   {
@@ -100,6 +106,16 @@ const columns: TableColumn<UserItem>[] = [
     meta: {
       class: {
         th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
+        td: 'align-middle'
+      }
+    }
+  },
+  {
+    id: 'hwidLimit',
+    header: 'Уник. HWID / лимит',
+    meta: {
+      class: {
+        th: 'text-xs max-w-[7rem] whitespace-normal align-bottom',
         td: 'align-middle'
       }
     }
@@ -278,6 +294,34 @@ async function confirmRemoveUser() {
   }
 }
 
+function askClearSubscriptionLogs(user: UserItem) {
+  pendingClearLogsUserId.value = user.id;
+  isClearLogsConfirmOpen.value = true;
+}
+
+function cancelClearLogsConfirm() {
+  isClearLogsConfirmOpen.value = false;
+  pendingClearLogsUserId.value = null;
+}
+
+async function confirmClearSubscriptionLogs() {
+  const id = pendingClearLogsUserId.value;
+  if (!id) {
+    return;
+  }
+  try {
+    await $fetch(
+      `${config.public.apiBaseUrl}/panel-users/${id}/subscription-access-logs`,
+      { method: 'DELETE' },
+    );
+    toast.add({ title: 'Логи подписки очищены', color: 'success' });
+    cancelClearLogsConfirm();
+    await loadData();
+  } catch {
+    toast.add({ title: 'Не удалось очистить логи', color: 'error' });
+  }
+}
+
 watch(isModalOpen, (open) => {
   if (!open) {
     editingUserId.value = null;
@@ -329,6 +373,31 @@ async function patchAccessFlags(
     }
   } catch {
     toast.add({ title: 'Не удалось сохранить настройки доступа', color: 'error' });
+    await loadData();
+  }
+}
+
+function clampMaxUniqueHwids(n: number): number {
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(10_000, Math.floor(n));
+}
+
+async function patchMaxUniqueHwids(user: UserItem, raw: string) {
+  const parsed = Number.parseInt(String(raw).trim(), 10);
+  const n = clampMaxUniqueHwids(Number.isFinite(parsed) ? parsed : 0);
+  if (n === (user.maxUniqueHwids ?? 0)) {
+    return;
+  }
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body: { maxUniqueHwids: n },
+    });
+    user.maxUniqueHwids = n;
+  } catch {
+    toast.add({ title: 'Не удалось сохранить лимит HWID', color: 'error' });
     await loadData();
   }
 }
@@ -444,6 +513,36 @@ async function copySubscriptionLink(code: string) {
           </UTooltip>
         </template>
 
+        <template #hwidLimit-cell="{ row }">
+          <UTooltip
+            text="Слева — уникальные HWID в логах подписки. Справа — лимит: при превышении клиент получит «Превышен лимит HWID» (не действует при «Обязательно без HWID»). 0 — без лимита."
+          >
+            <div
+              class="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-sm tabular-nums"
+            >
+              <span class="min-w-[1.25rem] text-center">{{
+                row.original.subscriptionUniqueHwidCount ?? 0
+              }}</span>
+              <span class="text-muted">/</span>
+              <UInput
+                :key="`hwid-max-${row.original.id}-${row.original.maxUniqueHwids ?? 0}`"
+                :default-value="row.original.maxUniqueHwids ?? 0"
+                type="number"
+                min="0"
+                max="10000"
+                size="xs"
+                class="w-14 shrink-0"
+                @blur="
+                  patchMaxUniqueHwids(
+                    row.original,
+                    ($event.target as HTMLInputElement).value,
+                  )
+                "
+              />
+            </div>
+          </UTooltip>
+        </template>
+
         <template #enabled-cell="{ row }">
           <USwitch
             :model-value="row.original.enabled"
@@ -462,6 +561,17 @@ async function copySubscriptionLink(code: string) {
                 icon="i-lucide-scroll-text"
                 class="rounded-lg p-1.5 min-w-8 min-h-8"
                 aria-label="Логи подписки"
+              />
+            </UTooltip>
+            <UTooltip text="Очистить логи подписки (список HWID)">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-fingerprint-off"
+                class="rounded-lg p-1.5 min-w-8 min-h-8"
+                aria-label="Очистить логи HWID"
+                @click="askClearSubscriptionLogs(row.original)"
               />
             </UTooltip>
             <UTooltip text="Редактировать">
@@ -541,6 +651,25 @@ async function copySubscriptionLink(code: string) {
           </UButton>
           <UButton color="error" @click="confirmRemoveUser">
             Удалить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isClearLogsConfirmOpen" title="Очистить логи подписки?">
+      <template #body>
+        <p class="text-sm text-muted">
+          Будут удалены все записи обращений к base64-подписке (HWID, IP, User-Agent). Счётчик
+          уникальных HWID обнулится.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="cancelClearLogsConfirm">
+            Отмена
+          </UButton>
+          <UButton color="warning" @click="confirmClearSubscriptionLogs">
+            Очистить
           </UButton>
         </div>
       </template>

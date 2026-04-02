@@ -64,9 +64,24 @@ export class ManagementService {
     const lastByUser = new Map(
       aggregates.map((a) => [a.panelUserId, a._max.createdAt]),
     );
+    const hwidPairs = await this.prisma.panelUserAccessLog.groupBy({
+      by: ['panelUserId', 'hwid'],
+      where: { hwid: { not: null } },
+    });
+    const uniqueHwidCountByUser = new Map<string, number>();
+    for (const row of hwidPairs) {
+      if (!row.hwid) {
+        continue;
+      }
+      uniqueHwidCountByUser.set(
+        row.panelUserId,
+        (uniqueHwidCountByUser.get(row.panelUserId) ?? 0) + 1,
+      );
+    }
     return users.map((u) => ({
       ...u,
       lastSubscriptionActivityAt: lastByUser.get(u.id) ?? null,
+      subscriptionUniqueHwidCount: uniqueHwidCountByUser.get(u.id) ?? 0,
     }));
   }
 
@@ -79,6 +94,7 @@ export class ManagementService {
         allowAllUserAgents: false,
         requireHwid: true,
         requireNoHwid: false,
+        maxUniqueHwids: 0,
       },
     });
   }
@@ -104,6 +120,7 @@ export class ManagementService {
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
       requireNoHwid?: boolean;
+      maxUniqueHwids?: number;
     },
   ) {
     await this.ensureUser(id);
@@ -113,6 +130,7 @@ export class ManagementService {
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
       requireNoHwid?: boolean;
+      maxUniqueHwids?: number;
     } = {};
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
@@ -149,6 +167,9 @@ export class ManagementService {
     } else if (dto.requireNoHwid === false) {
       data.requireNoHwid = false;
     }
+    if (dto.maxUniqueHwids !== undefined) {
+      data.maxUniqueHwids = dto.maxUniqueHwids;
+    }
     if (Object.keys(data).length === 0) {
       return this.prisma.panelUser.findUnique({ where: { id } });
     }
@@ -164,6 +185,48 @@ export class ManagementService {
       where: { id },
       data: { groupNames: Array.from(new Set(groupNames.map((n) => n.trim()).filter(Boolean))) },
     });
+  }
+
+  /**
+   * Превышен лимит уникальных HWID: учитываются логи и HWID текущего запроса.
+   * Не применяется при maxUniqueHwids ≤ 0 или при requireNoHwid.
+   */
+  async isUniqueHwidLimitExceeded(
+    panelUserId: string,
+    maxUniqueHwids: number,
+    requireNoHwid: boolean,
+    currentHwid: string | undefined | null,
+  ): Promise<boolean> {
+    if (maxUniqueHwids <= 0 || requireNoHwid) {
+      return false;
+    }
+    const rows = await this.prisma.panelUserAccessLog.groupBy({
+      by: ['hwid'],
+      where: { panelUserId, hwid: { not: null } },
+    });
+    const known = new Set(
+      rows.map((r) => r.hwid).filter((h): h is string => Boolean(h)),
+    );
+    const n = known.size;
+    const h = typeof currentHwid === 'string' ? currentHwid.trim() : '';
+    if (!h) {
+      return n > maxUniqueHwids;
+    }
+    if (known.has(h)) {
+      return n > maxUniqueHwids;
+    }
+    return n + 1 > maxUniqueHwids;
+  }
+
+  /** Удалить все логи обращений к подписке (GET /public/sub) для пользователя панели */
+  async deleteAllPanelUserSubscriptionAccessLogs(
+    panelUserId: string,
+  ): Promise<{ deleted: number }> {
+    await this.ensureUser(panelUserId);
+    const result = await this.prisma.panelUserAccessLog.deleteMany({
+      where: { panelUserId },
+    });
+    return { deleted: result.count };
   }
 
   /** Пользователь панели по коду подписки (в т.ч. отключённый — для решения, что отдавать в /public/sub) */

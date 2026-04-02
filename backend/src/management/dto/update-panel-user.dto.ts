@@ -1,5 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdatePanelUserDto {
   @ApiPropertyOptional({
@@ -45,4 +53,16 @@ export class UpdatePanelUserDto {
   @IsOptional()
   @IsBoolean()
   requireNoHwid?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Максимум уникальных HWID по логам GET /public/sub/:code. 0 — лимит не применяется. При превышении — заглушка «Превышен лимит HWID» (если не включено «Обязательно без HWID»).',
+    minimum: 0,
+    maximum: 10_000,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10_000)
+  maxUniqueHwids?: number;
 }
