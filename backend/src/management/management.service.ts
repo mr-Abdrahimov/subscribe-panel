@@ -119,7 +119,7 @@ export class ManagementService {
 
   async getPublicFeedByCode(code: string): Promise<{
     encoded: string;
-    /** HTTP profile-title: «Название для публичной подписки» из настроек группы, иначе имя пользователя панели */
+    /** Только «Название для публичной подписки» из настроек группы (цепочка кандидатов); для HTTP profile-title имя пользователя панели не подставляем */
     profileTitle: string;
   }> {
     const user = await this.prisma.panelUser.findUnique({
@@ -153,9 +153,9 @@ export class ManagementService {
         candidates,
         allGroups,
       ) ?? '';
-    const profileTitle = (groupTitle || user.name.trim() || '').trim();
+    const profileTitle = groupTitle.trim();
 
-    /** Фрагмент # в каждой строке — всегда кастомное имя коннекта (Connect.name). Заголовок profile-title — из настроек группы (сначала группа пользователя, затем группы коннектов ленты) или имени пользователя панели */
+    /** Фрагмент # в каждой строке — всегда кастомное имя коннекта (Connect.name). Заголовки profile-title* / profile-title — только из настроек группы (subscriptionDisplayName), без подмены именем пользователя панели */
     const payload = connects
       .map((c) => this.applyCustomNameToUri(c.raw, c.name))
       .join('\n');
@@ -194,12 +194,13 @@ export class ManagementService {
         candidates,
         allGroups,
       ) ?? '';
-    const profileTitle = (sub || user.name.trim() || '').trim() || null;
+    const trimmedSub = sub.trim();
+    const profileTitle = trimmedSub || null;
 
     return {
       ...user,
-      subscriptionDisplayName: sub || null,
-      /** Как в заголовке profile-title ленты */
+      subscriptionDisplayName: trimmedSub || null,
+      /** Как в заголовке profile-title ленты: только настройки группы, без имени пользователя */
       profileTitle,
     };
   }
