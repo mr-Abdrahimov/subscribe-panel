@@ -1,27 +1,48 @@
 <script setup>
-useHead({
-  meta: [
-    { name: 'viewport', content: 'width=device-width, initial-scale=1' }
-  ],
-  link: [
-    { rel: 'icon', href: '/favicon.ico' }
-  ],
-  htmlAttrs: {
-    lang: 'en'
+const config = useRuntimeConfig()
+const requestURL = useRequestURL()
+
+const defaultTitle = 'Панель подписок'
+const defaultDescription =
+  'Управление VPN-подписками: группы, пользователи и персональные ссылки на ленты для Happ и других клиентов.'
+
+const siteOrigin = computed(() => {
+  const fromEnv = String(config.public.siteUrl || '').replace(/\/$/, '')
+  if (fromEnv) {
+    return fromEnv
   }
+  return requestURL.origin
 })
 
-const title = 'Nuxt Starter Template'
-const description = 'A production-ready starter template powered by Nuxt UI. Build beautiful, accessible, and performant applications in minutes, not hours.'
+const defaultOgImage = computed(() => {
+  const o = siteOrigin.value
+  return o ? `${o}/og-share.jpg` : '/og-share.jpg'
+})
+
+useHead({
+  meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+  link: [
+    { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+    { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+  ],
+  htmlAttrs: {
+    lang: 'ru',
+  },
+})
 
 useSeoMeta({
-  title,
-  description,
-  ogTitle: title,
-  ogDescription: description,
-  ogImage: 'https://ui.nuxt.com/assets/templates/nuxt/starter-light.png',
-  twitterImage: 'https://ui.nuxt.com/assets/templates/nuxt/starter-light.png',
-  twitterCard: 'summary_large_image'
+  title: defaultTitle,
+  description: defaultDescription,
+  ogSiteName: 'Subscribe Panel',
+  ogTitle: defaultTitle,
+  ogDescription: defaultDescription,
+  ogType: 'website',
+  ogLocale: 'ru_RU',
+  ogImage: defaultOgImage,
+  twitterCard: 'summary_large_image',
+  twitterTitle: defaultTitle,
+  twitterDescription: defaultDescription,
+  twitterImage: defaultOgImage,
 })
 </script>
 

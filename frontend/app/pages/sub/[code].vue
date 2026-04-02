@@ -7,6 +7,7 @@ definePageMeta({
 
 const route = useRoute()
 const config = useRuntimeConfig()
+const requestURL = useRequestURL()
 const code = computed(() => String(route.params.code ?? ''))
 
 const publicUserUrl = computed(() => {
@@ -24,8 +25,28 @@ const appLinks = computed(() => data.value?.appLinks ?? [])
 
 const headTitle = computed(() => {
   const u = displayName.value
-  return u ? `${u} — подписка` : 'Подписка'
+  return u ? `${u} — VPN-подписка` : 'VPN-подписка'
 })
+
+const pageOrigin = computed(() => {
+  const fromEnv = String(config.public.siteUrl || '').replace(/\/$/, '')
+  if (fromEnv) {
+    return fromEnv
+  }
+  return requestURL.origin
+})
+
+const canonicalUrl = computed(
+  () => `${pageOrigin.value}/sub/${encodeURIComponent(code.value)}`,
+)
+
+const seoDescription = computed(() =>
+  displayName.value
+    ? `Персональная страница VPN-подписки: ${displayName.value}. Добавьте ссылку в Happ или другом клиенте; здесь — группы серверов и приложения.`
+    : 'Персональная страница VPN-подписки. Добавьте ссылку в приложении-клиенте для импорта профиля.',
+)
+
+const ogImageAbsolute = computed(() => `${pageOrigin.value}/og-share.jpg`)
 
 useHead({
   title: headTitle,
@@ -43,16 +64,24 @@ useHead({
       rel: 'stylesheet',
       href: 'https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap',
     },
+    { rel: 'canonical', href: canonicalUrl },
   ],
 })
 
 useSeoMeta({
   title: headTitle,
-  description: computed(() =>
-    displayName.value
-      ? `Страница подписки ${displayName.value}: группы и приложения.`
-      : 'Страница подписки.',
-  ),
+  description: seoDescription,
+  ogTitle: headTitle,
+  ogDescription: seoDescription,
+  ogType: 'website',
+  ogUrl: canonicalUrl,
+  ogLocale: 'ru_RU',
+  ogSiteName: 'Subscribe Panel',
+  ogImage: ogImageAbsolute,
+  twitterCard: 'summary_large_image',
+  twitterTitle: headTitle,
+  twitterDescription: seoDescription,
+  twitterImage: ogImageAbsolute,
 })
 
 const subscriptionUrl = computed(() => {
