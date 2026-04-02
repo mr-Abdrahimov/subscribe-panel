@@ -457,9 +457,9 @@ async function copySubscriptionLink(code: string) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between gap-3">
-      <h2 class="text-xl font-semibold">
+  <div class="cosmic-app space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="cosmic-h2">
         Пользователи
       </h2>
 

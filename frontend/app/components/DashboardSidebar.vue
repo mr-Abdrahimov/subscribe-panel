@@ -31,70 +31,75 @@ function onNavigate() {
 </script>
 
 <template>
-  <div class="h-full p-3 sm:p-4 lg:p-5">
-    <UCard class="h-full">
-      <template #header>
-        <div class="space-y-4">
-          <div class="flex items-center gap-3">
-            <div class="size-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <UIcon name="i-lucide-layout-dashboard" class="size-5 text-primary" />
+  <div class="flex h-full min-h-[100dvh] flex-col p-3 sm:p-4 lg:p-5">
+    <div
+      class="flex min-h-0 flex-1 flex-col rounded-2xl border border-[var(--cosmic-border)] bg-[var(--cosmic-glass)] p-4 shadow-none backdrop-blur-xl"
+    >
+      <div class="mb-4 space-y-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-3">
+            <div
+              class="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[var(--cosmic-border)] bg-[var(--cosmic-sidebar-accent)]"
+            >
+              <UIcon name="i-lucide-orbit" class="size-5 text-primary" />
             </div>
-            <div>
-              <p class="text-sm text-muted">
-                Панель управления
+            <div class="min-w-0">
+              <p class="cosmic-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--cosmic-fg-muted)]">
+                Панель
               </p>
-              <h1 class="text-lg font-semibold leading-tight">
+              <h1
+                class="truncate text-base font-bold leading-tight tracking-tight text-[var(--cosmic-fg)]"
+                style="font-family: Orbitron, sans-serif"
+              >
                 Subscribe Panel
               </h1>
             </div>
           </div>
-
-          <USeparator />
+          <ThemeToggle />
         </div>
-      </template>
 
-      <div class="space-y-2">
+        <div class="h-px w-full bg-[var(--cosmic-border)] opacity-80" />
+      </div>
+
+      <nav class="flex min-h-0 flex-1 flex-col gap-1.5">
         <UButton
           v-for="item in menuItems"
           :key="item.to"
           block
-          color="neutral"
+          color="primary"
           :variant="route.path === item.to ? 'soft' : 'ghost'"
           :icon="item.icon"
           :to="item.to"
-          class="justify-start h-11 rounded-lg px-3"
+          class="h-11 justify-start rounded-xl px-3 font-semibold"
           @click="onNavigate"
         >
           {{ item.label }}
         </UButton>
-      </div>
+      </nav>
 
-      <template #footer>
-        <div class="space-y-2">
-          <UButton
-            block
-            color="neutral"
-            :variant="route.path === '/settings' ? 'soft' : 'ghost'"
-            icon="i-lucide-settings"
-            to="/settings"
-            class="justify-start h-11 rounded-lg px-3"
-            @click="onNavigate"
-          >
-            Настройки
-          </UButton>
-          <UButton
-            block
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-log-out"
-            class="justify-start h-11 rounded-lg px-3"
-            @click="logout"
-          >
-            Выйти
-          </UButton>
-        </div>
-      </template>
-    </UCard>
+      <div class="mt-4 space-y-1.5 border-t border-[var(--cosmic-border)] pt-4">
+        <UButton
+          block
+          color="primary"
+          :variant="route.path === '/settings' ? 'soft' : 'ghost'"
+          icon="i-lucide-settings"
+          to="/settings"
+          class="h-11 justify-start rounded-xl px-3 font-semibold"
+          @click="onNavigate"
+        >
+          Настройки
+        </UButton>
+        <UButton
+          block
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-log-out"
+          class="h-11 justify-start rounded-xl px-3 font-semibold text-[var(--cosmic-fg-muted)]"
+          @click="logout"
+        >
+          Выйти
+        </UButton>
+      </div>
+    </div>
   </div>
 </template>
-

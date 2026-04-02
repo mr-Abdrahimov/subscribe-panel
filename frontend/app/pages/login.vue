@@ -48,9 +48,15 @@ async function submit() {
 </script>
 
 <template>
-  <UCard class="mx-auto w-full max-w-md">
+  <UCard
+    class="cosmic-login-shell mx-auto w-full max-w-md !shadow-none"
+    :ui="{
+      root: 'ring-0 shadow-none',
+      header: 'border-b border-[var(--cosmic-border)]',
+    }"
+  >
     <template #header>
-      <h1 class="text-xl font-semibold">
+      <h1 class="cosmic-h2 !text-lg normal-case tracking-tight">
         Авторизация
       </h1>
     </template>

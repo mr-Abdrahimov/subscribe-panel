@@ -3,27 +3,29 @@ const isSidebarOpen = ref(false);
 </script>
 
 <template>
-  <UMain>
-    <div class="min-h-[100dvh] bg-(--ui-bg) md:grid md:grid-cols-[300px_1fr]">
-      <div class="hidden md:block">
-        <DashboardSidebar />
+  <div class="cosmic-shell relative min-h-[100dvh] overflow-x-hidden">
+    <CosmicBackdrop />
+    <UMain class="relative z-10 min-h-[100dvh]">
+      <div class="min-h-[100dvh] md:grid md:grid-cols-[minmax(260px,288px)_1fr]">
+        <aside class="cosmic-sidebar-col hidden h-full min-h-[100dvh] md:block">
+          <DashboardSidebar />
+        </aside>
+
+        <section class="cosmic-app p-4 sm:p-6 md:p-8 md:pb-10">
+          <div class="mb-4 flex items-center gap-3 md:hidden">
+            <UButton
+              color="primary"
+              variant="soft"
+              icon="i-lucide-menu"
+              @click="isSidebarOpen = true"
+            >
+              Меню
+            </UButton>
+          </div>
+          <slot />
+        </section>
       </div>
 
-      <section class="p-4 sm:p-6 md:p-8">
-        <div class="md:hidden mb-4">
-          <UButton
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-menu"
-            @click="isSidebarOpen = true"
-          >
-            Меню
-          </UButton>
-        </div>
-        <slot />
-      </section>
-
-      <!-- default slot = trigger (inline). Навигация только в #body -->
       <UModal
         v-model:open="isSidebarOpen"
         class="md:hidden"
@@ -35,7 +37,6 @@ const isSidebarOpen = ref(false);
           <DashboardSidebar @navigate="isSidebarOpen = false" />
         </template>
       </UModal>
-    </div>
-  </UMain>
+    </UMain>
+  </div>
 </template>
-

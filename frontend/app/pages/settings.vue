@@ -193,9 +193,9 @@ async function saveGroupTitle(groupId: string) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="cosmic-app space-y-6">
     <div>
-      <h2 class="text-xl font-semibold">
+      <h2 class="cosmic-h2">
         Настройки
       </h2>
       <p class="mt-1 text-sm text-muted">
@@ -206,7 +206,7 @@ async function saveGroupTitle(groupId: string) {
     <UCard>
       <template #header>
         <div class="space-y-1">
-          <h3 class="text-base font-semibold">
+          <h3 class="cosmic-h3">
             Название
           </h3>
           <p class="text-sm text-muted">
@@ -282,7 +282,7 @@ async function saveGroupTitle(groupId: string) {
     <UCard>
       <template #header>
         <div class="space-y-1">
-          <h3 class="text-base font-semibold">
+          <h3 class="cosmic-h3">
             Приложения
           </h3>
           <p class="text-sm text-muted">

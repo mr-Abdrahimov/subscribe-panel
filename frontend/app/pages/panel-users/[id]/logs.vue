@@ -154,7 +154,7 @@ function truncateText(s: string | null | undefined, max: number): string {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="cosmic-app space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="space-y-1 min-w-0">
         <UButton
@@ -166,7 +166,7 @@ function truncateText(s: string | null | undefined, max: number): string {
         >
           К списку пользователей
         </UButton>
-        <h2 class="text-xl font-semibold truncate">
+        <h2 class="cosmic-h2 truncate !normal-case !tracking-tight">
           Логи подписки
         </h2>
         <p

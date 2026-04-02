@@ -7,10 +7,17 @@ export default defineNuxtConfig({
     head: {
       title: 'Панель подписок',
       charset: 'utf-8',
+      link: [
+        {
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap',
+        },
+      ],
     },
   },
 
   modules: [
+    '@nuxtjs/color-mode',
     // До @nuxt/ui: задаём путь API иконок (конфликт с прокси /api на бэкенд — nuxt/icon#185).
     [
       '@nuxt/icon',
@@ -21,6 +28,13 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@nuxt/ui'
   ],
+
+  colorMode: {
+    classSuffix: '',
+    preference: 'dark',
+    fallback: 'dark',
+    storageKey: 'subscribe-panel-color-mode',
+  },
 
   devtools: {
     enabled: true

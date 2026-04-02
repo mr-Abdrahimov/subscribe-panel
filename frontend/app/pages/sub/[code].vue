@@ -50,22 +50,7 @@ const ogImageAbsolute = computed(() => `${pageOrigin.value}/og-share.jpg`)
 
 useHead({
   title: headTitle,
-  link: [
-    {
-      rel: 'preconnect',
-      href: 'https://fonts.googleapis.com',
-    },
-    {
-      rel: 'preconnect',
-      href: 'https://fonts.gstatic.com',
-      crossorigin: '',
-    },
-    {
-      rel: 'stylesheet',
-      href: 'https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap',
-    },
-    { rel: 'canonical', href: canonicalUrl },
-  ],
+  link: [{ rel: 'canonical', href: canonicalUrl }],
 })
 
 useSeoMeta({
