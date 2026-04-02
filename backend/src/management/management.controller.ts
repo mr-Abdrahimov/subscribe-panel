@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { setProfileTitleResponseHeaders } from '../common/profile-title-header';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { ManagementService } from './management.service';
@@ -105,12 +106,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Каждая строка — URI коннекта; в фрагменте (#) всегда подставляется кастомное имя коннекта из панели (поле name в БД). Заголовок profile-title — «название подписки/сервера»: из настроек группы («Название для публичной подписки») или имя пользователя панели.',
+      "Каждая строка — URI коннекта; в фрагменте (#) всегда подставляется кастомное имя коннекта из панели (поле name в БД). Название подписки: заголовок profile-title* (RFC 5987, значение UTF-8''…); при только ASCII дублируется profile-title.",
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8, по строке на коннект). Заголовок profile-title — название подписки из настроек группы или имя пользователя; отображаемые имена серверов в ленте — из Connect.name.',
+      'Тело: base64 (UTF-8, по строке на коннект). Заголовок profile-title* — название подписки (любой Unicode); profile-title — то же, если строка только из ASCII.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const { encoded, profileTitle } =
@@ -122,7 +123,7 @@ export class ManagementController {
     );
     res.setHeader('Pragma', 'no-cache');
     if (profileTitle) {
-      res.setHeader('profile-title', profileTitle);
+      setProfileTitleResponseHeaders(res, profileTitle);
     }
     res.send(encoded);
   }

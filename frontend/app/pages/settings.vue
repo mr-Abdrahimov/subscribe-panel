@@ -97,7 +97,7 @@ async function saveGroupTitle(groupId: string) {
             Название
           </h3>
           <p class="text-sm text-muted">
-            Используется как «название подписки»: заголовок страницы <code class="text-xs font-mono text-highlighted">/sub/…</code>, HTTP-заголовок <code class="text-xs font-mono text-highlighted">profile-title</code> при запросе ленты.
+            Используется как «название подписки»: заголовок страницы <code class="text-xs font-mono text-highlighted">/sub/…</code>, при запросе ленты — <code class="text-xs font-mono text-highlighted">profile-title*</code> (RFC 5987) и при необходимости <code class="text-xs font-mono text-highlighted">profile-title</code> (только ASCII).
             Имена отдельных серверов в клиенте (фрагмент # в каждой строке) всегда берутся из поля «Название» коннекта в панели (БД).
           </p>
         </div>
