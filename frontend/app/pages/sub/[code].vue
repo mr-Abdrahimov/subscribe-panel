@@ -132,9 +132,7 @@ async function copyToClipboard() {
               ПРИЛОЖЕНИЯ
             </h2>
             <p class="cp__section-desc">
-              Быстрые ссылки в Happ и другие клиенты — те же, что задаются в панели в разделе
-              «Настройки» → «Приложения». В шаблоне ссылки <code class="cp__code-inline">{link}</code>
-              подставляется полный URL этой страницы подписки.
+              Быстрые ссылки для скачивания и установки профиля в Happ и другие клиенты.
             </p>
 
             <ul v-if="appLinks.length" class="cp__apps">
