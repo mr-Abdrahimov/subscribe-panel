@@ -72,6 +72,8 @@ model PanelUser {
   allowAllUserAgents   Boolean                @default(false)
   /// Если true — без HWID в запросе отдаётся заглушка «Нет подключений» вместо списка коннектов
   requireHwid          Boolean                @default(true)
+  /// Если true — при наличии HWID в запросе отдаётся заглушка «Отключите HWID»; несовместимо с requireHwid
+  requireNoHwid       Boolean                @default(false)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]

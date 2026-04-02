@@ -53,10 +53,21 @@ export class ManagementService {
     });
   }
 
-  listUsers() {
-    return this.prisma.panelUser.findMany({
+  async listUsers() {
+    const users = await this.prisma.panelUser.findMany({
       orderBy: { createdAt: 'desc' },
     });
+    const aggregates = await this.prisma.panelUserAccessLog.groupBy({
+      by: ['panelUserId'],
+      _max: { createdAt: true },
+    });
+    const lastByUser = new Map(
+      aggregates.map((a) => [a.panelUserId, a._max.createdAt]),
+    );
+    return users.map((u) => ({
+      ...u,
+      lastSubscriptionActivityAt: lastByUser.get(u.id) ?? null,
+    }));
   }
 
   createUser(name: string, code: string, groupName: string) {
@@ -67,6 +78,7 @@ export class ManagementService {
         groupName: groupName.trim(),
         allowAllUserAgents: false,
         requireHwid: true,
+        requireNoHwid: false,
       },
     });
   }
@@ -91,6 +103,7 @@ export class ManagementService {
       groupName?: string;
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
+      requireNoHwid?: boolean;
     },
   ) {
     await this.ensureUser(id);
@@ -99,6 +112,7 @@ export class ManagementService {
       groupName?: string;
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
+      requireNoHwid?: boolean;
     } = {};
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
@@ -123,8 +137,17 @@ export class ManagementService {
     if (dto.allowAllUserAgents !== undefined) {
       data.allowAllUserAgents = dto.allowAllUserAgents;
     }
-    if (dto.requireHwid !== undefined) {
-      data.requireHwid = dto.requireHwid;
+    if (dto.requireHwid === true) {
+      data.requireHwid = true;
+      data.requireNoHwid = false;
+    } else if (dto.requireHwid === false) {
+      data.requireHwid = false;
+    }
+    if (dto.requireNoHwid === true) {
+      data.requireNoHwid = true;
+      data.requireHwid = false;
+    } else if (dto.requireNoHwid === false) {
+      data.requireNoHwid = false;
     }
     if (Object.keys(data).length === 0) {
       return this.prisma.panelUser.findUnique({ where: { id } });
@@ -190,7 +213,28 @@ export class ManagementService {
   }
 
   /**
-   * Заглушка при ошибках доступа: случайный vless (не из БД), в клиенте — одна запись «Нет подключений».
+   * Заглушка: случайный vless (не из БД), profile-title и имя в URI — переданный title.
+   */
+  buildNamedSubscriptionPlaceholderFeed(
+    panelUserId: string | null,
+    title: string,
+  ): {
+    encoded: string;
+    profileTitle: string;
+    panelUserId: string | null;
+  } {
+    const t = title.trim() || 'Нет подключений';
+    const line = this.buildRandomPlaceholderVlessLineForName(t);
+    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n${line}`;
+    return {
+      encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
+      profileTitle: t,
+      panelUserId,
+    };
+  }
+
+  /**
+   * Заглушка при ошибках доступа: случайный vless (не из БД), в клиенте — «Нет подключений».
    * Код неизвестен — panelUserId null (лог не пишем).
    */
   buildNoConnectionsPlaceholderFeed(panelUserId: string | null): {
@@ -198,14 +242,10 @@ export class ManagementService {
     profileTitle: string;
     panelUserId: string | null;
   } {
-    const line = this.buildRandomPlaceholderVlessLine();
-    const title = 'Нет подключений';
-    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(title)}\n${line}`;
-    return {
-      encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
-      profileTitle: title,
+    return this.buildNamedSubscriptionPlaceholderFeed(
       panelUserId,
-    };
+      'Нет подключений',
+    );
   }
 
   /** Запись в лог обращений к подписке (Happ и др.): IP, HWID, UA */
@@ -604,12 +644,12 @@ export class ManagementService {
     return `${base}#${encodeURIComponent(label)}`;
   }
 
-  /** Случайный несуществующий vless для заглушки «Нет подключений» */
-  private buildRandomPlaceholderVlessLine(): string {
+  /** Случайный несуществующий vless для заглушки с заданным отображаемым именем (#fragment) */
+  private buildRandomPlaceholderVlessLineForName(displayName: string): string {
     const id = randomUUID();
     const port = 10000 + Math.floor(Math.random() * 55536);
     const raw = `vless://${id}@127.0.0.1:${port}?encryption=none&security=none&type=tcp`;
-    return this.applyCustomNameToUri(raw, 'Нет подключений');
+    return this.applyCustomNameToUri(raw, displayName);
   }
 }
 

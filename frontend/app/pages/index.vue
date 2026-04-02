@@ -25,7 +25,10 @@ type UserItem = {
   enabled: boolean;
   allowAllUserAgents?: boolean;
   requireHwid?: boolean;
+  requireNoHwid?: boolean;
   createdAt: string;
+  /** ISO-8601, последний запрос подписки из логов */
+  lastSubscriptionActivityAt?: string | null;
 };
 
 const toast = useToast();
@@ -46,6 +49,16 @@ const columns: TableColumn<UserItem>[] = [
   {
     accessorKey: 'name',
     header: 'Имя'
+  },
+  {
+    accessorKey: 'lastSubscriptionActivityAt',
+    header: 'Последняя активность',
+    meta: {
+      class: {
+        th: 'text-xs whitespace-nowrap',
+        td: 'text-sm whitespace-nowrap'
+      }
+    }
   },
   {
     accessorKey: 'code',
@@ -82,6 +95,16 @@ const columns: TableColumn<UserItem>[] = [
     }
   },
   {
+    id: 'requireNoHwid',
+    header: 'Обязательно без HWID',
+    meta: {
+      class: {
+        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
+        td: 'align-middle'
+      }
+    }
+  },
+  {
     id: 'enabled',
     header: 'Статус'
   },
@@ -98,6 +121,20 @@ const columns: TableColumn<UserItem>[] = [
 ];
 
 const groupOptions = computed(() => groups.value.map(group => group.name));
+
+function formatLastSubscriptionActivity(iso: string | null | undefined): string {
+  if (!iso) {
+    return '—';
+  }
+  try {
+    return new Date(iso).toLocaleString('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  } catch {
+    return '—';
+  }
+}
 
 onMounted(async () => {
   await loadData();
@@ -264,7 +301,11 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
 
 async function patchAccessFlags(
   user: UserItem,
-  patch: { allowAllUserAgents?: boolean; requireHwid?: boolean },
+  patch: {
+    allowAllUserAgents?: boolean;
+    requireHwid?: boolean;
+    requireNoHwid?: boolean;
+  },
 ) {
   try {
     await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
@@ -276,6 +317,15 @@ async function patchAccessFlags(
     }
     if (patch.requireHwid !== undefined) {
       user.requireHwid = patch.requireHwid;
+      if (patch.requireHwid) {
+        user.requireNoHwid = false;
+      }
+    }
+    if (patch.requireNoHwid !== undefined) {
+      user.requireNoHwid = patch.requireNoHwid;
+      if (patch.requireNoHwid) {
+        user.requireHwid = false;
+      }
     }
   } catch {
     toast.add({ title: 'Не удалось сохранить настройки доступа', color: 'error' });
@@ -324,6 +374,13 @@ async function copySubscriptionLink(code: string) {
         empty="Пользователей пока нет"
         class="w-full"
       >
+        <template #lastSubscriptionActivityAt-cell="{ row }">
+          <span
+            class="text-muted tabular-nums"
+            :title="row.original.lastSubscriptionActivityAt ?? undefined"
+          >{{ formatLastSubscriptionActivity(row.original.lastSubscriptionActivityAt) }}</span>
+        </template>
+
         <template #code-cell="{ row }">
           <div class="flex items-center justify-center">
             <UTooltip text="Скопировать ссылку на подписку">
@@ -361,9 +418,26 @@ async function copySubscriptionLink(code: string) {
           >
             <div class="flex justify-center">
               <USwitch
+                :disabled="Boolean(row.original.requireNoHwid)"
                 :model-value="Boolean(row.original.requireHwid)"
                 @update:model-value="
                   patchAccessFlags(row.original, { requireHwid: Boolean($event) })
+                "
+              />
+            </div>
+          </UTooltip>
+        </template>
+
+        <template #requireNoHwid-cell="{ row }">
+          <UTooltip
+            text="Если в запросе есть HWID — заглушка «Отключите HWID». Несовместимо с «Обязательно HWID»"
+          >
+            <div class="flex justify-center">
+              <USwitch
+                :disabled="Boolean(row.original.requireHwid)"
+                :model-value="Boolean(row.original.requireNoHwid)"
+                @update:model-value="
+                  patchAccessFlags(row.original, { requireNoHwid: Boolean($event) })
                 "
               />
             </div>

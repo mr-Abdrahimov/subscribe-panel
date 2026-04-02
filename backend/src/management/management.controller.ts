@@ -65,7 +65,11 @@ export class ManagementController {
   }
 
   @Get('panel-users')
-  @ApiOperation({ summary: 'Получить список пользователей панели' })
+  @ApiOperation({
+    summary: 'Получить список пользователей панели',
+    description:
+      'В каждом элементе поле lastSubscriptionActivityAt — дата и время последнего успешного запроса подписки GET /public/sub/:code (запись в логе PanelUserAccessLog), либо null, если обращений не было.',
+  })
   listUsers() {
     return this.managementService.listUsers();
   }
@@ -86,7 +90,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: name, groupName, allowAllUserAgents (выдавать подписку всем User-Agent), requireHwid (без HWID — ответ с ошибкой). Код подписки (code) не меняется.',
+      'Частичное обновление: name, groupName, allowAllUserAgents (выдавать подписку всем User-Agent), requireHwid (без HWID — заглушка «Нет подключений»), requireNoHwid (с HWID — заглушка «Отключите HWID»; при включении сбрасывает requireHwid). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
@@ -188,12 +192,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Если код не найден, пользователь отключён, User-Agent не Happ (и не включено «Выдавать всем»), либо нет обязательного HWID — вместо списка отдаётся один случайный vless из БД не берётся, имя в клиенте «Нет подключений», profile-title то же. Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Если код не найден, пользователь отключён, User-Agent не Happ (и не включено «Выдавать всем»), нет обязательного HWID при requireHwid, либо передан HWID при requireNoHwid — вместо списка отдаётся один случайный vless (не из БД): «Нет подключений» или «Отключите HWID». Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8): либо полная подписка, либо заглушка «Нет подключений».',
+      'Тело: base64 (UTF-8): полная подписка или заглушка («Нет подключений» / «Отключите HWID»).',
   })
   async getPublicSubscription(
     @Param('code') code: string,
@@ -226,9 +230,15 @@ export class ManagementController {
     } else {
       const allowAll = user.allowAllUserAgents === true;
       const requireHwid = user.requireHwid === true;
+      const requireNoHwid = user.requireNoHwid === true;
       if (!allowAll && !ua.startsWith('Happ')) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
           user.id,
+        );
+      } else if (requireNoHwid && hasSubscriptionHwid(req)) {
+        payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
+          user.id,
+          'Отключите HWID',
         );
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(

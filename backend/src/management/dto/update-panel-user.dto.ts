@@ -37,4 +37,12 @@ export class UpdatePanelUserDto {
   @IsOptional()
   @IsBoolean()
   requireHwid?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Если true — при наличии HWID в запросе клиент получает заглушку «Отключите HWID»; при включении сбрасывает requireHwid. Несовместимо с requireHwid.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requireNoHwid?: boolean;
 }
