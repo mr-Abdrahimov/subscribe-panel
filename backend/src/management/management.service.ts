@@ -119,7 +119,7 @@ export class ManagementService {
 
   async getPublicFeedByCode(code: string): Promise<{
     encoded: string;
-    /** Только «Название для публичной подписки» из настроек группы (цепочка кандидатов); для HTTP profile-title имя пользователя панели не подставляем */
+    /** subscriptionDisplayName группы пользователя панели (PanelUser.groupName → Group); для HTTP profile-title имя пользователя не подставляем */
     profileTitle: string;
   }> {
     const user = await this.prisma.panelUser.findUnique({
@@ -130,6 +130,12 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
+    const groupTitle =
+      (await this.resolveSubscriptionDisplayNameForUserGroup(
+        user.groupName,
+      )) ?? '';
+    const profileTitle = groupTitle.trim();
+
     const connects = await this.prisma.connect.findMany({
       where: {
         status: 'ACTIVE',
@@ -138,24 +144,10 @@ export class ManagementService {
         },
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { raw: true, name: true, groupNames: true },
+      select: { raw: true, name: true },
     });
 
-    const allGroups = await this.prisma.group.findMany({
-      select: { name: true, subscriptionDisplayName: true },
-    });
-    const candidates = this.buildSubscriptionProfileGroupCandidates(
-      user.groupName,
-      connects,
-    );
-    const groupTitle =
-      this.resolveSubscriptionDisplayNameFromCandidates(
-        candidates,
-        allGroups,
-      ) ?? '';
-    const profileTitle = groupTitle.trim();
-
-    /** Фрагмент # в каждой строке — всегда кастомное имя коннекта (Connect.name). Заголовки profile-title* / profile-title — только из настроек группы (subscriptionDisplayName), без подмены именем пользователя панели */
+    /** Фрагмент # — Connect.name. profile-title* / profile-title — только subscriptionDisplayName группы, к которой привязан пользователь (настройки этой группы в админке) */
     const payload = connects
       .map((c) => this.applyCustomNameToUri(c.raw, c.name))
       .join('\n');
@@ -174,33 +166,17 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const connects = await this.prisma.connect.findMany({
-      where: {
-        status: 'ACTIVE',
-        groupNames: { has: user.groupName },
-      },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { groupNames: true },
-    });
-    const allGroups = await this.prisma.group.findMany({
-      select: { name: true, subscriptionDisplayName: true },
-    });
-    const candidates = this.buildSubscriptionProfileGroupCandidates(
-      user.groupName,
-      connects,
-    );
     const sub =
-      this.resolveSubscriptionDisplayNameFromCandidates(
-        candidates,
-        allGroups,
-      ) ?? '';
+      (await this.resolveSubscriptionDisplayNameForUserGroup(
+        user.groupName,
+      )) ?? '';
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
 
     return {
       ...user,
       subscriptionDisplayName: trimmedSub || null,
-      /** Как в заголовке profile-title ленты: только настройки группы, без имени пользователя */
+      /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,
     };
   }
@@ -250,62 +226,41 @@ export class ManagementService {
   }
 
   /**
-   * Порядок имён групп для выбора subscriptionDisplayName: сначала группа пользователя панели,
-   * затем остальные группы из коннектов ленты (в порядке коннектов и поля groupNames).
+   * Название подписки из админки для группы пользователя: PanelUser.groupName → Group.name,
+   * поле subscriptionDisplayName. Точное имя, затем NFC и регистронезависимое совпадение с Group.name.
    */
-  private buildSubscriptionProfileGroupCandidates(
-    userGroupName: string,
-    connects: { groupNames: string[] }[],
-  ): string[] {
-    const out: string[] = [];
-    const seen = new Set<string>();
-    const push = (name: string) => {
-      const t = name.trim();
-      if (!t || seen.has(t)) {
-        return;
-      }
-      seen.add(t);
-      out.push(t);
-    };
-    push(userGroupName);
-    for (const c of connects) {
-      for (const g of c.groupNames) {
-        push(g);
-      }
+  private async resolveSubscriptionDisplayNameForUserGroup(
+    panelGroupName: string,
+  ): Promise<string | null> {
+    const trimmed = panelGroupName.trim();
+    if (!trimmed) {
+      return null;
     }
-    return out;
-  }
 
-  /**
-   * Первое непустое subscriptionDisplayName среди кандидатов (совпадение имени группы:
-   * trim → точное → NFC → без учёта регистра), как при привязке PanelUser к Group.
-   */
-  private resolveSubscriptionDisplayNameFromCandidates(
-    candidates: string[],
-    groups: { name: string; subscriptionDisplayName: string | null }[],
-  ): string | null {
-    for (const raw of candidates) {
-      const trimmed = raw.trim();
-      if (!trimmed) {
-        continue;
-      }
-      const normalizedTarget = trimmed.normalize('NFC');
-      const targetLower = normalizedTarget.toLowerCase();
-      const row =
-        groups.find((g) => g.name.trim() === trimmed) ??
-        groups.find(
-          (g) => g.name.trim().normalize('NFC') === normalizedTarget,
-        ) ??
-        groups.find(
-          (g) =>
-            g.name.trim().normalize('NFC').toLowerCase() === targetLower,
-        );
-      const sub = row?.subscriptionDisplayName?.trim();
-      if (sub) {
-        return sub;
-      }
+    const exact = await this.prisma.group.findUnique({
+      where: { name: trimmed },
+      select: { subscriptionDisplayName: true },
+    });
+    if (exact) {
+      const t = exact.subscriptionDisplayName?.trim();
+      return t || null;
     }
-    return null;
+
+    const normalizedTarget = trimmed.normalize('NFC');
+    const targetLower = normalizedTarget.toLowerCase();
+    const groups = await this.prisma.group.findMany({
+      select: { name: true, subscriptionDisplayName: true },
+    });
+    const row =
+      groups.find(
+        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+      ) ??
+      groups.find(
+        (g) =>
+          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+      );
+    const sub = row?.subscriptionDisplayName?.trim();
+    return sub || null;
   }
 
   /**

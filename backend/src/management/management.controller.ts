@@ -43,7 +43,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. Поле subscriptionDisplayName — название профиля подписки: страница /sub и заголовки profile-title ленты; строки ленты (#) по-прежнему из name каждого коннекта.',
+      'Частичное обновление. Поле subscriptionDisplayName — название профиля для этой группы: для пользователей панели с PanelUser.groupName = имя группы — страница /sub и заголовки profile-title ленты. Строки ленты (#) — из name коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -100,7 +100,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle совпадает с логикой заголовка profile-title ленты: только subscriptionDisplayName из настроек (сначала группа пользователя панели, затем группы коннектов ленты). Если в настройках пусто — null, заголовки profile-title не отдаются; для страницы /sub имя пользователя панели подставляет фронт.',
+      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
@@ -110,7 +110,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Каждая строка — URI коннекта; во фрагменте (#) всегда кастомное имя коннекта из панели (Connect.name). Заголовки profile-title* / profile-title — только «Название для публичной подписки» из настроек группы (сначала группа пользователя панели, затем группы коннектов ленты). Без настройки заголовки не отправляются.",
+      "Каждая строка — URI коннекта; во фрагменте (#) — Connect.name. Заголовки profile-title* / profile-title — «Название для публичной подписки» из настроек той группы, к которой привязан пользователь (не из других групп коннектов). Если для группы не задано — заголовки не отправляются.",
   })
   @ApiResponse({
     status: 200,
