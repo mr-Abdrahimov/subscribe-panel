@@ -145,9 +145,11 @@ export class ManagementService {
       select: { raw: true, name: true },
     });
 
-    /** Имя в URI (#) — всегда из БД (Connect.name); название из настроек группы только в заголовке profile-title */
+    /** В URI (#): если для группы задано название в настройках — оно для всех строк; иначе — Connect.name из панели */
     const payload = connects
-      .map((c) => this.applyCustomNameToUri(c.raw, c.name))
+      .map((c) =>
+        this.applyCustomNameToUri(c.raw, groupTitle || c.name),
+      )
       .join('\n');
     return {
       encoded: Buffer.from(payload, 'utf-8').toString('base64'),

@@ -97,8 +97,8 @@ async function saveGroupTitle(groupId: string) {
             Название
           </h3>
           <p class="text-sm text-muted">
-            Используется как «название подписки»: заголовок страницы <code class="text-xs font-mono text-highlighted">/sub/…</code>, при запросе ленты — <code class="text-xs font-mono text-highlighted">profile-title*</code> (RFC 5987) и при необходимости <code class="text-xs font-mono text-highlighted">profile-title</code> (только ASCII).
-            Имена отдельных серверов в клиенте (фрагмент # в каждой строке) всегда берутся из поля «Название» коннекта в панели (БД).
+            Используется как «название подписки»: заголовок страницы <code class="text-xs font-mono text-highlighted">/sub/…</code>, заголовки <code class="text-xs font-mono text-highlighted">profile-title*</code> / <code class="text-xs font-mono text-highlighted">profile-title</code> при запросе base64-ленты и отображаемое имя после <code class="text-xs font-mono text-highlighted">#</code> в каждой строке подписки.
+            Если поле пустое, во фрагменте # в ленте остаётся название коннекта из панели (поле «Название» коннекта).
           </p>
         </div>
       </template>
@@ -132,7 +132,7 @@ async function saveGroupTitle(groupId: string) {
 
           <UFormField
             label="Название для публичной подписки"
-            description="Подписка / profile-title и страница /sub, не подменяет имена коннектов в ленте"
+            description="Подписка: /sub, заголовки ленты и # в строках; если пусто — в # используется имя коннекта"
             class="w-full"
           >
             <UInput

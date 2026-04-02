@@ -56,7 +56,7 @@ model Connect {
 model Group {
   id                        String   @id @default(auto()) @map("_id") @db.ObjectId
   name                      String   @unique
-  /// Название подписки для группы: страница /sub, заголовок profile-title; имена коннектов в ленте — из Connect.name
+  /// Название подписки для группы: /sub, profile-title и фрагмент # в ленте; иначе в # — Connect.name
   subscriptionDisplayName   String?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt

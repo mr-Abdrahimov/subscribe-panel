@@ -43,7 +43,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. Поле subscriptionDisplayName — название подписки (страница /sub, заголовок profile-title). Имена коннектов в ленте не меняются (поле Connect.name). Null или пустая строка — для profile-title подставляется имя пользователя панели.',
+      'Частичное обновление. Поле subscriptionDisplayName задаёт название подписки: страница /sub, заголовки profile-title, фрагмент # во всех строках ленты; если пусто — в ленте используется name каждого коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -110,12 +110,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Каждая строка — URI коннекта; в фрагменте (#) всегда подставляется кастомное имя коннекта из панели (поле name в БД). Название подписки: заголовок profile-title* (RFC 5987, значение UTF-8''…); при только ASCII дублируется profile-title.",
+      "Каждая строка — URI коннекта. Во фрагменте (#): если у группы пользователя задано «Название для публичной подписки» — оно для всех строк; иначе — поле name коннекта в БД. Заголовки profile-title* / profile-title — то же отображаемое имя подписки.",
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8, по строке на коннект). Заголовок profile-title* — название подписки (любой Unicode); profile-title — то же, если строка только из ASCII.',
+      'Тело: base64 (UTF-8). Заголовки profile-title* и при необходимости profile-title совпадают с логикой фрагмента # в строках.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const { encoded, profileTitle } =
