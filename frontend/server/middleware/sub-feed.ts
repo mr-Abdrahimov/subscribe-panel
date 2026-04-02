@@ -24,7 +24,9 @@ export default defineEventHandler(async (event) => {
   const publicBase = config.public.apiBaseUrl.replace(/\/$/, '');
   const apiRoot = internal || publicBase;
   const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}`;
-  const data = await $fetch<string>(endpoint);
+  const res = await $fetch.raw(endpoint);
+  const data = (res._data ?? '') as string;
+  const profileTitle = res.headers.get('profile-title');
   setHeader(event, 'content-type', 'text/plain; charset=utf-8');
   setHeader(
     event,
@@ -32,6 +34,9 @@ export default defineEventHandler(async (event) => {
     'private, no-store, no-cache, must-revalidate, max-age=0',
   );
   setHeader(event, 'pragma', 'no-cache');
+  if (profileTitle) {
+    setHeader(event, 'profile-title', profileTitle);
+  }
   return data;
 });
 

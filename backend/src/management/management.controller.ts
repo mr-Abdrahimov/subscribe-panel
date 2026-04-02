@@ -96,16 +96,20 @@ export class ManagementController {
   @ApiResponse({
     status: 200,
     description:
-      'Строка base64: UTF-8 текст, по строке на коннект (как в исходной подписке), с обновлённым фрагментом имени',
+      'Тело: строка base64 (UTF-8 текст, по строке на коннект). Заголовок ответа profile-title — название из настроек группы (поле «Название для публичной подписки»), при отсутствии — имя пользователя панели.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
-    const encoded = await this.managementService.getPublicFeedByCode(code);
+    const { encoded, profileTitle } =
+      await this.managementService.getPublicFeedByCode(code);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
       'Cache-Control',
       'private, no-store, no-cache, must-revalidate, max-age=0',
     );
     res.setHeader('Pragma', 'no-cache');
+    if (profileTitle) {
+      res.setHeader('profile-title', profileTitle);
+    }
     res.send(encoded);
   }
 }

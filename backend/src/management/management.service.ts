@@ -78,7 +78,11 @@ export class ManagementService {
     });
   }
 
-  async getPublicFeedByCode(code: string) {
+  async getPublicFeedByCode(code: string): Promise<{
+    encoded: string;
+    /** Для HTTP-заголовка profile-title: настройка группы или имя пользователя панели */
+    profileTitle: string;
+  }> {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },
     });
@@ -89,6 +93,7 @@ export class ManagementService {
 
     const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
     const groupTitle = groupMeta?.subscriptionDisplayName?.trim() ?? '';
+    const profileTitle = (groupTitle || user.name.trim() || '').trim();
 
     const connects = await this.prisma.connect.findMany({
       where: {
@@ -106,7 +111,10 @@ export class ManagementService {
         this.applyCustomNameToUri(c.raw, groupTitle || c.name),
       )
       .join('\n');
-    return Buffer.from(payload, 'utf-8').toString('base64');
+    return {
+      encoded: Buffer.from(payload, 'utf-8').toString('base64'),
+      profileTitle,
+    };
   }
 
   async getPublicUserByCode(code: string) {
