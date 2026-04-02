@@ -11,8 +11,9 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  routeRules: {
-    '/': { prerender: true }
+  // Nuxt Icon по умолчанию вешает API на /api/_nuxt_icon — на проде тот же префикс у Nest (Nginx → 404).
+  icon: {
+    localApiEndpoint: '/_nuxt_icon'
   },
 
   runtimeConfig: {
