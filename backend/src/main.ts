@@ -1,10 +1,11 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
@@ -28,8 +29,11 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(config.get<string>('SWAGGER_PATH') ?? 'docs', app, document);
+  const swaggerPath = config.get<string>('SWAGGER_PATH') ?? 'docs';
+  SwaggerModule.setup(swaggerPath, app, document);
 
   await app.listen(config.get<number>('PORT') ?? 3000);
+  const appUrl = (await app.getUrl()).replace('[::1]', 'localhost');
+  logger.log(`Swagger is running at ${appUrl}/${swaggerPath}`);
 }
 bootstrap();

@@ -16,8 +16,8 @@ const successMessage = ref('');
 const savedToken = ref('');
 
 const form = reactive({
-  email: '',
-  password: '',
+  email: config.public.adminEmail as string,
+  password: config.public.adminPassword as string,
   name: ''
 });
 
@@ -56,7 +56,7 @@ async function submit() {
 </script>
 
 <template>
-  <UContainer class="py-10">
+  <UContainer class="min-h-[100dvh] flex items-center justify-center py-6">
     <UCard class="mx-auto w-full max-w-md">
       <template #header>
         <div class="flex items-center justify-between gap-2">
@@ -75,17 +75,17 @@ async function submit() {
         </div>
       </template>
 
-      <form class="space-y-4" @submit.prevent="submit">
+      <form class="space-y-4 w-full" @submit.prevent="submit">
         <UFormField label="Email" required>
-          <UInput v-model="form.email" type="email" placeholder="user@example.com" />
+          <UInput v-model="form.email" class="w-full" type="email" placeholder="user@example.com" />
         </UFormField>
 
         <UFormField label="Пароль" required>
-          <UInput v-model="form.password" type="password" placeholder="Введите пароль" />
+          <UInput v-model="form.password" class="w-full" type="password" placeholder="Введите пароль" />
         </UFormField>
 
         <UFormField v-if="isRegisterMode" label="Имя">
-          <UInput v-model="form.name" placeholder="Ваше имя" />
+          <UInput v-model="form.name" class="w-full" placeholder="Ваше имя" />
         </UFormField>
 
         <UButton type="submit" :loading="pending" block>
