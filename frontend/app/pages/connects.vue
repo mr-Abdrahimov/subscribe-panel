@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import type { RowSelectionState } from '@tanstack/table-core';
 import { useSortable, moveArrayElement } from '@vueuse/integrations/useSortable';
 
 definePageMeta({
@@ -46,6 +47,14 @@ const selectedNameConnectId = ref<string | null>(null);
 const editNameValue = ref('');
 const isDeleteConfirmOpen = ref(false);
 const deleteConnectId = ref<string | null>(null);
+
+const rowSelection = ref<RowSelectionState>({});
+const bulkGroupNames = ref<string[]>([]);
+const bulkLoading = ref(false);
+
+const selectedConnectsCount = computed(
+  () => Object.values(rowSelection.value).filter(Boolean).length
+);
 
 onMounted(() => {
   loadConnects();
@@ -204,6 +213,94 @@ async function saveConnectGroups() {
   }
 }
 
+function getSelectedConnectIds(): string[] {
+  return Object.entries(rowSelection.value)
+    .filter(([, selected]) => selected)
+    .map(([id]) => id);
+}
+
+function clearRowSelection() {
+  rowSelection.value = {};
+}
+
+async function bulkAddGroupsToSelection() {
+  const ids = getSelectedConnectIds();
+  const toAdd = bulkGroupNames.value.filter(Boolean);
+  if (!ids.length) {
+    return;
+  }
+  if (!toAdd.length) {
+    toast.add({ title: 'Выберите группы', color: 'warning' });
+    return;
+  }
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группы', color: 'error' });
+    return;
+  }
+
+  const snapshots = new Map(ids.map((id) => [id, [...getConnectGroups(id)]] as const));
+  bulkLoading.value = true;
+  try {
+    await Promise.all(
+      ids.map(async (id) => {
+        const current = snapshots.get(id)!;
+        const next = [...new Set([...current, ...toAdd])];
+        await $fetch(`${config.public.apiBaseUrl}/connects/${id}/groups`, {
+          method: 'PATCH',
+          body: { groupNames: next }
+        });
+      })
+    );
+    toast.add({ title: 'Группы добавлены к выбранным коннектам', color: 'success' });
+    bulkGroupNames.value = [];
+    clearRowSelection();
+    await loadConnects();
+  } catch {
+    toast.add({ title: 'Не удалось добавить группы', color: 'error' });
+  } finally {
+    bulkLoading.value = false;
+  }
+}
+
+async function bulkRemoveGroupsFromSelection() {
+  const ids = getSelectedConnectIds();
+  const toRemove = new Set(bulkGroupNames.value.filter(Boolean));
+  if (!ids.length) {
+    return;
+  }
+  if (!toRemove.size) {
+    toast.add({ title: 'Выберите группы для удаления', color: 'warning' });
+    return;
+  }
+
+  const snapshots = new Map(ids.map((id) => [id, [...getConnectGroups(id)]] as const));
+  bulkLoading.value = true;
+  try {
+    await Promise.all(
+      ids.map(async (id) => {
+        const current = snapshots.get(id)!;
+        const next = current.filter((g) => !toRemove.has(g));
+        await $fetch(`${config.public.apiBaseUrl}/connects/${id}/groups`, {
+          method: 'PATCH',
+          body: { groupNames: next }
+        });
+      })
+    );
+    toast.add({ title: 'Группы убраны у выбранных коннектов', color: 'success' });
+    bulkGroupNames.value = [];
+    clearRowSelection();
+    await loadConnects();
+  } catch {
+    toast.add({ title: 'Не удалось убрать группы', color: 'error' });
+  } finally {
+    bulkLoading.value = false;
+  }
+}
+
+function getConnectRowId(row: ConnectRow) {
+  return row.id
+}
+
 async function syncOrder() {
   try {
     await $fetch(`${config.public.apiBaseUrl}/connects/reorder`, {
@@ -225,6 +322,16 @@ const columns: TableColumn<ConnectRow>[] = [
       class: {
         th: 'w-10',
         td: 'w-10'
+      }
+    }
+  },
+  {
+    id: 'select',
+    header: '',
+    meta: {
+      class: {
+        th: 'w-12',
+        td: 'w-12'
       }
     }
   },
@@ -281,10 +388,59 @@ const columns: TableColumn<ConnectRow>[] = [
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
+      <div
+        v-if="selectedConnectsCount > 0"
+        class="flex flex-col gap-3 border-b border-default p-4 sm:flex-row sm:flex-wrap sm:items-end"
+      >
+        <p class="text-sm text-muted sm:mr-auto">
+          Выбрано коннектов: <span class="font-medium text-highlighted">{{ selectedConnectsCount }}</span>
+        </p>
+        <UFormField label="Группы" class="w-full min-w-0 sm:max-w-md sm:flex-1">
+          <USelectMenu
+            v-model="bulkGroupNames"
+            :items="groups.map((group) => group.name)"
+            multiple
+            class="w-full"
+            placeholder="Выберите группы"
+          />
+        </UFormField>
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            size="sm"
+            :loading="bulkLoading"
+            :disabled="!bulkGroupNames.length"
+            @click="bulkAddGroupsToSelection"
+          >
+            Добавить группы
+          </UButton>
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="soft"
+            :loading="bulkLoading"
+            :disabled="!bulkGroupNames.length"
+            @click="bulkRemoveGroupsFromSelection"
+          >
+            Убрать группы
+          </UButton>
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            :disabled="bulkLoading"
+            @click="clearRowSelection"
+          >
+            Снять выбор
+          </UButton>
+        </div>
+      </div>
+
       <UTable
+        v-model:row-selection="rowSelection"
         :data="connects"
         :columns="columns"
         :loading="loading"
+        :get-row-id="getConnectRowId"
         empty="Коннектов пока нет"
         :ui="{ tbody: 'connects-table-tbody' }"
         class="w-full"
@@ -292,6 +448,24 @@ const columns: TableColumn<ConnectRow>[] = [
         <template #drag-cell>
           <div class="connect-drag-handle inline-flex cursor-grab active:cursor-grabbing text-muted">
             <UIcon name="i-lucide-grip-vertical" class="size-4" />
+          </div>
+        </template>
+
+        <template #select-header="{ table }">
+          <div class="flex justify-center" @click.stop>
+            <UCheckbox
+              :model-value="table.getIsAllPageRowsSelected() ? true : table.getIsSomePageRowsSelected() ? 'indeterminate' : false"
+              @update:model-value="(value) => table.toggleAllPageRowsSelected(!!value)"
+            />
+          </div>
+        </template>
+
+        <template #select-cell="{ row }">
+          <div class="flex justify-center" @click.stop>
+            <UCheckbox
+              :model-value="row.getIsSelected()"
+              @update:model-value="(value) => row.toggleSelected(!!value)"
+            />
           </div>
         </template>
 
