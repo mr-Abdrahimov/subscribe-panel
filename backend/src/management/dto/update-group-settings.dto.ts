@@ -4,7 +4,7 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 export class UpdateGroupSettingsDto {
   @ApiPropertyOptional({
     description:
-      'Название подписки для группы: страница /sub/{code}, заголовки profile-title ленты и фрагмент # в каждой строке. Пустая строка или null — в # подставляется name коннекта, в profile-title — имя пользователя панели.',
+      'Название профиля подписки для группы: страница /sub/{code} и заголовки profile-title при запросе ленты. Имена серверов в строках подписки (фрагмент #) не меняются — из поля name коннекта. Пусто/null — в profile-title подставляется имя пользователя панели.',
     example: 'Корпоративный VPN',
     maxLength: 200,
     nullable: true,

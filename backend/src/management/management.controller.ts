@@ -43,7 +43,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. Поле subscriptionDisplayName задаёт название подписки: страница /sub, заголовки profile-title, фрагмент # во всех строках ленты; если пусто — в ленте используется name каждого коннекта.',
+      'Частичное обновление. Поле subscriptionDisplayName — название профиля подписки: страница /sub и заголовки profile-title ленты; строки ленты (#) по-прежнему из name каждого коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -110,12 +110,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Каждая строка — URI коннекта. Во фрагменте (#): если у группы пользователя задано «Название для публичной подписки» — оно для всех строк; иначе — поле name коннекта в БД. Заголовки profile-title* / profile-title — то же отображаемое имя подписки.",
+      "Каждая строка — URI коннекта; во фрагменте (#) всегда кастомное имя коннекта из панели (Connect.name). Заголовки profile-title* / profile-title — «название профиля подписки»: из настроек группы или имя пользователя панели, не из коннектов.",
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8). Заголовки profile-title* и при необходимости profile-title совпадают с логикой фрагмента # в строках.',
+      'Тело: base64 (UTF-8). Заголовки profile-title — настройка группы / имя пользователя; в строках ленты # — только name коннекта.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const { encoded, profileTitle } =
