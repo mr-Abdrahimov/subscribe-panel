@@ -95,10 +95,12 @@ export class ManagementService {
         },
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { raw: true },
+      select: { raw: true, name: true },
     });
 
-    const payload = connects.map((c) => c.raw).join('\n');
+    const payload = connects
+      .map((c) => this.applyCustomNameToUri(c.raw, c.name))
+      .join('\n');
     return Buffer.from(payload, 'utf-8').toString('base64');
   }
 
@@ -126,6 +128,20 @@ export class ManagementService {
     if (!connect) {
       throw new NotFoundException('Коннект не найден');
     }
+  }
+
+  /**
+   * Клиенты VPN (vless/vmess и др.) берут отображаемое имя из фрагмента URI после `#`.
+   * Подставляем кастомное название из панели, не меняя саму ссылку.
+   */
+  private applyCustomNameToUri(raw: string, displayName: string): string {
+    const label = displayName.trim();
+    if (!label || !raw.trim()) {
+      return raw;
+    }
+    const hash = raw.indexOf('#');
+    const base = hash >= 0 ? raw.slice(0, hash) : raw;
+    return `${base}#${encodeURIComponent(label)}`;
   }
 }
 

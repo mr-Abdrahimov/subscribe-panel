@@ -63,8 +63,16 @@ export class ManagementController {
   }
 
   @Get('public/sub/:code')
-  @ApiOperation({ summary: 'Получить base64-подписку по коду пользователя' })
-  @ApiResponse({ status: 200, description: 'Строка base64 с набором коннектов' })
+  @ApiOperation({
+    summary: 'Получить base64-подписку по коду пользователя',
+    description:
+      'Каждая строка — URI коннекта; в фрагменте (#) подставляется кастомное название из панели, чтобы в VPN-клиентах отображалось оно, а не имя из исходной подписки.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Строка base64: UTF-8 текст, по строке на коннект (как в исходной подписке), с обновлённым фрагментом имени',
+  })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const encoded = await this.managementService.getPublicFeedByCode(code);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
