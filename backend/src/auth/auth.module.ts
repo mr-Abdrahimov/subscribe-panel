@@ -11,7 +11,8 @@ import { AuthService } from './auth.service';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const expiresIn = (config.get<string>('JWT_EXPIRES_IN') ?? '7d') as StringValue;
+        const expiresIn = (config.get<string>('JWT_EXPIRES_IN') ??
+          '7d') as StringValue;
 
         return {
           secret: config.get<string>('JWT_SECRET') ?? 'dev-secret',
@@ -26,4 +27,3 @@ import { AuthService } from './auth.service';
   providers: [AuthService, AdminSeedService],
 })
 export class AuthModule {}
-

@@ -8,7 +8,9 @@ definePageMeta({
 
 type ConnectRow = {
   id: string;
+  originalName: string;
   name: string;
+  groupNames: string[];
   status: 'ACTIVE' | 'INACTIVE';
   protocol: string;
   createdAt: string;
@@ -21,17 +23,33 @@ type ConnectRow = {
   };
 };
 
+type GroupItem = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
 const config = useRuntimeConfig();
 const toast = useToast();
 const loading = ref(false);
 const connects = ref<ConnectRow[]>([]);
+const groups = ref<GroupItem[]>([]);
 
 const isTagModalOpen = ref(false);
 const tagValue = ref('');
 const selectedConnectId = ref<string | null>(null);
+const isGroupModalOpen = ref(false);
+const selectedGroupConnectId = ref<string | null>(null);
+const selectedGroupNames = ref<string[]>([]);
+const isNameModalOpen = ref(false);
+const selectedNameConnectId = ref<string | null>(null);
+const editNameValue = ref('');
+const isDeleteConfirmOpen = ref(false);
+const deleteConnectId = ref<string | null>(null);
 
 onMounted(() => {
   loadConnects();
+  loadGroups();
 });
 
 useSortable('.connects-table-tbody', connects, {
@@ -79,6 +97,20 @@ async function removeConnect(id: string) {
   }
 }
 
+function askRemoveConnect(id: string) {
+  deleteConnectId.value = id;
+  isDeleteConfirmOpen.value = true;
+}
+
+async function confirmRemoveConnect() {
+  if (!deleteConnectId.value) {
+    return;
+  }
+  await removeConnect(deleteConnectId.value);
+  isDeleteConfirmOpen.value = false;
+  deleteConnectId.value = null;
+}
+
 function openAddTag(id: string) {
   selectedConnectId.value = id;
   tagValue.value = '';
@@ -102,6 +134,73 @@ async function submitTag() {
     await loadConnects();
   } catch {
     toast.add({ title: 'Не удалось добавить тэг', color: 'error' });
+  }
+}
+
+async function loadGroups() {
+  try {
+    groups.value = await $fetch<GroupItem[]>(`${config.public.apiBaseUrl}/groups`);
+  } catch {
+    toast.add({ title: 'Не удалось загрузить группы', color: 'error' });
+  }
+}
+
+function getConnectGroups(id: string) {
+  return connects.value.find(item => item.id === id)?.groupNames ?? [];
+}
+
+function openBindGroups(id: string) {
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группы', color: 'error' });
+    return;
+  }
+  selectedGroupConnectId.value = id;
+  selectedGroupNames.value = [...getConnectGroups(id)];
+  isGroupModalOpen.value = true;
+}
+
+function openEditName(connect: ConnectRow) {
+  selectedNameConnectId.value = connect.id;
+  editNameValue.value = connect.name;
+  isNameModalOpen.value = true;
+}
+
+async function saveConnectName() {
+  const name = editNameValue.value.trim();
+  if (!selectedNameConnectId.value || !name) {
+    toast.add({ title: 'Введите название', color: 'error' });
+    return;
+  }
+
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/connects/${selectedNameConnectId.value}/name`, {
+      method: 'PATCH',
+      body: { name },
+    });
+    toast.add({ title: 'Название обновлено', color: 'success' });
+    isNameModalOpen.value = false;
+    await loadConnects();
+  } catch {
+    toast.add({ title: 'Не удалось обновить название', color: 'error' });
+  }
+}
+
+async function saveConnectGroups() {
+  if (!selectedGroupConnectId.value) {
+    return;
+  }
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/connects/${selectedGroupConnectId.value}/groups`, {
+      method: 'PATCH',
+      body: {
+        groupNames: selectedGroupNames.value
+      }
+    });
+    isGroupModalOpen.value = false;
+    toast.add({ title: 'Группы для коннекта обновлены', color: 'success' });
+    await loadConnects();
+  } catch {
+    toast.add({ title: 'Не удалось обновить группы коннекта', color: 'error' });
   }
 }
 
@@ -134,6 +233,10 @@ const columns: TableColumn<ConnectRow>[] = [
     header: 'Подписка'
   },
   {
+    accessorKey: 'originalName',
+    header: 'Оригинальное название'
+  },
+  {
     accessorKey: 'name',
     header: 'Название'
   },
@@ -144,6 +247,10 @@ const columns: TableColumn<ConnectRow>[] = [
   {
     accessorKey: 'protocol',
     header: 'Протокол'
+  },
+  {
+    id: 'groups',
+    header: 'Группы'
   },
   {
     accessorKey: 'createdAt',
@@ -192,18 +299,47 @@ const columns: TableColumn<ConnectRow>[] = [
           {{ row.original.subscription.title }}
         </template>
 
-        <template #status-cell="{ row }">
+        <template #name-cell="{ row }">
           <UButton
             size="xs"
             color="neutral"
             variant="ghost"
-            :icon="row.original.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
-            @click="toggleStatus(row.original.id)"
-          />
+            class="px-0"
+            @click="openEditName(row.original)"
+          >
+            {{ row.original.name }}
+          </UButton>
+        </template>
+
+        <template #status-cell="{ row }">
+          <UTooltip :text="row.original.status === 'ACTIVE' ? 'Отключить коннект' : 'Включить коннект'">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :icon="row.original.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
+              @click="toggleStatus(row.original.id)"
+            />
+          </UTooltip>
         </template>
 
         <template #protocol-cell="{ row }">
           {{ row.original.protocol.toUpperCase() }}
+        </template>
+
+        <template #groups-cell="{ row }">
+          <div class="flex flex-wrap gap-1">
+            <UBadge
+              v-for="group in getConnectGroups(row.original.id)"
+              :key="`${row.original.id}-${group}`"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+            >
+              {{ group }}
+            </UBadge>
+            <span v-if="getConnectGroups(row.original.id).length === 0" class="text-xs text-muted">Не привязан</span>
+          </div>
         </template>
 
         <template #createdAt-cell="{ row }">
@@ -214,12 +350,15 @@ const columns: TableColumn<ConnectRow>[] = [
 
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
-            <UButton size="xs" color="error" variant="soft" @click="removeConnect(row.original.id)">
-              Удалить
-            </UButton>
-            <UButton size="xs" color="primary" variant="soft" @click="openAddTag(row.original.id)">
-              Добавить тэг
-            </UButton>
+            <UTooltip text="Добавить тэг">
+              <UButton size="xs" color="primary" variant="ghost" icon="i-lucide-tag" @click="openAddTag(row.original.id)" />
+            </UTooltip>
+            <UTooltip text="Привязать к группам">
+              <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-users-round" @click="openBindGroups(row.original.id)" />
+            </UTooltip>
+            <UTooltip text="Удалить коннект">
+              <UButton size="xs" color="error" variant="ghost" icon="i-lucide-trash" @click="askRemoveConnect(row.original.id)" />
+            </UTooltip>
           </div>
         </template>
       </UTable>
@@ -238,6 +377,64 @@ const columns: TableColumn<ConnectRow>[] = [
           </UButton>
           <UButton @click="submitTag">
             Сохранить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isGroupModalOpen" title="Привязать коннект к группам">
+      <template #body>
+        <UFormField label="Группы">
+          <USelectMenu
+            v-model="selectedGroupNames"
+            :items="groups.map(group => group.name)"
+            multiple
+            class="w-full"
+            placeholder="Выберите группы"
+          />
+        </UFormField>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="isGroupModalOpen = false">
+            Отмена
+          </UButton>
+          <UButton @click="saveConnectGroups">
+            Сохранить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isNameModalOpen" title="Редактировать название">
+      <template #body>
+        <UFormField label="Кастомное название" required>
+          <UInput v-model="editNameValue" class="w-full" placeholder="Введите название" />
+        </UFormField>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="isNameModalOpen = false">
+            Отмена
+          </UButton>
+          <UButton @click="saveConnectName">
+            Сохранить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isDeleteConfirmOpen" title="Подтверждение удаления">
+      <template #body>
+        <p>Вы действительно хотите удалить этот коннект?</p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="isDeleteConfirmOpen = false">
+            Отмена
+          </UButton>
+          <UButton color="error" @click="confirmRemoveConnect">
+            Да, удалить
           </UButton>
         </div>
       </template>

@@ -93,6 +93,18 @@ export class ConnectsService {
     });
   }
 
+  async updateName(id: string, name: string) {
+    await this.normalizeLegacyConnects();
+    await this.ensureExists(id);
+
+    return this.prisma.connect.update({
+      where: { id },
+      data: {
+        name: name.trim(),
+      },
+    });
+  }
+
   async remove(id: string) {
     await this.normalizeLegacyConnects();
     await this.ensureExists(id);
@@ -166,9 +178,31 @@ export class ConnectsService {
         },
         {
           q: {
+            $or: [{ originalName: null }, { originalName: { $exists: false } }],
+          },
+          u: [
+            {
+              $set: {
+                originalName: {
+                  $ifNull: ['$name', 'Без названия'],
+                },
+              },
+            },
+          ],
+          multi: true,
+        },
+        {
+          q: {
             $or: [{ sortOrder: null }, { sortOrder: { $exists: false } }],
           },
           u: { $set: { sortOrder: 0 } },
+          multi: true,
+        },
+        {
+          q: {
+            $or: [{ groupNames: null }, { groupNames: { $exists: false } }],
+          },
+          u: { $set: { groupNames: [] } },
           multi: true,
         },
       ],
@@ -177,4 +211,3 @@ export class ConnectsService {
     this.legacyNormalized = true;
   }
 }
-

@@ -63,24 +63,80 @@ export class SubscriptionsService {
     const response = await fetch(subscription.url);
     const text = await response.text();
     const links = this.parseSubscriptionPayload(text);
-
-    await this.prisma.connect.deleteMany({
+    const existingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
+      select: {
+        id: true,
+        raw: true,
+        name: true,
+        originalName: true,
+        sortOrder: true,
+      },
     });
 
-    if (links.length > 0) {
-      await this.prisma.connect.createMany({
-        data: links.map((link) => ({
-          name: this.extractConnectName(link),
-          raw: link,
-          protocol: this.extractProtocol(link),
-          status: 'ACTIVE',
-          hidden: false,
-          tags: [],
-          sortOrder: 0,
-          subscriptionId: id,
-        })),
+    const incomingByRaw = new Map(
+      links.map((raw) => [
+        raw,
+        {
+          raw,
+          originalName: this.extractConnectName(raw),
+          protocol: this.extractProtocol(raw),
+        },
+      ]),
+    );
+
+    const existingByRaw = new Map(
+      existingConnects.map((connect) => [connect.raw, connect]),
+    );
+
+    const toDeleteIds = existingConnects
+      .filter((connect) => !incomingByRaw.has(connect.raw))
+      .map((connect) => connect.id);
+
+    if (toDeleteIds.length > 0) {
+      await this.prisma.connect.deleteMany({
+        where: {
+          id: {
+            in: toDeleteIds,
+          },
+        },
       });
+    }
+
+    let nextSortOrder = existingConnects.reduce(
+      (max, item) => (item.sortOrder > max ? item.sortOrder : max),
+      0,
+    );
+
+    for (const [raw, incoming] of incomingByRaw) {
+      const existing = existingByRaw.get(raw);
+      if (!existing) {
+        nextSortOrder += 1;
+
+        await this.prisma.connect.create({
+          data: {
+            originalName: incoming.originalName,
+            name: incoming.originalName,
+            raw: incoming.raw,
+            protocol: incoming.protocol,
+            status: 'ACTIVE',
+            hidden: false,
+            tags: [],
+            sortOrder: nextSortOrder,
+            subscriptionId: id,
+          },
+        });
+        continue;
+      }
+
+      if (existing.originalName !== incoming.originalName) {
+        await this.prisma.connect.update({
+          where: { id: existing.id },
+          data: {
+            originalName: incoming.originalName,
+          },
+        });
+      }
     }
 
     const updatedSubscription = await this.prisma.subscription.update({
@@ -162,4 +218,3 @@ export class SubscriptionsService {
     return scheme || 'unknown';
   }
 }
-

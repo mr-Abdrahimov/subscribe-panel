@@ -12,4 +12,3 @@ export class ReorderConnectsDto {
   @IsString({ each: true })
   ids: string[];
 }
-

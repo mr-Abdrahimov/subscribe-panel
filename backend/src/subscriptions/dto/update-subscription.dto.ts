@@ -14,4 +14,3 @@ export class UpdateSubscriptionDto {
   @IsUrl({ require_protocol: true })
   url: string;
 }
-

@@ -39,7 +39,9 @@ model Subscription {
 
 model Connect {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  originalName   String
   name           String
+  groupNames     String[]     @default([])
   raw            String
   protocol       String
   status         ConnectStatus @default(ACTIVE)
@@ -49,5 +51,22 @@ model Connect {
   createdAt      DateTime     @default(now())
   subscriptionId String       @db.ObjectId
   subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+}
+
+model Group {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PanelUser {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  code      String   @unique
+  groupName String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 

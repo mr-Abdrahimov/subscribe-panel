@@ -12,6 +12,7 @@ type GroupItem = {
 };
 
 const toast = useToast();
+const config = useRuntimeConfig();
 const groups = ref<GroupItem[]>([]);
 const loading = ref(false);
 const isModalOpen = ref(false);
@@ -32,27 +33,18 @@ const columns: TableColumn<GroupItem>[] = [
   }
 ];
 
-onMounted(() => {
-  loadGroups();
+onMounted(async () => {
+  await loadGroups();
 });
 
-function loadGroups() {
+async function loadGroups() {
   loading.value = true;
   try {
-    if (import.meta.client) {
-      const raw = localStorage.getItem('groups');
-      groups.value = raw ? JSON.parse(raw) as GroupItem[] : [];
-    }
+    groups.value = await $fetch<GroupItem[]>(`${config.public.apiBaseUrl}/groups`);
   } catch {
     toast.add({ title: 'Не удалось загрузить группы', color: 'error' });
   } finally {
     loading.value = false;
-  }
-}
-
-function persistGroups() {
-  if (import.meta.client) {
-    localStorage.setItem('groups', JSON.stringify(groups.value));
   }
 }
 
@@ -61,27 +53,36 @@ function openCreate() {
   isModalOpen.value = true;
 }
 
-function addGroup() {
+async function addGroup() {
   const name = groupName.value.trim();
   if (!name) {
     toast.add({ title: 'Введите название группы', color: 'error' });
     return;
   }
 
-  groups.value.unshift({
-    id: crypto.randomUUID(),
-    name,
-    createdAt: new Date().toISOString()
-  });
-  persistGroups();
-  isModalOpen.value = false;
-  toast.add({ title: 'Группа добавлена', color: 'success' });
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/groups`, {
+      method: 'POST',
+      body: { name }
+    });
+    isModalOpen.value = false;
+    toast.add({ title: 'Группа добавлена', color: 'success' });
+    await loadGroups();
+  } catch {
+    toast.add({ title: 'Не удалось добавить группу', color: 'error' });
+  }
 }
 
-function removeGroup(id: string) {
-  groups.value = groups.value.filter(item => item.id !== id);
-  persistGroups();
-  toast.add({ title: 'Группа удалена', color: 'success' });
+async function removeGroup(id: string) {
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/groups/${id}`, {
+      method: 'DELETE'
+    });
+    toast.add({ title: 'Группа удалена', color: 'success' });
+    await loadGroups();
+  } catch {
+    toast.add({ title: 'Не удалось удалить группу', color: 'error' });
+  }
 }
 </script>
 

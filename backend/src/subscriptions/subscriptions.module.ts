@@ -7,4 +7,3 @@ import { SubscriptionsService } from './subscriptions.service';
   providers: [SubscriptionsService],
 })
 export class SubscriptionsModule {}
-

@@ -7,4 +7,3 @@ import { ConnectsService } from './connects.service';
   providers: [ConnectsService],
 })
 export class ConnectsModule {}
-

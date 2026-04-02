@@ -16,4 +16,3 @@ export class RegisterDto {
   @IsString()
   name?: string;
 }
-

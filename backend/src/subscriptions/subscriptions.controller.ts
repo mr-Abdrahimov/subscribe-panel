@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
@@ -32,7 +40,10 @@ export class SubscriptionsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Удалить подписку' })
-  @ApiResponse({ status: 200, description: 'Подписка и связанные коннекты удалены' })
+  @ApiResponse({
+    status: 200,
+    description: 'Подписка и связанные коннекты удалены',
+  })
   remove(@Param('id') id: string) {
     return this.subscriptionsService.remove(id);
   }
@@ -47,4 +58,3 @@ export class SubscriptionsController {
     return this.subscriptionsService.fetchConnects(id);
   }
 }
-

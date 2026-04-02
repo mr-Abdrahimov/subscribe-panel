@@ -21,6 +21,7 @@ type UserItem = {
 };
 
 const toast = useToast();
+const config = useRuntimeConfig();
 const loading = ref(false);
 const users = ref<UserItem[]>([]);
 const groups = ref<GroupItem[]>([]);
@@ -55,32 +56,23 @@ const columns: TableColumn<UserItem>[] = [
 
 const groupOptions = computed(() => groups.value.map(group => group.name));
 
-onMounted(() => {
-  loadData();
+onMounted(async () => {
+  await loadData();
 });
 
-function loadData() {
+async function loadData() {
   loading.value = true;
   try {
-    if (!import.meta.client) {
-      return;
-    }
-
-    const rawGroups = localStorage.getItem('groups');
-    groups.value = rawGroups ? JSON.parse(rawGroups) as GroupItem[] : [];
-
-    const rawUsers = localStorage.getItem('users');
-    users.value = rawUsers ? JSON.parse(rawUsers) as UserItem[] : [];
+    const [groupsData, usersData] = await Promise.all([
+      $fetch<GroupItem[]>(`${config.public.apiBaseUrl}/groups`),
+      $fetch<UserItem[]>(`${config.public.apiBaseUrl}/panel-users`)
+    ]);
+    groups.value = groupsData;
+    users.value = usersData;
   } catch {
     toast.add({ title: 'Не удалось загрузить данные пользователей', color: 'error' });
   } finally {
     loading.value = false;
-  }
-}
-
-function persistUsers() {
-  if (import.meta.client) {
-    localStorage.setItem('users', JSON.stringify(users.value));
   }
 }
 
@@ -101,7 +93,7 @@ function openCreate() {
   isModalOpen.value = true;
 }
 
-function submitUser() {
+async function submitUser() {
   const name = formName.value.trim();
   if (!name) {
     toast.add({ title: 'Введите имя пользователя', color: 'error' });
@@ -113,28 +105,48 @@ function submitUser() {
     return;
   }
 
-  users.value.unshift({
-    id: crypto.randomUUID(),
-    name,
-    code: formCode.value,
-    groupName: formGroupName.value,
-    enabled: true,
-    createdAt: new Date().toISOString()
-  });
-  persistUsers();
-  isModalOpen.value = false;
-  toast.add({ title: 'Пользователь добавлен', color: 'success' });
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users`, {
+      method: 'POST',
+      body: {
+        name,
+        code: formCode.value,
+        groupName: formGroupName.value
+      }
+    });
+    isModalOpen.value = false;
+    toast.add({ title: 'Пользователь добавлен', color: 'success' });
+    await loadData();
+  } catch {
+    toast.add({ title: 'Не удалось добавить пользователя', color: 'error' });
+  }
 }
 
-function removeUser(id: string) {
-  users.value = users.value.filter(item => item.id !== id);
-  persistUsers();
-  toast.add({ title: 'Пользователь удален', color: 'success' });
+async function removeUser(id: string) {
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${id}`, {
+      method: 'DELETE'
+    });
+    toast.add({ title: 'Пользователь удален', color: 'success' });
+    await loadData();
+  } catch {
+    toast.add({ title: 'Не удалось удалить пользователя', color: 'error' });
+  }
 }
 
-function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
-  user.enabled = Boolean(value);
-  persistUsers();
+async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
+  if (Boolean(value) === user.enabled) {
+    return;
+  }
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}/toggle`, {
+      method: 'PATCH'
+    });
+    user.enabled = Boolean(value);
+  } catch {
+    toast.add({ title: 'Не удалось изменить статус пользователя', color: 'error' });
+    await loadData();
+  }
 }
 </script>
 

@@ -1,8 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AddTagDto } from './dto/add-tag.dto';
 import { ConnectsService } from './connects.service';
 import { ReorderConnectsDto } from './dto/reorder-connects.dto';
+import { UpdateConnectNameDto } from './dto/update-connect-name.dto';
 
 @ApiTags('connects')
 @Controller('connects')
@@ -25,7 +34,10 @@ export class ConnectsController {
 
   @Patch(':id/hide')
   @ApiOperation({ summary: 'Переключить видимость коннекта (Скрытый/Видимый)' })
-  @ApiResponse({ status: 200, description: 'Видимость коннекта успешно изменена' })
+  @ApiResponse({
+    status: 200,
+    description: 'Видимость коннекта успешно изменена',
+  })
   hide(@Param('id') id: string) {
     return this.connectsService.hide(id);
   }
@@ -37,6 +49,16 @@ export class ConnectsController {
     return this.connectsService.addTag(id, dto.tag);
   }
 
+  @Patch(':id/name')
+  @ApiOperation({ summary: 'Обновить кастомное название коннекта' })
+  @ApiResponse({
+    status: 200,
+    description: 'Название коннекта успешно обновлено',
+  })
+  updateName(@Param('id') id: string, @Body() dto: UpdateConnectNameDto) {
+    return this.connectsService.updateName(id, dto.name);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Удалить коннект' })
   @ApiResponse({ status: 200, description: 'Коннект успешно удален' })
@@ -46,9 +68,11 @@ export class ConnectsController {
 
   @Patch('reorder')
   @ApiOperation({ summary: 'Обновить порядок коннектов' })
-  @ApiResponse({ status: 200, description: 'Порядок коннектов успешно обновлен' })
+  @ApiResponse({
+    status: 200,
+    description: 'Порядок коннектов успешно обновлен',
+  })
   reorder(@Body() dto: ReorderConnectsDto) {
     return this.connectsService.reorder(dto.ids);
   }
 }
-

@@ -7,4 +7,3 @@ export class AddTagDto {
   @MinLength(1)
   tag: string;
 }
-

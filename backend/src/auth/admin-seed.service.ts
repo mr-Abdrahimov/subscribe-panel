@@ -55,4 +55,3 @@ export class AdminSeedService implements OnModuleInit {
     this.logger.log(`Admin user ensured: ${email}`);
   }
 }
-

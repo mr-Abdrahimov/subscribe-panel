@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui';
+
 definePageMeta({
   layout: 'dashboard'
 });
@@ -34,6 +36,30 @@ const subscriptions = ref<SubscriptionItem[]>([]);
 
 const isConnectsModalOpen = ref(false);
 const fetchedConnects = ref<FetchedConnect[]>([]);
+const isDeleteConfirmOpen = ref(false);
+const deleteSubscriptionId = ref<string | null>(null);
+const columns: TableColumn<SubscriptionItem>[] = [
+  {
+    accessorKey: 'title',
+    header: 'Название'
+  },
+  {
+    accessorKey: 'url',
+    header: 'Ссылка'
+  },
+  {
+    accessorKey: 'createdAt',
+    header: 'Дата добавления'
+  },
+  {
+    id: 'lastFetchedAt',
+    header: 'Получено'
+  },
+  {
+    id: 'actions',
+    header: 'Действия'
+  }
+];
 
 onMounted(() => {
   loadSubscriptions();
@@ -109,6 +135,20 @@ async function removeItem(id: string) {
   }
 }
 
+function askRemoveItem(id: string) {
+  deleteSubscriptionId.value = id;
+  isDeleteConfirmOpen.value = true;
+}
+
+async function confirmRemoveItem() {
+  if (!deleteSubscriptionId.value) {
+    return;
+  }
+  await removeItem(deleteSubscriptionId.value);
+  isDeleteConfirmOpen.value = false;
+  deleteSubscriptionId.value = null;
+}
+
 async function fetchConnects(id: string) {
   try {
     const response = await $fetch<FetchConnectsResponse>(
@@ -156,146 +196,69 @@ async function loadSubscriptions() {
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
-      <div v-if="loading" class="p-4">
-        <USkeleton class="h-10 w-full" />
-      </div>
+      <UTable
+        :data="subscriptions"
+        :columns="columns"
+        :loading="loading"
+        empty="Подписок пока нет"
+        class="w-full"
+      >
+        <template #url-cell="{ row }">
+          <a
+            :href="row.original.url"
+            target="_blank"
+            rel="noreferrer"
+            class="text-primary hover:underline break-all"
+          >
+            {{ row.original.url }}
+          </a>
+        </template>
 
-      <div class="hidden md:block px-4 pb-4">
-        <div class="grid grid-cols-[1fr_2fr_1fr_1fr_1.3fr] gap-3 border-b py-3 text-sm font-medium">
-          <div>Название</div>
-          <div>Ссылка</div>
-          <div>Дата добавления</div>
-          <div>Получено</div>
-          <div>Действия</div>
-        </div>
+        <template #createdAt-cell="{ row }">
+          <span class="whitespace-nowrap">
+            {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}
+          </span>
+        </template>
 
-        <div v-if="subscriptions.length === 0 && !loading" class="py-6 text-center text-muted">
-          Подписок пока нет
-        </div>
+        <template #lastFetchedAt-cell="{ row }">
+          <span v-if="row.original.lastFetchedAt" class="whitespace-nowrap">
+            {{ new Date(row.original.lastFetchedAt).toLocaleString('ru-RU') }}
+          </span>
+          <span v-else class="text-error">Не получили</span>
+        </template>
 
-        <div
-          v-for="item in subscriptions"
-          :key="item.id"
-          class="grid grid-cols-[1fr_2fr_1fr_1fr_1.3fr] gap-3 border-b last:border-b-0 py-3 text-sm items-start"
-        >
-          <div class="whitespace-nowrap">{{ item.title }}</div>
-          <div>
-            <a :href="item.url" target="_blank" rel="noreferrer" class="text-primary hover:underline break-all">
-              {{ item.url }}
-            </a>
-          </div>
-          <div class="whitespace-nowrap">
-            {{ new Date(item.createdAt).toLocaleString('ru-RU') }}
-          </div>
-          <div class="whitespace-nowrap">
-            <span v-if="item.lastFetchedAt">
-              {{ new Date(item.lastFetchedAt).toLocaleString('ru-RU') }}
-            </span>
-            <span v-else class="text-error">Не получили</span>
-          </div>
+        <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              size="xs"
-              color="primary"
-              variant="soft"
-              icon="i-lucide-download"
-              @click="fetchConnects(item.id)"
-            >
-              Получить
-            </UButton>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-pencil"
-              @click="openEdit(item.id, item.title, item.url)"
-            >
-              Редактировать
-            </UButton>
-            <UButton
-              size="xs"
-              color="error"
-              variant="soft"
-              icon="i-lucide-trash"
-              @click="removeItem(item.id)"
-            >
-              Удалить
-            </UButton>
-          </div>
-        </div>
-      </div>
-
-      <div class="md:hidden space-y-3">
-        <div
-          v-if="subscriptions.length === 0 && !loading"
-          class="py-4 text-center text-sm text-muted"
-        >
-          Подписок пока нет
-        </div>
-
-        <UCard v-for="item in subscriptions" :key="item.id" variant="subtle">
-          <div class="space-y-2">
-            <p class="text-xs text-muted">
-              Название
-            </p>
-            <p class="font-medium">
-              {{ item.title }}
-            </p>
-
-            <p class="text-xs text-muted mt-2">
-              Ссылка
-            </p>
-            <a :href="item.url" target="_blank" rel="noreferrer" class="text-primary hover:underline break-all">
-              {{ item.url }}
-            </a>
-
-            <p class="text-xs text-muted mt-2">
-              Дата добавления
-            </p>
-            <p>{{ new Date(item.createdAt).toLocaleString('ru-RU') }}</p>
-
-            <p class="text-xs text-muted mt-2">
-              Получено
-            </p>
-            <p v-if="item.lastFetchedAt">
-              {{ new Date(item.lastFetchedAt).toLocaleString('ru-RU') }}
-            </p>
-            <p v-else class="text-error">
-              Не получили
-            </p>
-
-            <div class="flex flex-wrap gap-2 pt-2">
+            <UTooltip text="Получить коннекты">
               <UButton
                 size="xs"
                 color="primary"
-                variant="soft"
+                variant="ghost"
                 icon="i-lucide-download"
-                @click="fetchConnects(item.id)"
-              >
-                Получить
-              </UButton>
+                @click="fetchConnects(row.original.id)"
+              />
+            </UTooltip>
+            <UTooltip text="Редактировать подписку">
               <UButton
                 size="xs"
                 color="neutral"
-                variant="soft"
+                variant="ghost"
                 icon="i-lucide-pencil"
-                @click="openEdit(item.id, item.title, item.url)"
-              >
-                Редактировать
-              </UButton>
+                @click="openEdit(row.original.id, row.original.title, row.original.url)"
+              />
+            </UTooltip>
+            <UTooltip text="Удалить подписку">
               <UButton
                 size="xs"
                 color="error"
-                variant="soft"
+                variant="ghost"
                 icon="i-lucide-trash"
-                @click="removeItem(item.id)"
-              >
-                Удалить
-              </UButton>
-            </div>
+                @click="askRemoveItem(row.original.id)"
+              />
+            </UTooltip>
           </div>
-        </UCard>
-      </div>
+        </template>
+      </UTable>
     </UCard>
 
     <UModal v-model:open="isModalOpen" :title="editId ? 'Редактировать подписку' : 'Добавить подписку'">
@@ -340,6 +303,22 @@ async function loadSubscriptions() {
               {{ connect.name }}
             </li>
           </ul>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isDeleteConfirmOpen" title="Подтверждение удаления">
+      <template #body>
+        <p>Вы действительно хотите удалить эту подписку?</p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="isDeleteConfirmOpen = false">
+            Отмена
+          </UButton>
+          <UButton color="error" @click="confirmRemoveItem">
+            Да, удалить
+          </UButton>
         </div>
       </template>
     </UModal>
