@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -67,6 +71,41 @@ export class ManagementService {
     return this.prisma.panelUser.update({
       where: { id },
       data: { enabled: !user.enabled },
+    });
+  }
+
+  async updatePanelUser(
+    id: string,
+    dto: { name?: string; groupName?: string },
+  ) {
+    await this.ensureUser(id);
+    const data: { name?: string; groupName?: string } = {};
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Имя не может быть пустым');
+      }
+      data.name = trimmed;
+    }
+    if (dto.groupName !== undefined) {
+      const trimmed = dto.groupName.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Группа не может быть пустой');
+      }
+      const group = await this.prisma.group.findUnique({
+        where: { name: trimmed },
+      });
+      if (!group) {
+        throw new BadRequestException('Группа с таким названием не найдена');
+      }
+      data.groupName = trimmed;
+    }
+    if (Object.keys(data).length === 0) {
+      return this.prisma.panelUser.findUnique({ where: { id } });
+    }
+    return this.prisma.panelUser.update({
+      where: { id },
+      data,
     });
   }
 

@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import * as yup from 'yup';
 
 definePageMeta({
   layout: 'dashboard'
+});
+
+const userFormSchema = yup.object({
+  name: yup.string().trim().required('Введите имя').max(200, 'Не более 200 символов'),
+  groupName: yup.string().required('Выберите группу')
 });
 
 type GroupItem = {
@@ -28,9 +34,12 @@ const users = ref<UserItem[]>([]);
 const groups = ref<GroupItem[]>([]);
 
 const isModalOpen = ref(false);
+const editingUserId = ref<string | null>(null);
 const formName = ref('');
 const formCode = ref('');
 const formGroupName = ref('');
+const isDeleteConfirmOpen = ref(false);
+const pendingDeleteUserId = ref<string | null>(null);
 
 const columns: TableColumn<UserItem>[] = [
   {
@@ -51,7 +60,13 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     id: 'actions',
-    header: 'Действия'
+    header: '',
+    meta: {
+      class: {
+        th: 'w-px',
+        td: 'w-px whitespace-nowrap'
+      }
+    }
   }
 ];
 
@@ -88,52 +103,122 @@ function openCreate() {
     return;
   }
 
+  editingUserId.value = null;
   formName.value = '';
   formCode.value = generateCode(32);
   formGroupName.value = groups.value[0]?.name ?? '';
   isModalOpen.value = true;
 }
 
-async function submitUser() {
-  const name = formName.value.trim();
-  if (!name) {
-    toast.add({ title: 'Введите имя пользователя', color: 'error' });
+function openEdit(user: UserItem) {
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группу', color: 'error' });
     return;
+  }
+  editingUserId.value = user.id;
+  formName.value = user.name;
+  formCode.value = user.code;
+  formGroupName.value = user.groupName;
+  isModalOpen.value = true;
+}
+
+function closeUserModal() {
+  isModalOpen.value = false;
+  editingUserId.value = null;
+}
+
+const modalTitle = computed(() =>
+  editingUserId.value ? 'Редактировать пользователя' : 'Добавить пользователя',
+);
+
+async function submitUser() {
+  const groupName =
+    typeof formGroupName.value === 'string'
+      ? formGroupName.value
+      : String(formGroupName.value ?? '');
+  try {
+    await userFormSchema.validate({
+      name: formName.value,
+      groupName
+    });
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
   }
 
-  if (!formGroupName.value) {
-    toast.add({ title: 'Выберите группу', color: 'error' });
-    return;
-  }
+  const name = formName.value.trim();
 
   try {
-    await $fetch(`${config.public.apiBaseUrl}/panel-users`, {
-      method: 'POST',
-      body: {
-        name,
-        code: formCode.value,
-        groupName: formGroupName.value
-      }
-    });
-    isModalOpen.value = false;
-    toast.add({ title: 'Пользователь добавлен', color: 'success' });
+    if (editingUserId.value) {
+      await $fetch(
+        `${config.public.apiBaseUrl}/panel-users/${editingUserId.value}`,
+        {
+          method: 'PATCH',
+          body: {
+            name,
+            groupName
+          }
+        }
+      );
+      toast.add({ title: 'Пользователь обновлён', color: 'success' });
+    } else {
+      await $fetch(`${config.public.apiBaseUrl}/panel-users`, {
+        method: 'POST',
+        body: {
+          name,
+          code: formCode.value,
+          groupName
+        }
+      });
+      toast.add({ title: 'Пользователь добавлен', color: 'success' });
+    }
+    closeUserModal();
     await loadData();
   } catch {
-    toast.add({ title: 'Не удалось добавить пользователя', color: 'error' });
+    toast.add({
+      title: editingUserId.value
+        ? 'Не удалось сохранить изменения'
+        : 'Не удалось добавить пользователя',
+      color: 'error'
+    });
   }
 }
 
-async function removeUser(id: string) {
+function askRemoveUser(id: string) {
+  pendingDeleteUserId.value = id;
+  isDeleteConfirmOpen.value = true;
+}
+
+function cancelDeleteConfirm() {
+  isDeleteConfirmOpen.value = false;
+  pendingDeleteUserId.value = null;
+}
+
+async function confirmRemoveUser() {
+  if (!pendingDeleteUserId.value) {
+    return;
+  }
+  const id = pendingDeleteUserId.value;
   try {
     await $fetch(`${config.public.apiBaseUrl}/panel-users/${id}`, {
       method: 'DELETE'
     });
-    toast.add({ title: 'Пользователь удален', color: 'success' });
+    toast.add({ title: 'Пользователь удалён', color: 'success' });
+    cancelDeleteConfirm();
     await loadData();
   } catch {
     toast.add({ title: 'Не удалось удалить пользователя', color: 'error' });
   }
 }
+
+watch(isModalOpen, (open) => {
+  if (!open) {
+    editingUserId.value = null;
+  }
+});
 
 async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
   if (Boolean(value) === user.enabled) {
@@ -216,27 +301,45 @@ async function copySubscriptionLink(code: string) {
         </template>
 
         <template #actions-cell="{ row }">
-          <UButton
-            size="xs"
-            color="error"
-            variant="soft"
-            icon="i-lucide-trash"
-            @click="removeUser(row.original.id)"
-          >
-            Удалить
-          </UButton>
+          <div class="inline-flex items-center gap-0.5 sm:gap-1">
+            <UTooltip text="Редактировать">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-pencil"
+                class="rounded-lg p-1.5 min-w-8 min-h-8"
+                aria-label="Редактировать"
+                @click="openEdit(row.original)"
+              />
+            </UTooltip>
+            <UTooltip text="Удалить">
+              <UButton
+                color="error"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-trash-2"
+                class="rounded-lg p-1.5 min-w-8 min-h-8"
+                aria-label="Удалить"
+                @click="askRemoveUser(row.original.id)"
+              />
+            </UTooltip>
+          </div>
         </template>
       </UTable>
     </UCard>
 
-    <UModal v-model:open="isModalOpen" title="Добавить пользователя">
+    <UModal v-model:open="isModalOpen" :title="modalTitle">
       <template #body>
         <div class="space-y-3">
           <UFormField label="Имя" required>
             <UInput v-model="formName" class="w-full" placeholder="Введите имя пользователя" />
           </UFormField>
 
-          <UFormField label="Код (32 символа)">
+          <UFormField
+            label="Код подписки"
+            :description="editingUserId ? 'Код в ссылке /sub/… не меняется' : undefined"
+          >
             <UInput v-model="formCode" class="w-full" readonly />
           </UFormField>
 
@@ -253,11 +356,29 @@ async function copySubscriptionLink(code: string) {
 
       <template #footer>
         <div class="flex justify-end gap-2 w-full">
-          <UButton color="neutral" variant="ghost" @click="isModalOpen = false">
+          <UButton color="neutral" variant="ghost" @click="closeUserModal">
             Отмена
           </UButton>
           <UButton @click="submitUser">
             Сохранить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isDeleteConfirmOpen" title="Удалить пользователя?">
+      <template #body>
+        <p class="text-sm text-muted">
+          Ссылка на подписку перестанет работать. Действие необратимо.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="cancelDeleteConfirm">
+            Отмена
+          </UButton>
+          <UButton color="error" @click="confirmRemoveUser">
+            Удалить
           </UButton>
         </div>
       </template>

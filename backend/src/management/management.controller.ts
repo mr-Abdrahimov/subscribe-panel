@@ -12,6 +12,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
+import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { ManagementService } from './management.service';
 
 @ApiTags('Управление')
@@ -65,6 +66,19 @@ export class ManagementController {
   @ApiOperation({ summary: 'Удалить пользователя панели' })
   removeUser(@Param('id') id: string) {
     return this.managementService.deleteUser(id);
+  }
+
+  @Patch('panel-users/:id')
+  @ApiOperation({
+    summary: 'Обновить пользователя панели',
+    description:
+      'Частичное обновление полей name и/или groupName. Код подписки (code) не меняется.',
+  })
+  @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
+  @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
+  @ApiResponse({ status: 404, description: 'Пользователь не найден' })
+  updatePanelUser(@Param('id') id: string, @Body() body: UpdatePanelUserDto) {
+    return this.managementService.updatePanelUser(id, body);
   }
 
   @Patch('panel-users/:id/toggle')
