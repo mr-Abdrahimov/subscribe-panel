@@ -1,5 +1,9 @@
 import type { H3Event } from 'h3';
 import { defineEventHandler, getRequestHeader, getRequestURL, setHeader } from 'h3';
+import {
+  formatHappProfileTitleHeaderValue,
+  sliceProfileTitleForHappSubscription,
+} from '../utils/happ-profile-title';
 import { getNestApiRoot } from '../utils/nest-api-root';
 
 type PublicUserPayload = {
@@ -17,9 +21,11 @@ function setProfileTitleHeadersFromString(
     return;
   }
   setHeader(event, 'profile-title*', `UTF-8''${encodeURIComponent(t)}`);
-  if (/^[\x20-\x7E]*$/.test(t)) {
-    setHeader(event, 'profile-title', t);
+  const short = sliceProfileTitleForHappSubscription(t);
+  if (!short) {
+    return;
   }
+  setHeader(event, 'profile-title', formatHappProfileTitleHeaderValue(short));
 }
 
 async function attachProfileTitleHeadersForHtml(

@@ -110,12 +110,12 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Каждая строка — URI коннекта; во фрагменте (#) — Connect.name. Заголовки profile-title* / profile-title — «Название для публичной подписки» из настроек той группы, к которой привязан пользователь (не из других групп коннектов). Если для группы не задано — заголовки не отправляются.",
+      "Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (совместимость с Happ; до 25 символов), далее URI коннектов. Фрагмент # в URI — Connect.name. Заголовки profile-title (plain или base64:…) и profile-title* — из настроек группы пользователя.",
   })
   @ApiResponse({
     status: 200,
     description:
-      'Тело: base64 (UTF-8). Заголовки profile-title — только из настроек группы (см. описание); в строках ленты # — только name коннекта.',
+      'Тело: base64 (UTF-8), см. описание эндпоинта (#profile-title + строки подписки). Заголовки profile-title для клиентов вроде Happ.',
   })
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const { encoded, profileTitle } =

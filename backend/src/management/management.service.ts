@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
 
 @Injectable()
 export class ManagementService {
@@ -147,12 +148,15 @@ export class ManagementService {
       select: { raw: true, name: true },
     });
 
-    /** Фрагмент # — Connect.name. profile-title* / profile-title — только subscriptionDisplayName группы, к которой привязан пользователь (настройки этой группы в админке) */
-    const payload = connects
-      .map((c) => this.applyCustomNameToUri(c.raw, c.name))
-      .join('\n');
+    /** Фрагмент # — Connect.name. В начале тела (после base64-декода) — #profile-title для Happ; заголовки — см. setProfileTitleResponseHeaders */
+    const uriLines = connects.map((c) =>
+      this.applyCustomNameToUri(c.raw, c.name),
+    );
+    const bodyText = profileTitle
+      ? `#profile-title: ${sliceProfileTitleForHappSubscription(profileTitle)}\n${uriLines.join('\n')}`
+      : uriLines.join('\n');
     return {
-      encoded: Buffer.from(payload, 'utf-8').toString('base64'),
+      encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
     };
   }

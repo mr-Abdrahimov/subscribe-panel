@@ -97,7 +97,7 @@ async function saveGroupTitle(groupId: string) {
             Название
           </h3>
           <p class="text-sm text-muted">
-            Для пользователей панели, привязанных к этой группе (<code class="text-xs font-mono text-highlighted">groupName</code> = имя группы): заголовок <code class="text-xs font-mono text-highlighted">/sub/…</code> и HTTP <code class="text-xs font-mono text-highlighted">profile-title*</code> / <code class="text-xs font-mono text-highlighted">profile-title</code> при запросе ленты берутся из этого поля.
+            Для пользователей панели, привязанных к этой группе (<code class="text-xs font-mono text-highlighted">groupName</code> = имя группы): заголовок <code class="text-xs font-mono text-highlighted">/sub/…</code>, HTTP <code class="text-xs font-mono text-highlighted">profile-title</code> и строка <code class="text-xs font-mono text-highlighted">#profile-title</code> в теле подписки (клиент Happ) — из этого поля. Для Happ учитывается не более 25 символов (обрезка по символам Unicode).
             Имена серверов после <code class="text-xs font-mono text-highlighted">#</code> в строках подписки задаются у каждого коннекта отдельно.
           </p>
         </div>
