@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Продакшен-деплой: backend + frontend + PM2.
 #
-# Запуск (из любой директории):
-#   chmod +x deploy.sh   # один раз
-#   ./deploy.sh
+# Запуск из корня репозитория:
+#   sh deploy.sh
+# Через sh скрипт при необходимости перезапускается в bash.
+# Допустимо также: ./deploy.sh или bash deploy.sh
 #
 # Prisma Client (prisma generate) для backend и frontend выполняется при КАЖДОМ деплое.
 #
@@ -11,7 +12,11 @@
 #   ./deploy.sh --prisma-push
 #   или: DEPLOY_PRISMA_PUSH=1 ./deploy.sh
 #
-# Требования: Node.js, npm, pm2; в ecosystem.config.cjs пути cwd должны совпадать с этим сервером.
+# Требования: Node.js, npm, pm2, bash; в ecosystem.config.cjs пути cwd должны совпадать с этим сервером.
+
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 
 set -euo pipefail
 
@@ -29,6 +34,10 @@ if [[ "${DEPLOY_PRISMA_PUSH:-}" == "1" ]]; then
 fi
 
 echo "==> Корень проекта: ${ROOT}"
+
+echo "==> git pull"
+cd "${ROOT}"
+git pull
 
 echo "==> Backend: npm ci"
 cd "${ROOT}/backend"
