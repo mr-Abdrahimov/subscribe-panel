@@ -36,23 +36,18 @@ function setProfileTitleHeadersFromString(
 }
 
 /**
- * JSON-обёртка подписки для VPN-клиентов (Happ и др.): то же base64, что и в plain-теле,
- * плюс дублирование meta из HTTP-заголовков в поля объекта ([Happ meta](https://www.happ.su/main/ru/dev-docs/meta-info)).
- * Браузер с Accept: text/html по-прежнему получает HTML-страницу /sub/…
+ * JSON-обёртка: то же base64, что в plain-ответе, плюс поля profile-title* ([Happ meta](https://www.happ.su/main/ru/dev-docs/meta-info)).
+ * Happ при импорте подписки ожидает тело как одну строку base64 (text/plain), а не объект JSON — иначе «Неверный формат JSON».
+ * JSON включаем только явно: Accept: application/json или ?format=json (для кастомных/скриптовых клиентов).
  */
 function wantsSubscriptionJson(
   accept: string,
-  userAgent: string,
   formatParam: string | null,
 ): boolean {
   if (formatParam === 'json') {
     return true;
   }
-  if (/\bapplication\/json\b/i.test(accept)) {
-    return true;
-  }
-  const ua = userAgent.trim();
-  return /^Happ/i.test(ua);
+  return /\bapplication\/json\b/i.test(accept);
 }
 
 function buildSubscriptionJsonBody(
@@ -113,12 +108,7 @@ export default defineEventHandler(async (event) => {
 
   const accept = getRequestHeader(event, 'accept') ?? '';
   const isHtmlRequest = accept.includes('text/html');
-  const userAgent = getRequestHeader(event, 'user-agent') ?? '';
-  const wantsJson = wantsSubscriptionJson(
-    accept,
-    userAgent,
-    url.searchParams.get('format'),
-  );
+  const wantsJson = wantsSubscriptionJson(accept, url.searchParams.get('format'));
 
   const apiRoot = getNestApiRoot(event);
 
