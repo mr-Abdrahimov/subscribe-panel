@@ -165,11 +165,14 @@ export class ManagementService {
     }
 
     const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
+    const sub = groupMeta?.subscriptionDisplayName?.trim() ?? '';
+    const profileTitle = (sub || user.name.trim() || '').trim() || null;
 
     return {
       ...user,
-      subscriptionDisplayName:
-        groupMeta?.subscriptionDisplayName?.trim() || null,
+      subscriptionDisplayName: sub || null,
+      /** Как в заголовке profile-title ленты: настройка группы или имя пользователя */
+      profileTitle,
     };
   }
 
@@ -242,9 +245,15 @@ export class ManagementService {
     const groups = await this.prisma.group.findMany({
       select: { name: true, subscriptionDisplayName: true },
     });
-    const loose = groups.find(
-      (g) => g.name.trim().normalize('NFC') === normalizedTarget,
-    );
+    const targetLower = normalizedTarget.toLowerCase();
+    const loose =
+      groups.find(
+        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+      ) ??
+      groups.find(
+        (g) =>
+          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+      );
     return loose
       ? { subscriptionDisplayName: loose.subscriptionDisplayName }
       : null;

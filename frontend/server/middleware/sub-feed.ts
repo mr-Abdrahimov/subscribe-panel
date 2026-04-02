@@ -1,4 +1,48 @@
+import type { H3Event } from 'h3';
 import { defineEventHandler, getRequestHeader, getRequestURL, setHeader } from 'h3';
+import { getNestApiRoot } from '../utils/nest-api-root';
+
+type PublicUserPayload = {
+  name: string;
+  subscriptionDisplayName: string | null;
+  profileTitle: string | null;
+};
+
+function setProfileTitleHeadersFromString(
+  event: H3Event,
+  profileTitle: string,
+) {
+  const t = profileTitle.trim();
+  if (!t) {
+    return;
+  }
+  setHeader(event, 'profile-title*', `UTF-8''${encodeURIComponent(t)}`);
+  if (/^[\x20-\x7E]*$/.test(t)) {
+    setHeader(event, 'profile-title', t);
+  }
+}
+
+async function attachProfileTitleHeadersForHtml(
+  event: H3Event,
+  apiRoot: string,
+  code: string,
+) {
+  try {
+    const user = await $fetch<PublicUserPayload>(
+      `${apiRoot}/public/users/${encodeURIComponent(code)}`,
+    );
+    const title =
+      (user.profileTitle && user.profileTitle.trim()) ||
+      (user.subscriptionDisplayName && user.subscriptionDisplayName.trim()) ||
+      (user.name && user.name.trim()) ||
+      '';
+    if (title) {
+      setProfileTitleHeadersFromString(event, title);
+    }
+  } catch {
+    /* нет пользователя — без заголовка */
+  }
+}
 
 export default defineEventHandler(async (event) => {
   const url = getRequestURL(event);
@@ -7,22 +51,20 @@ export default defineEventHandler(async (event) => {
     return;
   }
 
-  const accept = getRequestHeader(event, 'accept') ?? '';
-  const isHtmlRequest = accept.includes('text/html');
-  if (isHtmlRequest) {
-    return;
-  }
-
   const code = decodeURIComponent(match[1] ?? '').trim();
   if (!code) {
     return;
   }
 
-  const config = useRuntimeConfig(event);
-  /** Прямой вызов Nest (без публичного домена), чтобы не ловить кэш CDN/прокси и hairpin NAT */
-  const internal = (config.apiInternalBaseUrl as string | undefined)?.replace(/\/$/, '') ?? '';
-  const publicBase = config.public.apiBaseUrl.replace(/\/$/, '');
-  const apiRoot = internal || publicBase;
+  const accept = getRequestHeader(event, 'accept') ?? '';
+  const isHtmlRequest = accept.includes('text/html');
+
+  const apiRoot = getNestApiRoot(event);
+
+  if (isHtmlRequest) {
+    await attachProfileTitleHeadersForHtml(event, apiRoot, code);
+    return;
+  }
   const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}`;
   const res = await $fetch.raw(endpoint);
   const data = (res._data ?? '') as string;

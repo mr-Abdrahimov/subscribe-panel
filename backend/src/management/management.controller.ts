@@ -97,7 +97,11 @@ export class ManagementController {
   @Get('public/users/:code')
   @Header('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
-  @ApiOperation({ summary: 'Получить публичную информацию пользователя по коду' })
+  @ApiOperation({
+    summary: 'Получить публичную информацию пользователя по коду',
+    description:
+      'Поле profileTitle совпадает с логикой заголовка profile-title ленты: subscriptionDisplayName из настроек группы или имя пользователя панели.',
+  })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
   }
