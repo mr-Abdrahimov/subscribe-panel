@@ -15,7 +15,6 @@ type GroupItem = {
   id: string;
   name: string;
   createdAt: string;
-  subscriptionDisplayName?: string | null;
 };
 
 type UserItem = {
@@ -57,10 +56,6 @@ const columns: TableColumn<UserItem>[] = [
     header: 'Группа'
   },
   {
-    id: 'subscriptionTitle',
-    header: 'Заголовок группы'
-  },
-  {
     id: 'allowAllUserAgents',
     header: 'Выдавать всем приложениям',
     meta: {
@@ -97,26 +92,6 @@ const columns: TableColumn<UserItem>[] = [
 ];
 
 const groupOptions = computed(() => groups.value.map(group => group.name));
-
-function normalizeGroupKey(s: string) {
-  return s.trim().normalize('NFC');
-}
-
-/** Сопоставление как на бэкенде: точное имя группы и без учёта регистра */
-function getSubscriptionDisplayForGroup(panelGroupName: string): string | null {
-  const t = normalizeGroupKey(panelGroupName);
-  if (!t) {
-    return null;
-  }
-  const tl = t.toLowerCase();
-  const g =
-    groups.value.find((x) => normalizeGroupKey(x.name) === t) ??
-    groups.value.find(
-      (x) => normalizeGroupKey(x.name).toLowerCase() === tl,
-    );
-  const v = g?.subscriptionDisplayName?.trim();
-  return v || null;
-}
 
 onMounted(async () => {
   await loadData();
@@ -358,14 +333,6 @@ async function copySubscriptionLink(code: string) {
               />
             </UTooltip>
           </div>
-        </template>
-
-        <template #subscriptionTitle-cell="{ row }">
-          <span
-            :class="getSubscriptionDisplayForGroup(row.original.groupName) ? 'text-sm' : 'text-xs text-muted'"
-          >
-            {{ getSubscriptionDisplayForGroup(row.original.groupName) || '—' }}
-          </span>
         </template>
 
         <template #allowAllUserAgents-cell="{ row }">
