@@ -87,11 +87,8 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const group = await this.prisma.group.findFirst({
-      where: { name: user.groupName },
-      select: { subscriptionDisplayName: true },
-    });
-    const groupTitle = group?.subscriptionDisplayName?.trim() ?? '';
+    const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
+    const groupTitle = groupMeta?.subscriptionDisplayName?.trim() ?? '';
 
     const connects = await this.prisma.connect.findMany({
       where: {
@@ -121,15 +118,12 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const group = await this.prisma.group.findFirst({
-      where: { name: user.groupName },
-      select: { subscriptionDisplayName: true },
-    });
+    const groupMeta = await this.findGroupSubscriptionSettings(user.groupName);
 
     return {
       ...user,
       subscriptionDisplayName:
-        group?.subscriptionDisplayName?.trim() || null,
+        groupMeta?.subscriptionDisplayName?.trim() || null,
     };
   }
 
@@ -175,6 +169,39 @@ export class ManagementService {
       throw new NotFoundException('Группа не найдена');
     }
     return group;
+  }
+
+  /**
+   * Ищем настройки группы по строке groupName у пользователя панели.
+   * Сначала точное совпадение (после trim), затем сравнение с нормализацией Unicode (NFC),
+   * чтобы учесть расхождения с записями в Group.name без поломки фильтра connect.groupNames.
+   */
+  private async findGroupSubscriptionSettings(
+    panelGroupName: string,
+  ): Promise<{ subscriptionDisplayName: string | null } | null> {
+    const trimmed = panelGroupName.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const normalizedTarget = trimmed.normalize('NFC');
+
+    const exact = await this.prisma.group.findUnique({
+      where: { name: trimmed },
+      select: { subscriptionDisplayName: true },
+    });
+    if (exact) {
+      return exact;
+    }
+
+    const groups = await this.prisma.group.findMany({
+      select: { name: true, subscriptionDisplayName: true },
+    });
+    const loose = groups.find(
+      (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+    );
+    return loose
+      ? { subscriptionDisplayName: loose.subscriptionDisplayName }
+      : null;
   }
 
   /**

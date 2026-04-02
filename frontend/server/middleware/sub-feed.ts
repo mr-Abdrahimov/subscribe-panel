@@ -19,9 +19,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event);
-  const endpoint = `${config.public.apiBaseUrl}/public/sub/${encodeURIComponent(code)}`;
+  /** Прямой вызов Nest (без публичного домена), чтобы не ловить кэш CDN/прокси и hairpin NAT */
+  const internal = (config.apiInternalBaseUrl as string | undefined)?.replace(/\/$/, '') ?? '';
+  const publicBase = config.public.apiBaseUrl.replace(/\/$/, '');
+  const apiRoot = internal || publicBase;
+  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}`;
   const data = await $fetch<string>(endpoint);
   setHeader(event, 'content-type', 'text/plain; charset=utf-8');
+  setHeader(
+    event,
+    'cache-control',
+    'private, no-store, no-cache, must-revalidate, max-age=0',
+  );
+  setHeader(event, 'pragma', 'no-cache');
   return data;
 });
 

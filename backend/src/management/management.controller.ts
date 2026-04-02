@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
@@ -70,6 +80,8 @@ export class ManagementController {
   }
 
   @Get('public/users/:code')
+  @Header('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Получить публичную информацию пользователя по коду' })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
@@ -89,6 +101,11 @@ export class ManagementController {
   async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
     const encoded = await this.managementService.getPublicFeedByCode(code);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader(
+      'Cache-Control',
+      'private, no-store, no-cache, must-revalidate, max-age=0',
+    );
+    res.setHeader('Pragma', 'no-cache');
     res.send(encoded);
   }
 }
