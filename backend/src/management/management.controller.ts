@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { ManagementService } from './management.service';
 
 @ApiTags('Управление')
@@ -24,6 +25,18 @@ export class ManagementController {
   @ApiOperation({ summary: 'Удалить группу' })
   removeGroup(@Param('id') id: string) {
     return this.managementService.deleteGroup(id);
+  }
+
+  @Patch('groups/:id')
+  @ApiOperation({
+    summary: 'Обновить настройки группы',
+    description:
+      'Частичное обновление. Поле subscriptionDisplayName задаёт название для публичной подписки (страница /sub и имена в ленте). Передайте null или пустую строку, чтобы снова использовать названия коннектов из панели.',
+  })
+  @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
+  @ApiResponse({ status: 404, description: 'Группа не найдена' })
+  updateGroup(@Param('id') id: string, @Body() body: UpdateGroupSettingsDto) {
+    return this.managementService.updateGroupSettings(id, body);
   }
 
   @Get('panel-users')
@@ -66,7 +79,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Каждая строка — URI коннекта; в фрагменте (#) подставляется кастомное название из панели, чтобы в VPN-клиентах отображалось оно, а не имя из исходной подписки.',
+      'Каждая строка — URI коннекта; в фрагменте (#) подставляется название: если для группы пользователя задано «Название» в настройках — оно для всех строк; иначе — кастомное название коннекта из панели.',
   })
   @ApiResponse({
     status: 200,

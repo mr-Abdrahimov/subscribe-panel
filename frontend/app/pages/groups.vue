@@ -9,6 +9,7 @@ type GroupItem = {
   id: string;
   name: string;
   createdAt: string;
+  subscriptionDisplayName?: string | null;
 };
 
 const toast = useToast();

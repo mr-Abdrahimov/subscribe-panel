@@ -87,6 +87,12 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
+    const group = await this.prisma.group.findFirst({
+      where: { name: user.groupName },
+      select: { subscriptionDisplayName: true },
+    });
+    const groupTitle = group?.subscriptionDisplayName?.trim() ?? '';
+
     const connects = await this.prisma.connect.findMany({
       where: {
         status: 'ACTIVE',
@@ -99,7 +105,9 @@ export class ManagementService {
     });
 
     const payload = connects
-      .map((c) => this.applyCustomNameToUri(c.raw, c.name))
+      .map((c) =>
+        this.applyCustomNameToUri(c.raw, groupTitle || c.name),
+      )
       .join('\n');
     return Buffer.from(payload, 'utf-8').toString('base64');
   }
@@ -112,7 +120,38 @@ export class ManagementService {
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
     }
-    return user;
+
+    const group = await this.prisma.group.findFirst({
+      where: { name: user.groupName },
+      select: { subscriptionDisplayName: true },
+    });
+
+    return {
+      ...user,
+      subscriptionDisplayName:
+        group?.subscriptionDisplayName?.trim() || null,
+    };
+  }
+
+  async updateGroupSettings(
+    id: string,
+    dto: { subscriptionDisplayName?: string | null },
+  ) {
+    await this.ensureGroupById(id);
+    if (dto.subscriptionDisplayName === undefined) {
+      return this.prisma.group.findUnique({ where: { id } });
+    }
+    let subscriptionDisplayName: string | null;
+    if (dto.subscriptionDisplayName === null) {
+      subscriptionDisplayName = null;
+    } else {
+      const trimmed = dto.subscriptionDisplayName.trim();
+      subscriptionDisplayName = trimmed === '' ? null : trimmed;
+    }
+    return this.prisma.group.update({
+      where: { id },
+      data: { subscriptionDisplayName },
+    });
   }
 
   private async ensureUser(id: string) {
@@ -128,6 +167,14 @@ export class ManagementService {
     if (!connect) {
       throw new NotFoundException('Коннект не найден');
     }
+  }
+
+  private async ensureGroupById(id: string) {
+    const group = await this.prisma.group.findUnique({ where: { id } });
+    if (!group) {
+      throw new NotFoundException('Группа не найдена');
+    }
+    return group;
   }
 
   /**

@@ -70,16 +70,29 @@ function onNavigate() {
       </div>
 
       <template #footer>
-        <UButton
-          block
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-log-out"
-          class="justify-start h-11 rounded-lg px-3"
-          @click="logout"
-        >
-          Выйти
-        </UButton>
+        <div class="space-y-2">
+          <UButton
+            block
+            color="neutral"
+            :variant="route.path === '/settings' ? 'soft' : 'ghost'"
+            icon="i-lucide-settings"
+            to="/settings"
+            class="justify-start h-11 rounded-lg px-3"
+            @click="onNavigate"
+          >
+            Настройки
+          </UButton>
+          <UButton
+            block
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-log-out"
+            class="justify-start h-11 rounded-lg px-3"
+            @click="logout"
+          >
+            Выйти
+          </UButton>
+        </div>
       </template>
     </UCard>
   </div>

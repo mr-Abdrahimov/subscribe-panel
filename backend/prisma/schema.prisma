@@ -54,10 +54,12 @@ model Connect {
 }
 
 model Group {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                      String   @unique
+  /// Название для публичной ссылки подписки: заголовок страницы и отображаемое имя коннектов в клиенте (фрагмент URI)
+  subscriptionDisplayName   String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 }
 
 model PanelUser {
