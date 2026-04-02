@@ -12,6 +12,11 @@ enum Role {
   ADMIN
 }
 
+enum ConnectStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String   @unique
@@ -20,5 +25,29 @@ model User {
   role      Role     @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Subscription {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  title        String
+  url          String
+  lastFetchedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  connects     Connect[]
+}
+
+model Connect {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  raw            String
+  protocol       String
+  status         ConnectStatus @default(ACTIVE)
+  hidden         Boolean      @default(false)
+  tags           String[]
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  subscriptionId String       @db.ObjectId
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
 }
 

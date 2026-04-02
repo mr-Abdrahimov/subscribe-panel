@@ -1,0 +1,165 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+
+@Injectable()
+export class SubscriptionsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  findAll() {
+    return this.prisma.subscription.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { connects: true },
+        },
+      },
+    });
+  }
+
+  create(dto: CreateSubscriptionDto) {
+    return this.prisma.subscription.create({
+      data: {
+        title: dto.title,
+        url: dto.url,
+      },
+    });
+  }
+
+  async update(id: string, dto: UpdateSubscriptionDto) {
+    await this.ensureExists(id);
+
+    return this.prisma.subscription.update({
+      where: { id },
+      data: {
+        title: dto.title,
+        url: dto.url,
+      },
+    });
+  }
+
+  async remove(id: string) {
+    await this.ensureExists(id);
+
+    await this.prisma.connect.deleteMany({
+      where: { subscriptionId: id },
+    });
+
+    await this.prisma.subscription.delete({
+      where: { id },
+    });
+  }
+
+  async fetchConnects(id: string) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Подписка не найдена');
+    }
+
+    const response = await fetch(subscription.url);
+    const text = await response.text();
+    const links = this.parseSubscriptionPayload(text);
+
+    await this.prisma.connect.deleteMany({
+      where: { subscriptionId: id },
+    });
+
+    if (links.length > 0) {
+      await this.prisma.connect.createMany({
+        data: links.map((link) => ({
+          name: this.extractConnectName(link),
+          raw: link,
+          protocol: this.extractProtocol(link),
+          status: 'ACTIVE',
+          hidden: false,
+          tags: [],
+          sortOrder: 0,
+          subscriptionId: id,
+        })),
+      });
+    }
+
+    const updatedSubscription = await this.prisma.subscription.update({
+      where: { id },
+      data: { lastFetchedAt: new Date() },
+    });
+
+    const connects = await this.prisma.connect.findMany({
+      where: { subscriptionId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    return {
+      subscriptionId: id,
+      fetchedAt: updatedSubscription.lastFetchedAt,
+      total: connects.length,
+      connects,
+    };
+  }
+
+  private async ensureExists(id: string) {
+    const exists = await this.prisma.subscription.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!exists) {
+      throw new NotFoundException('Подписка не найдена');
+    }
+  }
+
+  private parseSubscriptionPayload(payload: string) {
+    const trimmed = payload.trim();
+    let content = trimmed;
+
+    const looksLikeBase64 =
+      !trimmed.includes('://') && /^[A-Za-z0-9+/=\r\n]+$/.test(trimmed);
+
+    if (looksLikeBase64) {
+      try {
+        content = Buffer.from(trimmed.replace(/\s/g, ''), 'base64').toString(
+          'utf-8',
+        );
+      } catch {
+        content = trimmed;
+      }
+    }
+
+    return content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter((line) => /^[a-z][a-z0-9+.-]*:\/\//i.test(line));
+  }
+
+  private extractConnectName(raw: string) {
+    try {
+      const hash = raw.split('#')[1];
+      if (hash) {
+        const decoded = decodeURIComponent(hash).trim();
+        if (decoded.length > 0) {
+          return decoded;
+        }
+      }
+
+      const url = new URL(raw);
+      return url.hostname || 'Без названия';
+    } catch {
+      return 'Без названия';
+    }
+  }
+
+  private extractProtocol(raw: string) {
+    const scheme = raw.split('://')[0]?.trim().toLowerCase();
+    return scheme || 'unknown';
+  }
+}
+

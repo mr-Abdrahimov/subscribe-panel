@@ -1,25 +1,5 @@
 <script setup lang="ts">
 const isSidebarOpen = ref(false);
-const isMobile = ref(false);
-
-function syncViewport() {
-  if (!import.meta.client) {
-    return;
-  }
-  isMobile.value = window.innerWidth < 768;
-}
-
-onMounted(() => {
-  syncViewport();
-  window.addEventListener('resize', syncViewport);
-});
-
-onBeforeUnmount(() => {
-  if (!import.meta.client) {
-    return;
-  }
-  window.removeEventListener('resize', syncViewport);
-});
 </script>
 
 <template>
@@ -43,15 +23,18 @@ onBeforeUnmount(() => {
         <slot />
       </section>
 
-      <USlideover
-        v-if="isMobile"
+      <!-- default slot = trigger (inline). Навигация только в #body -->
+      <UModal
         v-model:open="isSidebarOpen"
-        side="left"
-        :overlay="true"
-        :ui="{ content: 'w-full max-w-[320px]' }"
+        class="md:hidden"
+        fullscreen
+        title="Меню"
+        :dismissible="true"
       >
-        <DashboardSidebar @navigate="isSidebarOpen = false" />
-      </USlideover>
+        <template #body>
+          <DashboardSidebar @navigate="isSidebarOpen = false" />
+        </template>
+      </UModal>
     </div>
   </UMain>
 </template>
