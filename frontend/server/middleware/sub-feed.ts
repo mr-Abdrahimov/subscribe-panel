@@ -5,6 +5,7 @@ import {
   getRequestIP,
   getRequestURL,
   setHeader,
+  setResponseStatus,
 } from 'h3';
 import {
   formatHappProfileTitleHeaderValue,
@@ -105,7 +106,28 @@ export default defineEventHandler(async (event) => {
   }
 
   const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${url.search || ''}`;
-  const res = await $fetch.raw(endpoint, { headers: proxyHeaders });
+  let res: Awaited<ReturnType<typeof $fetch.raw>>;
+  try {
+    res = await $fetch.raw(endpoint, { headers: proxyHeaders });
+  } catch (err: unknown) {
+    const e = err as {
+      statusCode?: number;
+      statusMessage?: string;
+      data?: unknown;
+    };
+    const status = e.statusCode ?? 502;
+    setResponseStatus(event, status);
+    setHeader(event, 'content-type', 'text/plain; charset=utf-8');
+    const body =
+      typeof e.data === 'string'
+        ? e.data
+        : e.data != null
+          ? JSON.stringify(e.data)
+          : (e.statusMessage ?? 'Ошибка прокси подписки');
+    return body;
+  }
+
+  setResponseStatus(event, res.status);
   const data = (res._data ?? '') as string;
   const profileTitleStar = res.headers.get('profile-title*');
   const profileTitlePlain = res.headers.get('profile-title');

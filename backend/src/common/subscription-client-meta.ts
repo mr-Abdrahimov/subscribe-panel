@@ -156,3 +156,8 @@ export function extractSubscriptionAccessMeta(req: Request): SubscriptionAccessM
   }
   return meta;
 }
+
+/** Есть ли в запросе HWID (заголовки или query — см. список в модуле) */
+export function hasSubscriptionHwid(req: Request): boolean {
+  return Boolean(extractSubscriptionAccessMeta(req).hwid);
+}

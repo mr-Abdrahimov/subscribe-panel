@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdatePanelUserDto {
   @ApiPropertyOptional({
@@ -21,4 +21,20 @@ export class UpdatePanelUserDto {
   @IsString()
   @MaxLength(200)
   groupName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Если true — подписка /public/sub отдаётся любому User-Agent; если false — только при User-Agent, начинающемся с «Happ»',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowAllUserAgents?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Если true — при отсутствии HWID в запросе (query или заголовки) клиент получает одну строку с текстом ошибки вместо списка коннектов',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requireHwid?: boolean;
 }

@@ -24,6 +24,8 @@ type UserItem = {
   code: string;
   groupName: string;
   enabled: boolean;
+  allowAllUserAgents?: boolean;
+  requireHwid?: boolean;
   createdAt: string;
 };
 
@@ -57,6 +59,26 @@ const columns: TableColumn<UserItem>[] = [
   {
     id: 'subscriptionTitle',
     header: 'Заголовок группы'
+  },
+  {
+    id: 'allowAllUserAgents',
+    header: 'Выдавать всем',
+    meta: {
+      class: {
+        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
+        td: 'align-middle'
+      }
+    }
+  },
+  {
+    id: 'requireHwid',
+    header: 'Обязательно HWID',
+    meta: {
+      class: {
+        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
+        td: 'align-middle'
+      }
+    }
   },
   {
     id: 'enabled',
@@ -259,6 +281,27 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
   }
 }
 
+async function patchAccessFlags(
+  user: UserItem,
+  patch: { allowAllUserAgents?: boolean; requireHwid?: boolean },
+) {
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body: patch,
+    });
+    if (patch.allowAllUserAgents !== undefined) {
+      user.allowAllUserAgents = patch.allowAllUserAgents;
+    }
+    if (patch.requireHwid !== undefined) {
+      user.requireHwid = patch.requireHwid;
+    }
+  } catch {
+    toast.add({ title: 'Не удалось сохранить настройки доступа', color: 'error' });
+    await loadData();
+  }
+}
+
 function subscriptionUrl(code: string) {
   if (!import.meta.client) {
     return '';
@@ -323,6 +366,36 @@ async function copySubscriptionLink(code: string) {
           >
             {{ getSubscriptionDisplayForGroup(row.original.groupName) || '—' }}
           </span>
+        </template>
+
+        <template #allowAllUserAgents-cell="{ row }">
+          <UTooltip
+            text="Подписка по ссылке /sub/… для любого User-Agent. Иначе только клиенты с User-Agent, начинающимся с «Happ»"
+          >
+            <div class="flex justify-center">
+              <USwitch
+                :model-value="Boolean(row.original.allowAllUserAgents)"
+                @update:model-value="
+                  patchAccessFlags(row.original, { allowAllUserAgents: Boolean($event) })
+                "
+              />
+            </div>
+          </UTooltip>
+        </template>
+
+        <template #requireHwid-cell="{ row }">
+          <UTooltip
+            text="Без HWID в запросе (?hwid=… или заголовок) клиент получит одну строку с ошибкой вместо списка серверов"
+          >
+            <div class="flex justify-center">
+              <USwitch
+                :model-value="Boolean(row.original.requireHwid)"
+                @update:model-value="
+                  patchAccessFlags(row.original, { requireHwid: Boolean($event) })
+                "
+              />
+            </div>
+          </UTooltip>
         </template>
 
         <template #enabled-cell="{ row }">

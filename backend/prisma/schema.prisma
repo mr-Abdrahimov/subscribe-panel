@@ -63,14 +63,18 @@ model Group {
 }
 
 model PanelUser {
-  id         String                 @id @default(auto()) @map("_id") @db.ObjectId
-  name       String
-  code       String                 @unique
-  groupName  String
-  enabled    Boolean                @default(true)
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
-  accessLogs PanelUserAccessLog[]
+  id                   String                 @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  code                 String                 @unique
+  groupName            String
+  enabled              Boolean                @default(true)
+  /// Если true — base64-подписка отдаётся любому User-Agent; иначе только при UA, начинающемся с «Happ»
+  allowAllUserAgents   Boolean                @default(false)
+  /// Если true — без HWID в запросе отдаётся одна строка-ошибка вместо списка коннектов
+  requireHwid          Boolean                @default(false)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  accessLogs           PanelUserAccessLog[]
 }
 
 /// Лог обращения клиента (Happ и др.) к подписке GET /public/sub/:code — IP, HWID, User-Agent, query и заголовки

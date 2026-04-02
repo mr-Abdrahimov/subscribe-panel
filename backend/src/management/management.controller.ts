@@ -17,7 +17,10 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { setProfileTitleResponseHeaders } from '../common/profile-title-header';
-import { extractSubscriptionAccessMeta } from '../common/subscription-client-meta';
+import {
+  extractSubscriptionAccessMeta,
+  hasSubscriptionHwid,
+} from '../common/subscription-client-meta';
 import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
@@ -83,7 +86,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление полей name и/или groupName. Код подписки (code) не меняется.',
+      'Частичное обновление: name, groupName, allowAllUserAgents (выдавать подписку всем User-Agent), requireHwid (без HWID — ответ с ошибкой). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
@@ -185,23 +188,59 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (совместимость с Happ; до 25 символов), далее URI коннектов. Фрагмент # в URI — Connect.name. Заголовки profile-title (plain или base64:…) и profile-title* — из настроек группы пользователя. Каждое успешное обращение записывается в лог (PanelUserAccessLog): IP, User-Agent, HWID и прочие заголовки/query, если клиент их передал.",
+      'Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (Happ; до 25 символов), далее URI коннектов. По умолчанию подписка отдаётся только если User-Agent начинается с «Happ»; у пользователя панели можно включить «Выдавать всем» (allowAllUserAgents). Если включено «Обязательно HWID» и в запросе нет HWID (query или заголовки), вместо списка отдаётся одна строка с текстом ошибки. Заголовки profile-title — из настроек группы (кроме режима ошибки HWID). Обращения пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
     description:
       'Тело: base64 (UTF-8), см. описание эндпоинта (#profile-title + строки подписки). Заголовки profile-title для клиентов вроде Happ.',
   })
+  @ApiResponse({
+    status: 403,
+    description:
+      'User-Agent не разрешён: нужен префикс «Happ» или у пользователя панели включено «Выдавать всем».',
+  })
+  @ApiResponse({ status: 404, description: 'Пользователь не найден или отключён' })
   async getPublicSubscription(
     @Param('code') code: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const { encoded, profileTitle, panelUserId } =
-      await this.managementService.getPublicFeedByCode(code);
+    const user = await this.managementService.findEnabledPanelUserByCode(code);
+    if (!user) {
+      res.status(404);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.send('Пользователь не найден');
+      return;
+    }
+
+    const uaHeader = req.headers['user-agent'];
+    const ua =
+      typeof uaHeader === 'string'
+        ? uaHeader.trim()
+        : Array.isArray(uaHeader) && uaHeader[0]
+          ? String(uaHeader[0]).trim()
+          : '';
+
+    const allowAll = user.allowAllUserAgents === true;
+    if (!allowAll && !ua.startsWith('Happ')) {
+      res.status(403);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.send(
+        'Подписка доступна только приложению Happ (User-Agent должен начинаться с «Happ»). Для доступа из браузера или других клиентов включите у пользователя опцию «Выдавать всем» в панели.',
+      );
+      return;
+    }
+
+    const requireHwid = user.requireHwid === true;
+    const payload =
+      requireHwid && !hasSubscriptionHwid(req)
+        ? this.managementService.buildHwidMissingSubscriptionFeed(user)
+        : await this.managementService.buildPublicFeedForPanelUser(user);
+
     try {
       await this.managementService.logPanelUserSubscriptionAccess(
-        panelUserId,
+        payload.panelUserId,
         extractSubscriptionAccessMeta(req),
       );
     } catch (err) {
@@ -209,16 +248,17 @@ export class ManagementController {
         `Не удалось записать лог обращения к подписке: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+    res.status(200);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
       'Cache-Control',
       'private, no-store, no-cache, must-revalidate, max-age=0',
     );
     res.setHeader('Pragma', 'no-cache');
-    if (profileTitle) {
-      setProfileTitleResponseHeaders(res, profileTitle);
+    if (payload.profileTitle) {
+      setProfileTitleResponseHeaders(res, payload.profileTitle);
     }
-    res.send(encoded);
+    res.send(payload.encoded);
   }
 }
 

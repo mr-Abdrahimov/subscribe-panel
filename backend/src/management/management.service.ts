@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { PanelUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
@@ -82,10 +83,20 @@ export class ManagementService {
 
   async updatePanelUser(
     id: string,
-    dto: { name?: string; groupName?: string },
+    dto: {
+      name?: string;
+      groupName?: string;
+      allowAllUserAgents?: boolean;
+      requireHwid?: boolean;
+    },
   ) {
     await this.ensureUser(id);
-    const data: { name?: string; groupName?: string } = {};
+    const data: {
+      name?: string;
+      groupName?: string;
+      allowAllUserAgents?: boolean;
+      requireHwid?: boolean;
+    } = {};
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
       if (!trimmed) {
@@ -106,6 +117,12 @@ export class ManagementService {
       }
       data.groupName = trimmed;
     }
+    if (dto.allowAllUserAgents !== undefined) {
+      data.allowAllUserAgents = dto.allowAllUserAgents;
+    }
+    if (dto.requireHwid !== undefined) {
+      data.requireHwid = dto.requireHwid;
+    }
     if (Object.keys(data).length === 0) {
       return this.prisma.panelUser.findUnique({ where: { id } });
     }
@@ -123,20 +140,26 @@ export class ManagementService {
     });
   }
 
-  async getPublicFeedByCode(code: string): Promise<{
-    encoded: string;
-    /** subscriptionDisplayName группы пользователя панели (PanelUser.groupName → Group); для HTTP profile-title имя пользователя не подставляем */
-    profileTitle: string;
-    panelUserId: string;
-  }> {
+  /** Активный пользователь панели по коду подписки (для выдачи /public/sub) */
+  async findEnabledPanelUserByCode(code: string): Promise<PanelUser | null> {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },
     });
-
     if (!user || !user.enabled) {
-      throw new NotFoundException('Пользователь не найден');
+      return null;
     }
+    return user;
+  }
 
+  /**
+   * Обычная base64-подписка: коннекты группы пользователя.
+   * Фрагмент # в URI — Connect.name; при названии группы — строка #profile-title для Happ.
+   */
+  async buildPublicFeedForPanelUser(user: PanelUser): Promise<{
+    encoded: string;
+    profileTitle: string;
+    panelUserId: string;
+  }> {
     const groupTitle =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
         user.groupName,
@@ -154,7 +177,6 @@ export class ManagementService {
       select: { raw: true, name: true },
     });
 
-    /** Фрагмент # — Connect.name. В начале тела (после base64-декода) — #profile-title для Happ; заголовки — см. setProfileTitleResponseHeaders */
     const uriLines = connects.map((c) =>
       this.applyCustomNameToUri(c.raw, c.name),
     );
@@ -164,6 +186,24 @@ export class ManagementService {
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
+      panelUserId: user.id,
+    };
+  }
+
+  /**
+   * Одна строка «коннекта» с сообщением об ошибке, если включено «Обязательно HWID», а HWID в запросе нет.
+   */
+  buildHwidMissingSubscriptionFeed(user: PanelUser): {
+    encoded: string;
+    profileTitle: string;
+    panelUserId: string;
+  } {
+    const errName = encodeURIComponent('Ошибка: требуется HWID');
+    const line = `vless://00000000-0000-0000-0000-000000000001@127.0.0.1:1?encryption=none&security=none&type=tcp#${errName}`;
+    const bodyText = `# Ошибка доступа: для этой подписки обязателен HWID. Добавьте параметр ?hwid=… в URL или заголовок X-HWID / X-Device-ID.\n${line}`;
+    return {
+      encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
+      profileTitle: 'Ошибка HWID',
       panelUserId: user.id,
     };
   }
