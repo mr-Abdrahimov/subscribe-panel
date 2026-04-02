@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui';
+import { useSortable, moveArrayElement } from '@vueuse/integrations/useSortable';
+
 definePageMeta({
   layout: 'dashboard'
 });
@@ -26,11 +29,19 @@ const connects = ref<ConnectRow[]>([]);
 const isTagModalOpen = ref(false);
 const tagValue = ref('');
 const selectedConnectId = ref<string | null>(null);
-const dragId = ref<string | null>(null);
-const dragOverId = ref<string | null>(null);
 
 onMounted(() => {
   loadConnects();
+});
+
+useSortable('.connects-table-tbody', connects, {
+  handle: '.connect-drag-handle',
+  animation: 150,
+  onUpdate: async (e) => {
+    moveArrayElement(connects, e.oldIndex!, e.newIndex!, e);
+    await nextTick();
+    await syncOrder();
+  }
 });
 
 async function loadConnects() {
@@ -94,45 +105,7 @@ async function submitTag() {
   }
 }
 
-function onDragStart(id: string) {
-  dragId.value = id;
-}
-
-function onDragOver(event: DragEvent) {
-  event.preventDefault();
-}
-
-function onDragEnter(targetId: string) {
-  if (dragId.value && dragId.value !== targetId) {
-    dragOverId.value = targetId;
-  }
-}
-
-function onDragLeave() {
-  dragOverId.value = null;
-}
-
-async function onDrop(targetId: string) {
-  if (!dragId.value || dragId.value === targetId) {
-    dragId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-
-  const fromIndex = connects.value.findIndex((item) => item.id === dragId.value);
-  const toIndex = connects.value.findIndex((item) => item.id === targetId);
-  if (fromIndex === -1 || toIndex === -1) {
-    dragId.value = null;
-    return;
-  }
-
-  const copy = [...connects.value];
-  const [moved] = copy.splice(fromIndex, 1);
-  copy.splice(toIndex, 0, moved);
-  connects.value = copy;
-  dragId.value = null;
-  dragOverId.value = null;
-
+async function syncOrder() {
   try {
     await $fetch(`${config.public.apiBaseUrl}/connects/reorder`, {
       method: 'PATCH',
@@ -144,6 +117,43 @@ async function onDrop(targetId: string) {
     await loadConnects();
   }
 }
+
+const columns: TableColumn<ConnectRow>[] = [
+  {
+    id: 'drag',
+    header: '',
+    meta: {
+      class: {
+        th: 'w-10',
+        td: 'w-10'
+      }
+    }
+  },
+  {
+    accessorKey: 'subscription',
+    header: 'Подписка'
+  },
+  {
+    accessorKey: 'name',
+    header: 'Название'
+  },
+  {
+    id: 'status',
+    header: 'Статус'
+  },
+  {
+    accessorKey: 'protocol',
+    header: 'Протокол'
+  },
+  {
+    accessorKey: 'createdAt',
+    header: 'Дата добавления'
+  },
+  {
+    id: 'actions',
+    header: 'Действия'
+  }
+];
 </script>
 
 <template>
@@ -164,96 +174,55 @@ async function onDrop(targetId: string) {
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
-      <div class="hidden md:block px-4 pb-4">
-        <div class="grid grid-cols-[1fr_1.2fr_1fr_.7fr_1fr_1.4fr] gap-3 border-b py-3 text-sm font-medium">
-          <div>Подписка</div>
-          <div>Название</div>
-          <div>Статус</div>
-          <div>Протокол</div>
-          <div>Дата добавления</div>
-          <div>Действия</div>
-        </div>
+      <UTable
+        :data="connects"
+        :columns="columns"
+        :loading="loading"
+        empty="Коннектов пока нет"
+        :ui="{ tbody: 'connects-table-tbody' }"
+        class="w-full"
+      >
+        <template #drag-cell>
+          <div class="connect-drag-handle inline-flex cursor-grab active:cursor-grabbing text-muted">
+            <UIcon name="i-lucide-grip-vertical" class="size-4" />
+          </div>
+        </template>
 
-        <div v-if="connects.length === 0" class="py-6 text-center text-muted">
-          Коннектов пока нет
-        </div>
+        <template #subscription-cell="{ row }">
+          {{ row.original.subscription.title }}
+        </template>
 
-        <div
-          v-for="row in connects"
-          :key="row.id"
-          draggable="true"
-          class="grid grid-cols-[1fr_1.2fr_1fr_.7fr_1fr_1.4fr] gap-3 border-b last:border-b-0 py-3 text-sm items-start cursor-grab active:cursor-grabbing transition-colors"
-          :class="{
-            'opacity-50 bg-primary/5': dragId === row.id,
-            'ring-2 ring-primary/40 bg-primary/10': dragOverId === row.id
-          }"
-          @dragstart="onDragStart(row.id)"
-          @dragenter="onDragEnter(row.id)"
-          @dragover="onDragOver"
-          @dragleave="onDragLeave"
-          @drop="onDrop(row.id)"
-        >
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-grip-vertical" class="text-muted size-4" />
-            <span>{{ row.subscription.title }}</span>
-          </div>
-          <div>
-            {{ row.name }}
-          </div>
-          <div>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              :icon="row.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
-              @click="toggleStatus(row.id)"
-            />
-          </div>
-          <div>{{ row.protocol.toUpperCase() }}</div>
-          <div class="whitespace-nowrap">
-            {{ new Date(row.createdAt).toLocaleString('ru-RU') }}
-          </div>
+        <template #status-cell="{ row }">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :icon="row.original.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
+            @click="toggleStatus(row.original.id)"
+          />
+        </template>
+
+        <template #protocol-cell="{ row }">
+          {{ row.original.protocol.toUpperCase() }}
+        </template>
+
+        <template #createdAt-cell="{ row }">
+          <span class="whitespace-nowrap">
+            {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}
+          </span>
+        </template>
+
+        <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
-            <UButton size="xs" color="error" variant="soft" @click="removeConnect(row.id)">
+            <UButton size="xs" color="error" variant="soft" @click="removeConnect(row.original.id)">
               Удалить
             </UButton>
-            <UButton size="xs" color="primary" variant="soft" @click="openAddTag(row.id)">
+            <UButton size="xs" color="primary" variant="soft" @click="openAddTag(row.original.id)">
               Добавить тэг
             </UButton>
           </div>
-        </div>
-      </div>
-
-      <div class="md:hidden space-y-3 p-4">
-        <div v-if="connects.length === 0" class="py-4 text-center text-sm text-muted">
-          Коннектов пока нет
-        </div>
-        <UCard v-for="row in connects" :key="row.id" variant="subtle">
-          <div class="space-y-2">
-            <p><span class="text-muted">Подписка:</span> {{ row.subscription.title }}</p>
-            <p>
-              <span class="text-muted">Название:</span> {{ row.name }}
-            </p>
-            <p><span class="text-muted">Протокол:</span> {{ row.protocol.toUpperCase() }}</p>
-            <p><span class="text-muted">Дата:</span> {{ new Date(row.createdAt).toLocaleString('ru-RU') }}</p>
-            <div class="flex flex-wrap gap-2 pt-2">
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :icon="row.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
-                @click="toggleStatus(row.id)"
-              />
-              <UButton size="xs" color="error" variant="soft" @click="removeConnect(row.id)">
-                Удалить
-              </UButton>
-              <UButton size="xs" color="primary" variant="soft" @click="openAddTag(row.id)">
-                Добавить тэг
-              </UButton>
-            </div>
-          </div>
-        </UCard>
-      </div>
+        </template>
+      </UTable>
     </UCard>
 
     <UModal v-model:open="isTagModalOpen" title="Добавить тэг">
@@ -275,4 +244,3 @@ async function onDrop(targetId: string) {
     </UModal>
   </div>
 </template>
-

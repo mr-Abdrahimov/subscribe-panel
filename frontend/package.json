@@ -19,12 +19,15 @@
     "@iconify-json/simple-icons": "^1.2.75",
     "@nuxt/ui": "^4.6.0",
     "@prisma/client": "^6.19.3",
+    "@vueuse/integrations": "^14.2.1",
     "nuxt": "^4.4.2",
     "prisma": "^6.19.3",
+    "sortablejs": "^1.15.7",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.15.2",
+    "@types/sortablejs": "^1.15.9",
     "dotenv-cli": "^11.0.0",
     "eslint": "^10.1.0",
     "typescript": "^5.9.2",
