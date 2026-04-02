@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
+import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 
 @Injectable()
 export class ManagementService {
@@ -126,6 +127,7 @@ export class ManagementService {
     encoded: string;
     /** subscriptionDisplayName группы пользователя панели (PanelUser.groupName → Group); для HTTP profile-title имя пользователя не подставляем */
     profileTitle: string;
+    panelUserId: string;
   }> {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },
@@ -162,7 +164,30 @@ export class ManagementService {
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
+      panelUserId: user.id,
     };
+  }
+
+  /** Запись в лог обращений к подписке (Happ и др.): IP, HWID, UA */
+  async logPanelUserSubscriptionAccess(
+    panelUserId: string,
+    meta: SubscriptionAccessMeta,
+  ): Promise<void> {
+    const cap = (s: string | undefined, max: number) =>
+      s && s.length > max ? `${s.slice(0, max)}…` : s;
+    await this.prisma.panelUserAccessLog.create({
+      data: {
+        panelUserId,
+        clientIp: cap(meta.clientIp, 256) ?? undefined,
+        userAgent: cap(meta.userAgent, 2000) ?? undefined,
+        hwid: cap(meta.hwid, 512) ?? undefined,
+        accept: cap(meta.accept, 512) ?? undefined,
+        acceptLanguage: cap(meta.acceptLanguage, 512) ?? undefined,
+        referer: cap(meta.referer, 2000) ?? undefined,
+        queryParams: meta.queryParams ?? undefined,
+        extraHeaders: meta.extraHeaders ?? undefined,
+      },
+    });
   }
 
   async getPublicUserByCode(code: string) {

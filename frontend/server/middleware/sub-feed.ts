@@ -1,5 +1,11 @@
 import type { H3Event } from 'h3';
-import { defineEventHandler, getRequestHeader, getRequestURL, setHeader } from 'h3';
+import {
+  defineEventHandler,
+  getRequestHeader,
+  getRequestIP,
+  getRequestURL,
+  setHeader,
+} from 'h3';
 import {
   formatHappProfileTitleHeaderValue,
   sliceProfileTitleForHappSubscription,
@@ -71,8 +77,35 @@ export default defineEventHandler(async (event) => {
     await attachProfileTitleHeadersForHtml(event, apiRoot, code);
     return;
   }
-  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}`;
-  const res = await $fetch.raw(endpoint);
+  const forwardHeaderNames = [
+    'user-agent',
+    'accept',
+    'accept-language',
+    'referer',
+    'x-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
+    'x-hwid',
+    'hwid',
+    'x-device-id',
+    'device-id',
+    'x-happ-hwid',
+    'x-happ-device-id',
+  ] as const;
+  const proxyHeaders: Record<string, string> = {};
+  for (const name of forwardHeaderNames) {
+    const v = getRequestHeader(event, name);
+    if (v) {
+      proxyHeaders[name] = v;
+    }
+  }
+  const clientIp = getRequestIP(event, { xForwardedFor: true });
+  if (clientIp && !proxyHeaders['x-forwarded-for']) {
+    proxyHeaders['x-forwarded-for'] = clientIp;
+  }
+
+  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${url.search || ''}`;
+  const res = await $fetch.raw(endpoint, { headers: proxyHeaders });
   const data = (res._data ?? '') as string;
   const profileTitleStar = res.headers.get('profile-title*');
   const profileTitlePlain = res.headers.get('profile-title');

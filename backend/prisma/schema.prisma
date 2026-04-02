@@ -63,13 +63,36 @@ model Group {
 }
 
 model PanelUser {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  code      String   @unique
-  groupName String
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String                 @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  code       String                 @unique
+  groupName  String
+  enabled    Boolean                @default(true)
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  accessLogs PanelUserAccessLog[]
+}
+
+/// Лог обращения клиента (Happ и др.) к подписке GET /public/sub/:code — IP, HWID, User-Agent, query и заголовки
+model PanelUserAccessLog {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  panelUserId   String    @db.ObjectId
+  panelUser     PanelUser @relation(fields: [panelUserId], references: [id], onDelete: Cascade)
+  /// Клиентский IP (X-Forwarded-For, X-Real-IP, CF-Connecting-IP или сокет)
+  clientIp      String?
+  userAgent     String?
+  /// Идентификатор устройства, если клиент передал (заголовки или query)
+  hwid          String?
+  accept        String?
+  acceptLanguage String?
+  referer       String?
+  /// Параметры строки запроса (?hwid=…, providerid и т.д.)
+  queryParams   Json?
+  /// Доп. заголовки (X-*, happ-*, device-* и т.п.), усечённые по длине
+  extraHeaders  Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([panelUserId, createdAt])
 }
 
 /// Ссылки для страницы /sub: в urlTemplate каждое {link} → полный URL https://origin/sub/CODE (origin из env); {link} необязателен

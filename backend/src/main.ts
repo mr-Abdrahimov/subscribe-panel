@@ -9,6 +9,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
+  const http = app.getHttpAdapter().getInstance();
+  http.set('trust proxy', true);
+
   app.enableCors({
     origin: config.get<string>('FRONTEND_ORIGIN') ?? 'http://localhost:3001',
     credentials: true,

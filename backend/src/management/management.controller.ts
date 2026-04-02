@@ -6,14 +6,17 @@ import {
   Header,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Patch,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { setProfileTitleResponseHeaders } from '../common/profile-title-header';
+import { extractSubscriptionAccessMeta } from '../common/subscription-client-meta';
 import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
@@ -23,6 +26,8 @@ import { ManagementService } from './management.service';
 @ApiTags('Управление')
 @Controller()
 export class ManagementController {
+  private readonly logger = new Logger(ManagementController.name);
+
   constructor(private readonly managementService: ManagementService) {}
 
   @Get('groups')
@@ -156,16 +161,30 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      "Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (совместимость с Happ; до 25 символов), далее URI коннектов. Фрагмент # в URI — Connect.name. Заголовки profile-title (plain или base64:…) и profile-title* — из настроек группы пользователя.",
+      "Тело — base64(UTF-8): при заданном названии группы первая строка после декодирования — «#profile-title: …» (совместимость с Happ; до 25 символов), далее URI коннектов. Фрагмент # в URI — Connect.name. Заголовки profile-title (plain или base64:…) и profile-title* — из настроек группы пользователя. Каждое успешное обращение записывается в лог (PanelUserAccessLog): IP, User-Agent, HWID и прочие заголовки/query, если клиент их передал.",
   })
   @ApiResponse({
     status: 200,
     description:
       'Тело: base64 (UTF-8), см. описание эндпоинта (#profile-title + строки подписки). Заголовки profile-title для клиентов вроде Happ.',
   })
-  async getPublicSubscription(@Param('code') code: string, @Res() res: Response) {
-    const { encoded, profileTitle } =
+  async getPublicSubscription(
+    @Param('code') code: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const { encoded, profileTitle, panelUserId } =
       await this.managementService.getPublicFeedByCode(code);
+    try {
+      await this.managementService.logPanelUserSubscriptionAccess(
+        panelUserId,
+        extractSubscriptionAccessMeta(req),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Не удалось записать лог обращения к подписке: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
       'Cache-Control',
