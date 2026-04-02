@@ -80,7 +80,7 @@ export class ManagementService {
 
   async getPublicFeedByCode(code: string): Promise<{
     encoded: string;
-    /** Для HTTP-заголовка profile-title: настройка группы или имя пользователя панели */
+    /** HTTP profile-title: «Название для публичной подписки» из настроек группы, иначе имя пользователя панели */
     profileTitle: string;
   }> {
     const user = await this.prisma.panelUser.findUnique({
@@ -106,10 +106,9 @@ export class ManagementService {
       select: { raw: true, name: true },
     });
 
+    /** Имя в URI (#) — всегда из БД (Connect.name); название из настроек группы только в заголовке profile-title */
     const payload = connects
-      .map((c) =>
-        this.applyCustomNameToUri(c.raw, groupTitle || c.name),
-      )
+      .map((c) => this.applyCustomNameToUri(c.raw, c.name))
       .join('\n');
     return {
       encoded: Buffer.from(payload, 'utf-8').toString('base64'),

@@ -97,8 +97,8 @@ async function saveGroupTitle(groupId: string) {
             Название
           </h3>
           <p class="text-sm text-muted">
-            Текст для публичной ссылки вида <code class="text-xs font-mono text-highlighted">/sub/…</code>: заголовок страницы в браузере и отображаемое имя каждого коннекта в VPN-клиенте (после символа # в URI).
-            Если поле пустое, для ленты подписки используются индивидуальные названия коннектов из панели.
+            Используется как «название подписки»: заголовок страницы <code class="text-xs font-mono text-highlighted">/sub/…</code>, HTTP-заголовок <code class="text-xs font-mono text-highlighted">profile-title</code> при запросе ленты.
+            Имена отдельных серверов в клиенте (фрагмент # в каждой строке) всегда берутся из поля «Название» коннекта в панели (БД).
           </p>
         </div>
       </template>
@@ -132,7 +132,7 @@ async function saveGroupTitle(groupId: string) {
 
           <UFormField
             label="Название для публичной подписки"
-            description="Показывается пользователям с ссылкой на эту группу"
+            description="Подписка / profile-title и страница /sub, не подменяет имена коннектов в ленте"
             class="w-full"
           >
             <UInput
