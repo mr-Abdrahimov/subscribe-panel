@@ -6,6 +6,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
+
+  app.enableCors({
+    origin: config.get<string>('FRONTEND_ORIGIN') ?? 'http://localhost:3001',
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -13,8 +20,6 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-
-  const config = app.get(ConfigService);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle(config.get<string>('SWAGGER_TITLE') ?? 'API')
