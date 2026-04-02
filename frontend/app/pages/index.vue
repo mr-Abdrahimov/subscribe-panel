@@ -51,79 +51,99 @@ const pendingDeleteUserId = ref<string | null>(null);
 const isClearLogsConfirmOpen = ref(false);
 const pendingClearLogsUserId = ref<string | null>(null);
 
+/** Единый стиль заголовков таблицы: размер шрифта и выравнивание по центру */
+const thBase = 'text-center text-xs font-semibold align-middle';
+
 const columns: TableColumn<UserItem>[] = [
   {
     accessorKey: 'name',
-    header: 'Имя'
+    header: 'Имя',
+    meta: {
+      class: {
+        th: thBase,
+      },
+    },
   },
   {
     accessorKey: 'lastSubscriptionActivityAt',
     header: 'Последняя активность',
     meta: {
       class: {
-        th: 'text-xs whitespace-nowrap',
-        td: 'text-sm whitespace-nowrap'
-      }
-    }
+        th: `${thBase} whitespace-nowrap`,
+        td: 'text-sm whitespace-nowrap',
+      },
+    },
   },
   {
     accessorKey: 'code',
     header: 'Ссылка',
     meta: {
       class: {
-        th: 'w-px',
-        td: 'w-px whitespace-nowrap'
-      }
-    }
+        th: `${thBase} w-px`,
+        td: 'w-px whitespace-nowrap',
+      },
+    },
   },
   {
     accessorKey: 'groupName',
-    header: 'Группа'
+    header: 'Группа',
+    meta: {
+      class: {
+        th: thBase,
+        td: 'text-center align-middle',
+      },
+    },
   },
   {
     id: 'allowAllUserAgents',
     header: 'Все приложения',
     meta: {
       class: {
-        th: 'text-xs max-w-[6.5rem] whitespace-normal align-bottom',
-        td: 'align-middle'
-      }
-    }
+        th: `${thBase} max-w-[6.5rem] whitespace-normal`,
+        td: 'align-middle',
+      },
+    },
   },
   {
     id: 'hwidPolicy',
     header: 'HWID',
     meta: {
       class: {
-        th: 'text-xs max-w-[8.5rem] whitespace-normal align-bottom',
-        td: 'align-middle'
-      }
-    }
+        th: `${thBase} max-w-[8.5rem] whitespace-normal`,
+        td: 'align-middle',
+      },
+    },
   },
   {
     id: 'hwidLimit',
     header: 'Уник. HWID / лимит',
     meta: {
       class: {
-        th: 'text-xs max-w-[7rem] whitespace-normal align-bottom',
-        td: 'align-middle'
-      }
-    }
+        th: `${thBase} max-w-[7rem] whitespace-normal`,
+        td: 'align-middle',
+      },
+    },
   },
   {
     id: 'enabled',
-    header: 'Статус'
+    header: 'Статус',
+    meta: {
+      class: {
+        th: thBase,
+        td: 'align-middle',
+      },
+    },
   },
   {
     id: 'actions',
     header: '',
     meta: {
       class: {
-        th: 'w-px',
-        td: 'w-px whitespace-nowrap'
-      }
-    }
-  }
+        th: `${thBase} w-px`,
+        td: 'w-px whitespace-nowrap',
+      },
+    },
+  },
 ];
 
 const groupOptions = computed(() => groups.value.map(group => group.name));
@@ -579,10 +599,12 @@ async function copySubscriptionLink(code: string) {
         </template>
 
         <template #enabled-cell="{ row }">
-          <USwitch
-            :model-value="row.original.enabled"
-            @update:model-value="toggleUser(row.original, $event)"
-          />
+          <div class="flex justify-center">
+            <USwitch
+              :model-value="row.original.enabled"
+              @update:model-value="toggleUser(row.original, $event)"
+            />
+          </div>
         </template>
 
         <template #actions-cell="{ row }">
