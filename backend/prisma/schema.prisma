@@ -70,8 +70,8 @@ model PanelUser {
   enabled              Boolean                @default(true)
   /// Если true — base64-подписка отдаётся любому User-Agent; иначе только при UA, начинающемся с «Happ»
   allowAllUserAgents   Boolean                @default(false)
-  /// Если true — без HWID в запросе отдаётся одна строка-ошибка вместо списка коннектов
-  requireHwid          Boolean                @default(false)
+  /// Если true — без HWID в запросе отдаётся заглушка «Нет подключений» вместо списка коннектов
+  requireHwid          Boolean                @default(true)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]

@@ -65,6 +65,8 @@ export class ManagementService {
         name: name.trim(),
         code: code.trim(),
         groupName: groupName.trim(),
+        allowAllUserAgents: false,
+        requireHwid: true,
       },
     });
   }
