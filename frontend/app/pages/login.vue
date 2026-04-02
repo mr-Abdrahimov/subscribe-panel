@@ -16,8 +16,8 @@ const pending = ref(false);
 const errorMessage = ref('');
 
 const form = reactive({
-  email: config.public.adminEmail as string,
-  password: config.public.adminPassword as string
+  email: '',
+  password: ''
 });
 
 async function submit() {
