@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Сборка Nuxt на VPS с ~1 ГБ RAM: освобождаем память (Docker, PM2), иначе ядро
-# убивает процесс (OOM) на этапе Vite «rendering chunks».
+# Сборка при очень малом RAM (~1 ГиБ): перед билдом останавливаем Docker и PM2.
+# На сервере 4 ГиБ / 4 ядра обычно достаточно: cd frontend && npm ci && npm run build
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_ENV="${1:-backend/.env.production}"
@@ -16,8 +16,8 @@ docker compose --env-file "${COMPOSE_ENV}" down 2>/dev/null || docker compose do
 
 echo "==> Сборка frontend"
 cd "${ROOT}/frontend"
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=1536}"
-export UV_THREADPOOL_SIZE=2
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
+export UV_THREADPOOL_SIZE="${UV_THREADPOOL_SIZE:-4}"
 npm ci
 npm run build
 

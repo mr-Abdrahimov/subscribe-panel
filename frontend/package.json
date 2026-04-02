@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --dotenv .env.development",
-    "build:dev": "NODE_OPTIONS=--max-old-space-size=2048 nuxt build --dotenv .env.development",
-    "build": "NODE_OPTIONS=--max-old-space-size=4096 nuxt build --dotenv .env.production",
+    "build:dev": "NODE_OPTIONS=--max-old-space-size=3072 nuxt build --dotenv .env.development",
+    "build": "NODE_OPTIONS=--max-old-space-size=3072 nuxt build --dotenv .env.production",
     "preview": "nuxt preview --dotenv .env.production",
     "start:prod": "sh -c 'test -f .output/server/index.mjs || { echo \"Нет .output/server/index.mjs — выполните в каталоге frontend: npm ci && npm run build\" >&2; exit 1; }; exec dotenv -e .env.production -- node .output/server/index.mjs'",
     "postinstall": "nuxt prepare",

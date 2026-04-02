@@ -6,18 +6,7 @@ export default defineNuxtConfig({
   ],
 
   devtools: {
-    enabled: process.env.NODE_ENV !== 'production'
-  },
-
-  sourcemap: {
-    client: false,
-    server: false
-  },
-
-  vite: {
-    build: {
-      reportCompressedSize: false
-    }
+    enabled: true
   },
 
   css: ['~/assets/css/main.css'],
