@@ -10,6 +10,8 @@ type PublicUser = {
   enabled: boolean;
   subscriptionDisplayName: string | null;
   profileTitle: string | null;
+  /** Названия групп (панель + коннекты ленты) */
+  groups?: string[];
   appLinks?: { name: string; url: string }[];
 };
 
@@ -47,10 +49,17 @@ const { data: publicUser, pending: loading } = await useAsyncData(
 );
 
 const userName = computed(() => publicUser.value?.name ?? null);
-const subscriptionDisplayName = computed(
-  () => publicUser.value?.subscriptionDisplayName ?? null,
-);
 const profileTitle = computed(() => publicUser.value?.profileTitle?.trim() || null);
+/** Подпись «Группа» на странице: из API или fallback на groupName до обновления бэкенда */
+const groupLabels = computed(() => {
+  const g = publicUser.value?.groups;
+  if (g?.length) {
+    return g;
+  }
+  const gn = publicUser.value?.groupName?.trim();
+  return gn ? [gn] : [];
+});
+const groupLabelsText = computed(() => groupLabels.value.join(', '));
 const appLinks = computed(() => publicUser.value?.appLinks ?? []);
 
 const headTitle = computed(() => {
@@ -100,14 +109,14 @@ useSeoMeta({
 
     <div v-else-if="userName" class="space-y-3">
       <div
-        v-if="subscriptionDisplayName?.trim()"
+        v-if="groupLabels.length > 0"
         class="space-y-1"
       >
         <p class="text-sm text-muted">
-          Название из настроек группы
+          Группа
         </p>
         <p class="text-lg font-medium">
-          {{ subscriptionDisplayName.trim() }}
+          {{ groupLabelsText }}
         </p>
       </div>
       <div class="space-y-1">

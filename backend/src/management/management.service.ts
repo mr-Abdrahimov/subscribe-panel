@@ -174,6 +174,8 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
+    const groups = await this.collectPublicDisplayGroupNames(user.groupName);
+
     const sub =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
         user.groupName,
@@ -188,9 +190,80 @@ export class ManagementService {
       subscriptionDisplayName: trimmedSub || null,
       /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,
+      /** Имена групп для блока «Группа» на /sub: привязка пользователя и группы коннектов ленты */
+      groups,
       /** Название и готовая ссылка для блока «Приложения» на /sub */
       appLinks,
     };
+  }
+
+  /**
+   * Уникальные названия групп: PanelUser.groupName и все теги groupNames у активных коннектов ленты.
+   * Имя приводится к записи Group.name в БД при совпадении (регистр, NFC).
+   */
+  private async collectPublicDisplayGroupNames(
+    panelGroupName: string,
+  ): Promise<string[]> {
+    const raw = new Set<string>();
+    const primary = panelGroupName.trim();
+    if (primary) {
+      raw.add(primary);
+      const connects = await this.prisma.connect.findMany({
+        where: {
+          status: 'ACTIVE',
+          groupNames: { has: primary },
+        },
+        select: { groupNames: true },
+      });
+      for (const c of connects) {
+        for (const g of c.groupNames) {
+          const t = g.trim();
+          if (t) {
+            raw.add(t);
+          }
+        }
+      }
+    }
+    return this.resolveGroupNamesToCanonical(Array.from(raw));
+  }
+
+  private async resolveGroupNamesToCanonical(
+    rawNames: string[],
+  ): Promise<string[]> {
+    if (rawNames.length === 0) {
+      return [];
+    }
+    const groups = await this.prisma.group.findMany({
+      select: { name: true },
+    });
+    const resolved: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of rawNames) {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const normalizedTarget = trimmed.normalize('NFC');
+      const targetLower = normalizedTarget.toLowerCase();
+      const row =
+        groups.find((g) => g.name.trim() === trimmed) ??
+        groups.find(
+          (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+        ) ??
+        groups.find(
+          (g) =>
+            g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+        );
+      const display = (row?.name ?? trimmed).trim();
+      const dedupeKey = display.normalize('NFC').toLowerCase();
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
+        resolved.push(display);
+      }
+    }
+    return resolved.sort((a, b) =>
+      a.localeCompare(b, 'ru', { sensitivity: 'base' }),
+    );
   }
 
   listSubscriptionAppLinks() {

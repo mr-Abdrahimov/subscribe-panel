@@ -146,7 +146,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle совпадает с заголовком profile-title ленты: subscriptionDisplayName той группы, к которой привязан пользователь панели (PanelUser.groupName). Если в настройках группы пусто — null; заголовки ленты тогда не отдаются; для HTML /sub фронт может подставить имя пользователя. Массив appLinks: name и url — в url каждое вхождение {link} заменено на полный URL https://…/sub/{code}.',
+      'Поле profileTitle — subscriptionDisplayName группы пользователя (заголовок ленты). Поле groups — названия групп для страницы /sub: привязка пользователя (groupName) и все группы из активных коннектов его ленты, без дублей, сортировка по-русски. subscriptionDisplayName остаётся в ответе для совместимости. Массив appLinks: подстановка {link} в полный URL подписки.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
