@@ -190,6 +190,52 @@ export class ManagementService {
     });
   }
 
+  /**
+   * Логи обращений клиентов к подписке (GET /public/sub/:code) для пользователя панели.
+   */
+  async listPanelUserSubscriptionAccessLogs(
+    panelUserId: string,
+    limit: number,
+  ): Promise<{
+    user: { name: string; code: string };
+    logs: Array<{
+      id: string;
+      clientIp: string | null;
+      userAgent: string | null;
+      hwid: string | null;
+      accept: string | null;
+      acceptLanguage: string | null;
+      referer: string | null;
+      queryParams: unknown;
+      extraHeaders: unknown;
+      createdAt: Date;
+    }>;
+  }> {
+    await this.ensureUser(panelUserId);
+    const user = await this.prisma.panelUser.findUniqueOrThrow({
+      where: { id: panelUserId },
+      select: { name: true, code: true },
+    });
+    const logs = await this.prisma.panelUserAccessLog.findMany({
+      where: { panelUserId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        clientIp: true,
+        userAgent: true,
+        hwid: true,
+        accept: true,
+        acceptLanguage: true,
+        referer: true,
+        queryParams: true,
+        extraHeaders: true,
+        createdAt: true,
+      },
+    });
+    return { user, logs };
+  }
+
   async getPublicUserByCode(code: string) {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },

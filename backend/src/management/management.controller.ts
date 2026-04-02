@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
@@ -95,6 +96,29 @@ export class ManagementController {
   @ApiOperation({ summary: 'Переключить активность пользователя панели' })
   toggleUser(@Param('id') id: string) {
     return this.managementService.toggleUser(id);
+  }
+
+  @Get('panel-users/:id/subscription-access-logs')
+  @ApiOperation({
+    summary: 'Логи обращений к подписке пользователя панели',
+    description:
+      'Записи PanelUserAccessLog при успешной выдаче ленты GET /public/sub/:code: IP, User-Agent, HWID (если передан), query и дополнительные заголовки. Сортировка по убыванию времени. Параметр limit — от 1 до 500, по умолчанию 200.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Объект: user (name, code) и logs — массив записей с полями id, clientIp, userAgent, hwid, accept, acceptLanguage, referer, queryParams, extraHeaders, createdAt.',
+  })
+  @ApiResponse({ status: 404, description: 'Пользователь не найден' })
+  listSubscriptionAccessLogs(
+    @Param('id') id: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const parsed = parseInt(limitRaw ?? '', 10);
+    const limit = Number.isNaN(parsed)
+      ? 200
+      : Math.min(500, Math.max(1, parsed));
+    return this.managementService.listPanelUserSubscriptionAccessLogs(id, limit);
   }
 
   @Patch('connects/:id/groups')

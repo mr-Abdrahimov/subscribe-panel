@@ -334,6 +334,17 @@ async function copySubscriptionLink(code: string) {
 
         <template #actions-cell="{ row }">
           <div class="inline-flex items-center gap-0.5 sm:gap-1">
+            <UTooltip text="Логи обращений к подписке">
+              <UButton
+                :to="`/panel-users/${row.original.id}/logs`"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-scroll-text"
+                class="rounded-lg p-1.5 min-w-8 min-h-8"
+                aria-label="Логи подписки"
+              />
+            </UTooltip>
             <UTooltip text="Редактировать">
               <UButton
                 color="neutral"
