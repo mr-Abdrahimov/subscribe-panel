@@ -23,6 +23,7 @@ import {
 } from '../common/subscription-client-meta';
 import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
+import { BulkUpdatePanelUsersDto } from './dto/bulk-update-panel-users.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
 import { ManagementService } from './management.service';
@@ -86,11 +87,28 @@ export class ManagementController {
     return this.managementService.deleteUser(id);
   }
 
+  @Post('panel-users/bulk-update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Массовое обновление пользователей панели',
+    description:
+      'По списку ids: назначение группы (опционально только для пользователей с restrictToCurrentGroupName — перенос из группы), смена enabled, allowAllUserAgents, maxUniqueHwids, очистка логов подписки (PanelUserAccessLog) для всех указанных id. Требуется хотя бы одно действие.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Объект { updated: число обновлённых записей PanelUser, deletedLogs: число удалённых логов }',
+  })
+  @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
+  bulkUpdatePanelUsers(@Body() body: BulkUpdatePanelUsersDto) {
+    return this.managementService.bulkUpdatePanelUsers(body);
+  }
+
   @Patch('panel-users/:id')
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids (лимит уникальных HWID по логам; 0 — не проверять). Код подписки (code) не меняется.',
+      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids (лимит уникальных HWID по логам; 0 — не проверять). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })

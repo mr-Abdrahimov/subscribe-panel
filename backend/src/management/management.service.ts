@@ -115,6 +115,7 @@ export class ManagementService {
   async updatePanelUser(
     id: string,
     dto: {
+      enabled?: boolean;
       name?: string;
       groupName?: string;
       allowAllUserAgents?: boolean;
@@ -125,6 +126,7 @@ export class ManagementService {
   ) {
     await this.ensureUser(id);
     const data: {
+      enabled?: boolean;
       name?: string;
       groupName?: string;
       allowAllUserAgents?: boolean;
@@ -132,6 +134,9 @@ export class ManagementService {
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
     } = {};
+    if (dto.enabled !== undefined) {
+      data.enabled = dto.enabled;
+    }
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
       if (!trimmed) {
@@ -177,6 +182,102 @@ export class ManagementService {
       where: { id },
       data,
     });
+  }
+
+  /**
+   * Массовое обновление пользователей панели и/или очистка логов подписки.
+   */
+  async bulkUpdatePanelUsers(dto: {
+    ids: string[];
+    groupName?: string;
+    restrictToCurrentGroupName?: string;
+    enabled?: boolean;
+    allowAllUserAgents?: boolean;
+    maxUniqueHwids?: number;
+    clearSubscriptionAccessLogs?: boolean;
+  }): Promise<{ updated: number; deletedLogs: number }> {
+    const uniq = [...new Set(dto.ids.map((id) => id.trim()).filter(Boolean))];
+    if (!uniq.length) {
+      throw new BadRequestException('Укажите хотя бы одного пользователя');
+    }
+
+    const found = await this.prisma.panelUser.count({
+      where: { id: { in: uniq } },
+    });
+    if (found !== uniq.length) {
+      throw new BadRequestException('Один или несколько пользователей не найдены');
+    }
+
+    const hasPatch =
+      dto.groupName !== undefined ||
+      dto.enabled !== undefined ||
+      dto.allowAllUserAgents !== undefined ||
+      dto.maxUniqueHwids !== undefined;
+    if (dto.clearSubscriptionAccessLogs !== true && !hasPatch) {
+      throw new BadRequestException(
+        'Укажите хотя бы одно действие: поля обновления или очистку логов',
+      );
+    }
+
+    const restrict = dto.restrictToCurrentGroupName?.trim();
+    if (restrict && dto.groupName === undefined) {
+      throw new BadRequestException(
+        'Поле restrictToCurrentGroupName используется только вместе с groupName',
+      );
+    }
+
+    const where: { id: { in: string[] }; groupName?: string } = { id: { in: uniq } };
+    if (dto.groupName !== undefined && restrict) {
+      where.groupName = restrict;
+    }
+
+    if (dto.groupName !== undefined) {
+      const trimmed = dto.groupName.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Группа не может быть пустой');
+      }
+      const group = await this.prisma.group.findUnique({
+        where: { name: trimmed },
+      });
+      if (!group) {
+        throw new BadRequestException('Группа с таким названием не найдена');
+      }
+    }
+
+    const data: {
+      groupName?: string;
+      enabled?: boolean;
+      allowAllUserAgents?: boolean;
+      maxUniqueHwids?: number;
+    } = {};
+    if (dto.groupName !== undefined) {
+      data.groupName = dto.groupName.trim();
+    }
+    if (dto.enabled !== undefined) {
+      data.enabled = dto.enabled;
+    }
+    if (dto.allowAllUserAgents !== undefined) {
+      data.allowAllUserAgents = dto.allowAllUserAgents;
+    }
+    if (dto.maxUniqueHwids !== undefined) {
+      data.maxUniqueHwids = dto.maxUniqueHwids;
+    }
+
+    let updated = 0;
+    if (Object.keys(data).length > 0) {
+      const result = await this.prisma.panelUser.updateMany({ where, data });
+      updated = result.count;
+    }
+
+    let deletedLogs = 0;
+    if (dto.clearSubscriptionAccessLogs === true) {
+      const del = await this.prisma.panelUserAccessLog.deleteMany({
+        where: { panelUserId: { in: uniq } },
+      });
+      deletedLogs = del.count;
+    }
+
+    return { updated, deletedLogs };
   }
 
   async setConnectGroups(id: string, groupNames: string[]) {

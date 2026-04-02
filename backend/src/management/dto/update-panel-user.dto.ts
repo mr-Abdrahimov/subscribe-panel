@@ -11,6 +11,13 @@ import {
 
 export class UpdatePanelUserDto {
   @ApiPropertyOptional({
+    description: 'Включён ли пользователь панели (доступ к подписке по ссылке)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Отображаемое имя пользователя панели',
     example: 'Иван',
     maxLength: 200,

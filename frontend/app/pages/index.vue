@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import type { RowSelectionState } from '@tanstack/table-core';
 import * as yup from 'yup';
 
 definePageMeta({
@@ -51,10 +52,32 @@ const pendingDeleteUserId = ref<string | null>(null);
 const isClearLogsConfirmOpen = ref(false);
 const pendingClearLogsUserId = ref<string | null>(null);
 
+const rowSelection = ref<RowSelectionState>({});
+const bulkLoading = ref(false);
+const bulkAssignGroupName = ref<string>('');
+const bulkTransferFromGroup = ref<string>('');
+const bulkTransferToGroup = ref<string>('');
+const bulkMaxUniqueHwidsInput = ref<string>('0');
+const isBulkClearLogsOpen = ref(false);
+
+const selectedUsersCount = computed(
+  () => Object.values(rowSelection.value).filter(Boolean).length,
+);
+
 /** Единый стиль заголовков таблицы: размер шрифта и выравнивание по центру */
 const thBase = 'text-center text-xs font-semibold align-middle';
 
 const columns: TableColumn<UserItem>[] = [
+  {
+    id: 'select',
+    header: '',
+    meta: {
+      class: {
+        th: 'w-12',
+        td: 'w-12',
+      },
+    },
+  },
   {
     accessorKey: 'name',
     header: 'Имя',
@@ -474,6 +497,150 @@ async function copySubscriptionLink(code: string) {
     toast.add({ title: 'Не удалось скопировать в буфер', color: 'error' });
   }
 }
+
+function getUserRowId(row: UserItem) {
+  return row.id;
+}
+
+function getSelectedUserIds(): string[] {
+  return Object.entries(rowSelection.value)
+    .filter(([, selected]) => selected)
+    .map(([id]) => id);
+}
+
+function clearRowSelection() {
+  rowSelection.value = {};
+}
+
+async function runBulkUpdate(body: Record<string, unknown>) {
+  const ids = getSelectedUserIds();
+  if (!ids.length) {
+    toast.add({ title: 'Выберите пользователей', color: 'warning' });
+    return;
+  }
+  bulkLoading.value = true;
+  try {
+    const res = await $fetch<{ updated: number; deletedLogs: number }>(
+      `${config.public.apiBaseUrl}/panel-users/bulk-update`,
+      { method: 'POST', body: { ids, ...body } },
+    );
+    const hadDataPatch =
+      body.groupName !== undefined ||
+      body.enabled !== undefined ||
+      body.allowAllUserAgents !== undefined ||
+      body.maxUniqueHwids !== undefined;
+    const hadClear = body.clearSubscriptionAccessLogs === true;
+    if (hadDataPatch && res.updated === 0 && !hadClear) {
+      toast.add({
+        title:
+          'Никто из выбранных не обновлён (проверьте фильтр «из группы» или состав выбора)',
+        color: 'warning',
+      });
+      await loadData();
+      return;
+    }
+    const parts: string[] = [];
+    if (res.updated > 0) {
+      parts.push(`Обновлено записей: ${res.updated}`);
+    }
+    if (hadClear) {
+      parts.push(
+        res.deletedLogs > 0
+          ? `Удалено записей логов: ${res.deletedLogs}`
+          : 'Записей логов не было',
+      );
+    }
+    toast.add({
+      title: parts.length ? parts.join('. ') : 'Готово',
+      color: 'success',
+    });
+    clearRowSelection();
+    await loadData();
+  } catch {
+    toast.add({ title: 'Массовая операция не выполнена', color: 'error' });
+  } finally {
+    bulkLoading.value = false;
+  }
+}
+
+async function bulkAssignGroup() {
+  const name =
+    typeof bulkAssignGroupName.value === 'string'
+      ? bulkAssignGroupName.value.trim()
+      : String(bulkAssignGroupName.value ?? '').trim();
+  if (!name) {
+    toast.add({ title: 'Выберите группу', color: 'warning' });
+    return;
+  }
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группу', color: 'error' });
+    return;
+  }
+  await runBulkUpdate({ groupName: name });
+}
+
+async function bulkTransferFromGroupAction() {
+  const from =
+    typeof bulkTransferFromGroup.value === 'string'
+      ? bulkTransferFromGroup.value.trim()
+      : String(bulkTransferFromGroup.value ?? '').trim();
+  const to =
+    typeof bulkTransferToGroup.value === 'string'
+      ? bulkTransferToGroup.value.trim()
+      : String(bulkTransferToGroup.value ?? '').trim();
+  if (!from || !to) {
+    toast.add({ title: 'Укажите группу «из» и «в»', color: 'warning' });
+    return;
+  }
+  if (from === to) {
+    toast.add({ title: 'Выберите разные группы', color: 'warning' });
+    return;
+  }
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группу', color: 'error' });
+    return;
+  }
+  await runBulkUpdate({
+    groupName: to,
+    restrictToCurrentGroupName: from,
+  });
+}
+
+async function bulkSetEnabled(enabled: boolean) {
+  await runBulkUpdate({ enabled });
+}
+
+async function bulkSetAllowAllUserAgents(value: boolean) {
+  await runBulkUpdate({ allowAllUserAgents: value });
+}
+
+async function bulkApplyMaxUniqueHwids() {
+  const parsed = Number.parseInt(String(bulkMaxUniqueHwidsInput.value).trim(), 10);
+  const n = clampMaxUniqueHwids(Number.isFinite(parsed) ? parsed : 0);
+  await runBulkUpdate({ maxUniqueHwids: n });
+}
+
+function askBulkClearLogs() {
+  if (!getSelectedUserIds().length) {
+    toast.add({ title: 'Выберите пользователей', color: 'warning' });
+    return;
+  }
+  isBulkClearLogsOpen.value = true;
+}
+
+function cancelBulkClearLogs() {
+  isBulkClearLogsOpen.value = false;
+}
+
+async function confirmBulkClearLogs() {
+  const ids = getSelectedUserIds();
+  if (!ids.length) {
+    cancelBulkClearLogs();
+    return;
+  }
+  isBulkClearLogsOpen.value = false;
+  await runBulkUpdate({ clearSubscriptionAccessLogs: true });
+}
 </script>
 
 <template>
@@ -489,13 +656,191 @@ async function copySubscriptionLink(code: string) {
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
+      <div
+        v-if="selectedUsersCount > 0"
+        class="flex flex-col gap-4 border-b border-default p-4"
+      >
+        <p class="text-sm text-muted">
+          Выбрано пользователей:
+          <span class="font-medium text-highlighted">{{ selectedUsersCount }}</span>
+        </p>
+
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3">
+            <p class="text-xs font-semibold text-highlighted">
+              Группа
+            </p>
+            <UFormField label="Назначить всем выбранным">
+              <USelectMenu
+                v-model="bulkAssignGroupName"
+                :items="groupOptions"
+                placeholder="Группа"
+                class="w-full"
+              />
+            </UFormField>
+            <UButton
+              size="sm"
+              class="w-full sm:w-auto"
+              :loading="bulkLoading"
+              :disabled="!bulkAssignGroupName"
+              @click="bulkAssignGroup"
+            >
+              Назначить группу
+            </UButton>
+            <UFormField
+              label="Перенести из группы"
+              description="Только выбранные, у кого сейчас эта группа"
+            >
+              <USelectMenu
+                v-model="bulkTransferFromGroup"
+                :items="groupOptions"
+                placeholder="Из группы"
+                class="w-full"
+              />
+            </UFormField>
+            <UFormField label="В группу">
+              <USelectMenu
+                v-model="bulkTransferToGroup"
+                :items="groupOptions"
+                placeholder="В группу"
+                class="w-full"
+              />
+            </UFormField>
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              class="w-full sm:w-auto"
+              :loading="bulkLoading"
+              :disabled="!bulkTransferFromGroup || !bulkTransferToGroup"
+              @click="bulkTransferFromGroupAction"
+            >
+              Перенести (исключить из одной группы)
+            </UButton>
+          </div>
+
+          <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3">
+            <p class="text-xs font-semibold text-highlighted">
+              Статус и доступ
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                size="sm"
+                :loading="bulkLoading"
+                @click="bulkSetEnabled(true)"
+              >
+                Включить
+              </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :loading="bulkLoading"
+                @click="bulkSetEnabled(false)"
+              >
+                Отключить
+              </UButton>
+            </div>
+            <p class="text-xs text-muted pt-1">
+              Все приложения (User-Agent)
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                size="sm"
+                :loading="bulkLoading"
+                @click="bulkSetAllowAllUserAgents(true)"
+              >
+                Включить
+              </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :loading="bulkLoading"
+                @click="bulkSetAllowAllUserAgents(false)"
+              >
+                Выключить
+              </UButton>
+            </div>
+          </div>
+
+          <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3 sm:col-span-2 lg:col-span-1">
+            <p class="text-xs font-semibold text-highlighted">
+              Лимит уникальных HWID
+            </p>
+            <div class="flex flex-wrap items-end gap-2">
+              <UFormField label="Значение для всех выбранных" class="min-w-[8rem] flex-1">
+                <UInput
+                  v-model="bulkMaxUniqueHwidsInput"
+                  type="number"
+                  min="0"
+                  max="10000"
+                  class="w-full"
+                />
+              </UFormField>
+              <UButton
+                size="sm"
+                :loading="bulkLoading"
+                @click="bulkApplyMaxUniqueHwids"
+              >
+                Применить лимит
+              </UButton>
+            </div>
+            <UButton
+              size="sm"
+              color="warning"
+              variant="soft"
+              :loading="bulkLoading"
+              @click="askBulkClearLogs"
+            >
+              Очистить логи HWID
+            </UButton>
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="ghost"
+              :disabled="bulkLoading"
+              @click="clearRowSelection"
+            >
+              Снять выбор
+            </UButton>
+          </div>
+        </div>
+      </div>
+
       <UTable
+        v-model:row-selection="rowSelection"
         :data="users"
         :columns="columns"
         :loading="loading"
+        :get-row-id="getUserRowId"
         empty="Пользователей пока нет"
         class="w-full"
       >
+        <template #select-header="{ table }">
+          <div class="flex justify-center" @click.stop>
+            <UCheckbox
+              :model-value="
+                table.getIsAllPageRowsSelected()
+                  ? true
+                  : table.getIsSomePageRowsSelected()
+                    ? 'indeterminate'
+                    : false
+              "
+              @update:model-value="(value) => table.toggleAllPageRowsSelected(!!value)"
+            />
+          </div>
+        </template>
+
+        <template #select-cell="{ row }">
+          <div class="flex justify-center" @click.stop>
+            <UCheckbox
+              :model-value="row.getIsSelected()"
+              @update:model-value="(value) => row.toggleSelected(!!value)"
+            />
+          </div>
+        </template>
+
         <template #lastSubscriptionActivityAt-cell="{ row }">
           <span
             class="text-muted tabular-nums"
@@ -727,6 +1072,27 @@ async function copySubscriptionLink(code: string) {
           </UButton>
           <UButton color="warning" @click="confirmClearSubscriptionLogs">
             Очистить
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isBulkClearLogsOpen" title="Очистить логи у выбранных пользователей?">
+      <template #body>
+        <p class="text-sm text-muted">
+          Для
+          <span class="font-medium text-highlighted">{{ selectedUsersCount }}</span>
+          выбранных пользователей будут удалены все записи логов подписки (HWID, IP, User-Agent).
+          Счётчики уникальных HWID обнулятся после обновления списка.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="cancelBulkClearLogs">
+            Отмена
+          </UButton>
+          <UButton color="warning" :loading="bulkLoading" @click="confirmBulkClearLogs">
+            Очистить у всех выбранных
           </UButton>
         </div>
       </template>
