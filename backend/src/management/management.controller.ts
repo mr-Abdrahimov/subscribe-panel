@@ -82,7 +82,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Создать пользователя панели',
     description:
-      'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL с ?t=TOKEN. Опционально: cryptoOnlySubscription, allowAllUserAgents (по умолчанию false). Выдача ленты без верного t запрещена.',
+      'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL с ?t=TOKEN. Опционально: cryptoOnlySubscription, allowAllUserAgents (по умолчанию false). GET /public/sub/:code: параметр t= опционален; если передан неверно — 403.',
   })
   createUser(
     @Body()
@@ -267,7 +267,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Обязателен query t= (как в happ:// ссылке). Прокси Nuxt с альтернативного пути (SUBSCRIPTION_CRYPTO_PATH_SEGMENT) добавляет via=crypto-page. Если у пользователя cryptoOnlySubscription=true, без via=crypto-page отдаётся заглушка: одно подключение с заголовком «Только Cripto» (обычный /sub/…). Реальная лента — с альтернативного пути и via=crypto-page. Для несуществующего code без t — заглушка «Нет подключений». Иначе — коннекты или заглушки HWID/лимита. Логи PanelUserAccessLog при известном panelUserId.',
+      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Query t= опционален: если передан — должен совпадать с subscriptionAccessToken пользователя; если не передан — лента всё равно отдаётся (достаточно секрета в длинном code в пути). Прокси Nuxt с альтернативного пути добавляет via=crypto-page. cryptoOnlySubscription=true и без via=crypto-page — заглушка «Только Cripto» по /sub/…. Несуществующий code — «Нет подключений». Логи PanelUserAccessLog при известном panelUserId.',
   })
   @ApiResponse({
     status: 200,
@@ -277,7 +277,7 @@ export class ManagementController {
   @ApiResponse({
     status: 403,
     description:
-      'Пользователь найден, но отсутствует или неверен параметр t (нужна ссылка с секретом, например из happ:// crypto).',
+      'Пользователь найден, передан непустой query t=, но он не совпадает с токеном подписки (устаревшая или поддельная ссылка).',
   })
   async getPublicSubscription(
     @Param('code') code: string,
@@ -296,9 +296,11 @@ export class ManagementController {
           : Array.isArray(rawT) && typeof rawT[0] === 'string'
             ? rawT[0]
             : undefined;
+      const trimmedT = (providedT ?? '').trim();
       if (
+        trimmedT.length > 0 &&
         !this.managementService.subscriptionFetchTokenMatches(
-          providedT,
+          trimmedT,
           accessToken,
         )
       ) {
@@ -310,7 +312,7 @@ export class ManagementController {
         );
         res.setHeader('Pragma', 'no-cache');
         return res.send(
-          'Доступ к подписке только по URL с параметром t. Добавляйте в Happ happ:// crypto-ссылку, а не голый https://…/sub/… .',
+          'Параметр t= указан, но неверен или устарел. Возьмите актуальную ссылку (happ:// crypto) или откройте подписку без параметра t.',
         );
       }
     }
