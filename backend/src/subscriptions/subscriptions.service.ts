@@ -113,10 +113,15 @@ export class SubscriptionsService {
       remainingConnects.map((c) => [c.raw, c]),
     );
 
-    let nextSortOrder = remainingConnects.reduce(
-      (max, item) => (item.sortOrder > max ? item.sortOrder : max),
-      0,
-    );
+    /**
+     * Порядок на /connects — глобальный по sortOrder (все подписки в одной таблице).
+     * Брать max только по текущей подписке давало дубликаты sortOrder с другими подписками;
+     * при равном sortOrder сортировка идёт по createdAt desc — новый коннект оказывался не в конце.
+     */
+    const globalMaxAgg = await this.prisma.connect.aggregate({
+      _max: { sortOrder: true },
+    });
+    let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
 
     for (const [raw, incoming] of incomingByRaw) {
       const existing = existingByRawAfterDelete.get(raw);
