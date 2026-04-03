@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizedConnectIdentity } from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
@@ -71,23 +72,55 @@ export class SubscriptionsService {
         name: true,
         originalName: true,
         sortOrder: true,
+        protocol: true,
       },
     });
 
-    const incomingByRaw = new Map(
-      links.map((raw) => [
+    /** Последняя строка в подписке для каждого нормализованного ключа (одинаковые по сути URI не дублируем). */
+    const incomingByIdentity = new Map<
+      string,
+      {
+        raw: string;
+        originalName: string;
+        protocol: string;
+      }
+    >();
+    for (const raw of links) {
+      const identity = normalizedConnectIdentity(raw);
+      incomingByIdentity.set(identity, {
         raw,
-        {
-          raw,
-          originalName: this.extractConnectName(raw),
-          protocol: this.extractProtocol(raw),
-        },
-      ]),
-    );
+        originalName: this.extractConnectName(raw),
+        protocol: this.extractProtocol(raw),
+      });
+    }
 
-    const toDeleteIds = existingConnects
-      .filter((connect) => !incomingByRaw.has(connect.raw))
-      .map((connect) => connect.id);
+    const incomingIdentities = new Set(incomingByIdentity.keys());
+
+    const existingByIdentity = new Map<
+      string,
+      (typeof existingConnects)[number][]
+    >();
+    for (const c of existingConnects) {
+      const identity = normalizedConnectIdentity(c.raw);
+      const arr = existingByIdentity.get(identity);
+      if (arr) {
+        arr.push(c);
+      } else {
+        existingByIdentity.set(identity, [c]);
+      }
+    }
+
+    const toDeleteIds: string[] = [];
+    for (const [identityKey, group] of existingByIdentity) {
+      const sorted = [...group].sort((a, b) => a.sortOrder - b.sortOrder);
+      if (!incomingIdentities.has(identityKey)) {
+        toDeleteIds.push(...sorted.map((c) => c.id));
+        continue;
+      }
+      for (let i = 1; i < sorted.length; i += 1) {
+        toDeleteIds.push(sorted[i]!.id);
+      }
+    }
 
     if (toDeleteIds.length > 0) {
       await this.prisma.connect.deleteMany({
@@ -99,7 +132,7 @@ export class SubscriptionsService {
       });
     }
 
-    /** После удаления устаревших — актуальные строки БД (важно для create vs update и для max(sortOrder)). */
+    /** После удаления устаревших и дублей по identity. */
     const remainingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
       select: {
@@ -107,11 +140,22 @@ export class SubscriptionsService {
         raw: true,
         originalName: true,
         sortOrder: true,
+        protocol: true,
       },
     });
-    const existingByRawAfterDelete = new Map(
-      remainingConnects.map((c) => [c.raw, c]),
+    const existingOneByIdentity = new Map<
+      string,
+      (typeof remainingConnects)[number]
+    >();
+    const remainingSorted = [...remainingConnects].sort(
+      (a, b) => a.sortOrder - b.sortOrder,
     );
+    for (const c of remainingSorted) {
+      const identity = normalizedConnectIdentity(c.raw);
+      if (!existingOneByIdentity.has(identity)) {
+        existingOneByIdentity.set(identity, c);
+      }
+    }
 
     /**
      * Порядок на /connects — глобальный по sortOrder (все подписки в одной таблице).
@@ -123,8 +167,8 @@ export class SubscriptionsService {
     });
     let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
 
-    for (const [raw, incoming] of incomingByRaw) {
-      const existing = existingByRawAfterDelete.get(raw);
+    for (const [identity, incoming] of incomingByIdentity) {
+      const existing = existingOneByIdentity.get(identity);
       if (!existing) {
         nextSortOrder += 1;
 
@@ -144,12 +188,24 @@ export class SubscriptionsService {
         continue;
       }
 
+      const data: {
+        raw?: string;
+        originalName?: string;
+        protocol?: string;
+      } = {};
+      if (existing.raw !== incoming.raw) {
+        data.raw = incoming.raw;
+      }
       if (existing.originalName !== incoming.originalName) {
+        data.originalName = incoming.originalName;
+      }
+      if (existing.protocol !== incoming.protocol) {
+        data.protocol = incoming.protocol;
+      }
+      if (Object.keys(data).length > 0) {
         await this.prisma.connect.update({
           where: { id: existing.id },
-          data: {
-            originalName: incoming.originalName,
-          },
+          data,
         });
       }
     }
