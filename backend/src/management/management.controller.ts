@@ -19,6 +19,8 @@ import type { Request, Response } from 'express';
 import {
   setHappHideSettingsHeader,
   setProfileTitleResponseHeaders,
+  setProfileUpdateIntervalResponseHeaders,
+  setSubscriptionAnnounceResponseHeaders,
 } from '../common/profile-title-header';
 import {
   extractSubscriptionAccessMeta,
@@ -29,6 +31,7 @@ import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { BulkUpdatePanelUsersDto } from './dto/bulk-update-panel-users.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
+import { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
 import { ManagementService } from './management.service';
 
 @ApiTags('Управление')
@@ -37,6 +40,27 @@ export class ManagementController {
   private readonly logger = new Logger(ManagementController.name);
 
   constructor(private readonly managementService: ManagementService) {}
+
+  @Get('panel-global-settings')
+  @ApiOperation({
+    summary: 'Получить глобальные настройки панели',
+    description:
+      'Объявление (subscriptionAnnounce) и интервал автообновления Happ (profileUpdateInterval, часы) для всех ответов GET /public/sub/:code.',
+  })
+  getPanelGlobalSettings() {
+    return this.managementService.getPanelGlobalSettings();
+  }
+
+  @Patch('panel-global-settings')
+  @ApiOperation({
+    summary: 'Обновить глобальные настройки панели',
+    description:
+      'Частичное обновление: subscriptionAnnounce (текст до 200 символов; пустая строка — отключить); profileUpdateInterval (целые часы 1–8760; null — отключить). Не переданные поля не меняются.',
+  })
+  @ApiResponse({ status: 200, description: 'Текущие настройки после сохранения' })
+  updatePanelGlobalSettings(@Body() body: UpdatePanelGlobalSettingsDto) {
+    return this.managementService.updatePanelGlobalSettings(body);
+  }
 
   @Get('groups')
   @ApiOperation({ summary: 'Получить список групп' })
@@ -267,7 +291,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Если задано в настройках панели — во всех ответах: #announce / announce, #profile-update-interval / profile-update-interval (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
   })
   @ApiResponse({
     status: 200,
@@ -338,6 +362,12 @@ export class ManagementController {
         );
     }
 
+    const {
+      announceMetaLine,
+      profileUpdateIntervalMetaLine,
+      profileUpdateIntervalHours,
+    } = await this.managementService.getSubscriptionGlobalMetaFromSettings();
+
     let payload: {
       encoded: string;
       profileTitle: string;
@@ -349,12 +379,17 @@ export class ManagementController {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         null,
         code,
+        'Нет подключений',
+        announceMetaLine,
+        profileUpdateIntervalMetaLine,
       );
     } else if (!user.enabled) {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         user.id,
         user.code,
         subscriptionProfileTitle,
+        announceMetaLine,
+        profileUpdateIntervalMetaLine,
       );
     } else if (user.cryptoOnlySubscription === true && !viaCryptoPage) {
       payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
@@ -362,6 +397,8 @@ export class ManagementController {
         user.code,
         subscriptionProfileTitle,
         'Только Cripto',
+        announceMetaLine,
+        profileUpdateIntervalMetaLine,
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;
@@ -372,6 +409,8 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
+          announceMetaLine,
+          profileUpdateIntervalMetaLine,
         );
       } else if (requireNoHwid && hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
@@ -379,12 +418,16 @@ export class ManagementController {
           user.code,
           subscriptionProfileTitle,
           'Отключите HWID',
+          announceMetaLine,
+          profileUpdateIntervalMetaLine,
         );
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
           user.id,
           user.code,
           subscriptionProfileTitle,
+          announceMetaLine,
+          profileUpdateIntervalMetaLine,
         );
       } else if (
         requireNoHwid !== true &&
@@ -401,9 +444,15 @@ export class ManagementController {
           user.code,
           subscriptionProfileTitle,
           'Превышен лимит HWID',
+          announceMetaLine,
+          profileUpdateIntervalMetaLine,
         );
       } else {
-        payload = await this.managementService.buildPublicFeedForPanelUser(user);
+        payload = await this.managementService.buildPublicFeedForPanelUser(
+          user,
+          announceMetaLine,
+          profileUpdateIntervalMetaLine,
+        );
       }
     }
 
@@ -429,6 +478,8 @@ export class ManagementController {
     );
     res.setHeader('Pragma', 'no-cache');
     setHappHideSettingsHeader(res);
+    setSubscriptionAnnounceResponseHeaders(res, announceMetaLine);
+    setProfileUpdateIntervalResponseHeaders(res, profileUpdateIntervalHours);
     if (payload.profileTitle) {
       setProfileTitleResponseHeaders(res, payload.profileTitle);
     }

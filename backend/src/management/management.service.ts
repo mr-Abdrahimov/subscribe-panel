@@ -4,11 +4,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
 import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
+import {
+  sliceAnnounceForHappSubscription,
+  sliceProfileTitleForHappSubscription,
+} from '../common/profile-title-header';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 
 @Injectable()
@@ -28,10 +32,111 @@ export class ManagementService {
     return rest;
   }
 
+  private static readonly PANEL_GLOBAL_SETTINGS_ID = 'global';
+
   listGroups() {
     return this.prisma.group.findMany({
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Настройки панели для подписки Happ */
+  async getPanelGlobalSettings(): Promise<{
+    subscriptionAnnounce: string | null;
+    profileUpdateInterval: number | null;
+  }> {
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+    });
+    const h = row?.profileUpdateInterval;
+    const intervalOk =
+      typeof h === 'number' && Number.isFinite(h) && Math.floor(h) >= 1
+        ? Math.floor(h)
+        : null;
+    return {
+      subscriptionAnnounce: row?.subscriptionAnnounce?.trim() || null,
+      profileUpdateInterval: intervalOk,
+    };
+  }
+
+  async updatePanelGlobalSettings(
+    dto: UpdatePanelGlobalSettingsDto,
+  ): Promise<{
+    subscriptionAnnounce: string | null;
+    profileUpdateInterval: number | null;
+  }> {
+    const patch: {
+      subscriptionAnnounce?: string | null;
+      profileUpdateInterval?: number | null;
+    } = {};
+
+    if (dto.subscriptionAnnounce !== undefined) {
+      const t = dto.subscriptionAnnounce.trim();
+      patch.subscriptionAnnounce =
+        t === '' ? null : sliceAnnounceForHappSubscription(t) || null;
+    }
+    if (dto.profileUpdateInterval !== undefined) {
+      patch.profileUpdateInterval =
+        dto.profileUpdateInterval === null
+          ? null
+          : Math.min(8760, Math.max(1, Math.floor(dto.profileUpdateInterval)));
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return this.getPanelGlobalSettings();
+    }
+
+    await this.prisma.panelGlobalSettings.upsert({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      create: {
+        id: ManagementService.PANEL_GLOBAL_SETTINGS_ID,
+        subscriptionAnnounce: patch.subscriptionAnnounce ?? null,
+        profileUpdateInterval: patch.profileUpdateInterval ?? null,
+      },
+      update: patch,
+    });
+    return this.getPanelGlobalSettings();
+  }
+
+  /**
+   * Глобальные мета-строки и значения заголовков для всех ответов GET /public/sub (Happ app-management).
+   */
+  async getSubscriptionGlobalMetaFromSettings(): Promise<{
+    announceMetaLine: string | null;
+    profileUpdateIntervalMetaLine: string | null;
+    profileUpdateIntervalHours: number | null;
+  }> {
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+    });
+
+    let announceMetaLine: string | null = null;
+    const rawAnn = row?.subscriptionAnnounce?.trim();
+    if (rawAnn) {
+      const text = sliceAnnounceForHappSubscription(rawAnn);
+      if (text) {
+        const b64 = Buffer.from(text, 'utf-8').toString('base64');
+        announceMetaLine = `#announce: base64:${b64}`;
+      }
+    }
+
+    const h = row?.profileUpdateInterval;
+    const profileUpdateIntervalHours =
+      typeof h === 'number' && Number.isFinite(h) && Math.floor(h) >= 1
+        ? Math.min(8760, Math.floor(h))
+        : null;
+    const profileUpdateIntervalMetaLine =
+      profileUpdateIntervalHours !== null
+        ? `#profile-update-interval: ${profileUpdateIntervalHours}`
+        : null;
+
+    return {
+      announceMetaLine,
+      profileUpdateIntervalMetaLine,
+      profileUpdateIntervalHours,
+    };
   }
 
   createGroup(name: string) {
@@ -587,7 +692,11 @@ export class ManagementService {
    * Обычная base64-подписка: коннекты группы пользователя.
    * Фрагмент # в URI — Connect.name; при названии группы — строка #profile-title для Happ.
    */
-  async buildPublicFeedForPanelUser(user: PanelUser): Promise<{
+  async buildPublicFeedForPanelUser(
+    user: PanelUser,
+    announceMetaLine: string | null = null,
+    profileUpdateIntervalMetaLine: string | null = null,
+  ): Promise<{
     encoded: string;
     profileTitle: string;
     panelUserId: string;
@@ -622,6 +731,14 @@ export class ManagementService {
       );
     }
     metaLines.push(this.profileWebPageUrlMetaLine(user.code));
+    const ann = announceMetaLine?.trim();
+    if (ann) {
+      metaLines.push(ann);
+    }
+    const intv = profileUpdateIntervalMetaLine?.trim();
+    if (intv) {
+      metaLines.push(intv);
+    }
     metaLines.push('#hide-settings: 1');
     const head = metaLines.join('\n');
     const bodyText =
@@ -644,6 +761,8 @@ export class ManagementService {
     code: string,
     profileTitleForMeta: string,
     connectionDisplayName: string,
+    announceMetaLine: string | null = null,
+    profileUpdateIntervalMetaLine: string | null = null,
   ): {
     encoded: string;
     profileTitle: string;
@@ -654,7 +773,17 @@ export class ManagementService {
     const conn = connectionDisplayName.trim() || 'Нет подключений';
     const line = this.buildRandomPlaceholderVlessLineForName(conn);
     const web = this.profileWebPageUrlMetaLine(code);
-    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(meta)}\n${web}\n#hide-settings: 1\n${line}`;
+    const ann = announceMetaLine?.trim();
+    const intv = profileUpdateIntervalMetaLine?.trim();
+    const metaBlock = [
+      `#profile-title: ${sliceProfileTitleForHappSubscription(meta)}`,
+      web,
+      ...(ann ? [ann] : []),
+      ...(intv ? [intv] : []),
+      '#hide-settings: 1',
+      line,
+    ].join('\n');
+    const bodyText = metaBlock;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle: meta,
@@ -671,6 +800,8 @@ export class ManagementService {
     panelUserId: string | null,
     code: string,
     profileTitleForMeta = 'Нет подключений',
+    announceMetaLine: string | null = null,
+    profileUpdateIntervalMetaLine: string | null = null,
   ): {
     encoded: string;
     profileTitle: string;
@@ -682,6 +813,8 @@ export class ManagementService {
       code,
       profileTitleForMeta,
       'Нет подключений',
+      announceMetaLine,
+      profileUpdateIntervalMetaLine,
     );
   }
 

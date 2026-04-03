@@ -3,11 +3,19 @@ import type { Response } from 'express';
 /** Ограничение Happ (и др. клиентов): https://www.happ.su/main/dev-docs/app-management */
 export const HAPP_PROFILE_TITLE_MAX_CHARS = 25;
 
+/** Лимит отображаемого текста объявления (announce) в Happ */
+export const HAPP_ANNOUNCE_MAX_CHARS = 200;
+
 /**
  * Обрезка по кодовым точкам Unicode (не по UTF-16 единицам), до лимита Happ.
  */
 export function sliceProfileTitleForHappSubscription(t: string): string {
   return [...t.trim()].slice(0, HAPP_PROFILE_TITLE_MAX_CHARS).join('');
+}
+
+/** Обрезка текста объявления по кодовым точкам Unicode до лимита Happ */
+export function sliceAnnounceForHappSubscription(t: string): string {
+  return [...t.trim()].slice(0, HAPP_ANNOUNCE_MAX_CHARS).join('');
 }
 
 /**
@@ -52,4 +60,38 @@ export function setProfileTitleResponseHeaders(
  */
 export function setHappHideSettingsHeader(res: Response): void {
   res.setHeader('hide-settings', '1');
+}
+
+/**
+ * Заголовок announce для Happ (как в теле подписки: base64:UTF-8).
+ * metaLine — строка вида «#announce: base64:…» из тела ленты.
+ */
+export function setSubscriptionAnnounceResponseHeaders(
+  res: Response,
+  metaLine: string | null | undefined,
+): void {
+  const s = metaLine?.trim();
+  if (!s) {
+    return;
+  }
+  const m = s.match(/^#announce:\s*(.+)$/i);
+  if (!m?.[1]) {
+    return;
+  }
+  res.setHeader('announce', m[1].trim());
+}
+
+/** Заголовок profile-update-interval для Happ (целые часы). */
+export function setProfileUpdateIntervalResponseHeaders(
+  res: Response,
+  hours: number | null | undefined,
+): void {
+  if (hours === null || hours === undefined) {
+    return;
+  }
+  const n = Math.floor(hours);
+  if (n < 1 || !Number.isFinite(n)) {
+    return;
+  }
+  res.setHeader('profile-update-interval', String(n));
 }
