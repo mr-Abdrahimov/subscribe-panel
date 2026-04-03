@@ -464,9 +464,18 @@ export class ManagementService {
     const uriLines = connects.map((c) =>
       this.applyCustomNameToUri(c.raw, c.name),
     );
-    const bodyText = profileTitle
-      ? `#profile-title: ${sliceProfileTitleForHappSubscription(profileTitle)}\n${uriLines.join('\n')}`
-      : uriLines.join('\n');
+    /** Happ: скрыть настройки серверов (тело подписки), см. app-management */
+    const metaLines: string[] = [];
+    const titleTrimmed = profileTitle.trim();
+    if (titleTrimmed) {
+      metaLines.push(
+        `#profile-title: ${sliceProfileTitleForHappSubscription(titleTrimmed)}`,
+      );
+    }
+    metaLines.push('#hide-settings: 1');
+    const head = metaLines.join('\n');
+    const bodyText =
+      uriLines.length > 0 ? `${head}\n${uriLines.join('\n')}` : head;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
@@ -487,7 +496,7 @@ export class ManagementService {
   } {
     const t = title.trim() || 'Нет подключений';
     const line = this.buildRandomPlaceholderVlessLineForName(t);
-    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n${line}`;
+    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n#hide-settings: 1\n${line}`;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle: t,

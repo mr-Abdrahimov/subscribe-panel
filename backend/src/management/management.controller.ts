@@ -249,7 +249,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). При успехе — реальные коннекты и profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). В ленте в теле подписки для Happ передаётся #hide-settings: 1 (скрыть настройки серверов). При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
