@@ -106,7 +106,7 @@ const columns: TableColumn<UserItem>[] = [
     meta: {
       class: {
         th: thBase,
-        td: 'whitespace-nowrap align-middle',
+        td: 'text-center align-middle whitespace-nowrap',
       },
     },
   },
@@ -886,7 +886,7 @@ async function confirmBulkClearLogs() {
         </template>
 
         <template #code-cell="{ row }">
-          <div class="inline-flex items-center justify-center gap-0.5 sm:gap-1">
+          <div class="flex w-full items-center justify-center gap-0.5 sm:gap-1">
             <UTooltip text="Скопировать ссылку на подписку (страница /sub/…)">
               <UButton
                 color="primary"
