@@ -67,7 +67,7 @@ const happCryptoCreatingUserId = ref<string | null>(null);
 
 type SubscriptionAccessMode = 'allApps' | 'crypto' | 'happOnly';
 
-const formAccessMode = ref<SubscriptionAccessMode>('happOnly');
+const formAccessMode = ref<SubscriptionAccessMode>('crypto');
 
 const selectedUsersCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length,
@@ -363,7 +363,7 @@ function openCreate() {
   formName.value = '';
   formCode.value = generateCode(32);
   formGroupName.value = groups.value[0]?.name ?? '';
-  formAccessMode.value = 'happOnly';
+  formAccessMode.value = 'crypto';
   isModalOpen.value = true;
 }
 
@@ -1194,10 +1194,32 @@ async function confirmBulkClearLogs() {
           </UFormField>
 
           <UFormField
-            label="Только crypto"
-            description="Реальная подписка в Happ только через happ://; страница для crypto.happ.su — с секретным путём, не /sub/…"
+            label="Доступ к ленте"
+            description="Три режима, как в таблице: все клиенты, crypto, только Happ."
           >
-            <USwitch v-model="formCryptoOnlySubscription" />
+            <div
+              class="inline-flex flex-row flex-wrap items-stretch gap-0.5 rounded-lg border border-default bg-elevated/50 p-0.5"
+              role="radiogroup"
+              aria-label="Режим доступа к подписке"
+            >
+              <UTooltip
+                v-for="opt in SUBSCRIPTION_ACCESS_OPTIONS"
+                :key="opt.value"
+                :text="opt.tooltip"
+              >
+                <UButton
+                  size="sm"
+                  :icon="opt.icon"
+                  :variant="formAccessMode === opt.value ? 'solid' : 'ghost'"
+                  :color="formAccessMode === opt.value ? 'primary' : 'neutral'"
+                  class="min-w-9 min-h-9 justify-center rounded-md"
+                  :aria-label="opt.label"
+                  :aria-checked="formAccessMode === opt.value"
+                  role="radio"
+                  @click="formAccessMode = opt.value"
+                />
+              </UTooltip>
+            </div>
           </UFormField>
         </div>
       </template>
