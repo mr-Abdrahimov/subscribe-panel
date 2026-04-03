@@ -267,7 +267,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. Логи PanelUserAccessLog при известном panelUserId.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
   })
   @ApiResponse({
     status: 200,

@@ -209,6 +209,16 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
           <span class="font-mono text-xs">{{ row.original.clientIp || '—' }}</span>
         </template>
 
+        <template #outcome-cell="{ row }">
+          <UBadge
+            size="sm"
+            variant="subtle"
+            :color="logOutcomeLabel(row.original.success).color"
+          >
+            {{ logOutcomeLabel(row.original.success).label }}
+          </UBadge>
+        </template>
+
         <template #hwid-cell="{ row }">
           <span class="font-mono text-xs break-all max-w-[8rem] sm:max-w-[12rem] inline-block">{{
             row.original.hwid || '—'
@@ -258,6 +268,24 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
     >
       <template v-if="detailLog" #body>
         <div class="space-y-3 text-sm max-h-[70vh] overflow-y-auto">
+          <div>
+            <p class="text-xs text-muted mb-1">
+              Результат
+            </p>
+            <UBadge
+              size="sm"
+              variant="subtle"
+              :color="logOutcomeLabel(detailLog.success).color"
+            >
+              {{ logOutcomeLabel(detailLog.success).label }}
+            </UBadge>
+            <p
+              v-if="detailLog.success === false"
+              class="text-xs text-muted mt-1"
+            >
+              Заглушка (лимит HWID, только crypto, UA и т.д.) — не учитывается в счётчике устройств и «последней активности».
+            </p>
+          </div>
           <div>
             <p class="text-xs text-muted mb-1">
               IP
