@@ -72,7 +72,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить список пользователей панели',
     description:
-      'В каждом элементе: lastSubscriptionActivityAt — последний успешный GET /public/sub/:code; subscriptionUniqueHwidCount — число уникальных HWID в логах подписки; maxUniqueHwids — настраиваемый лимит (0 = не ограничивать).',
+      'В каждом элементе: lastSubscriptionActivityAt — последний GET /public/sub/:code с выдачей полной ленты (не заглушки); subscriptionUniqueHwidCount — уникальные HWID только среди успешных выдач; maxUniqueHwids — настраиваемый лимит (0 = не ограничивать).',
   })
   listUsers() {
     return this.managementService.listUsers();
@@ -169,7 +169,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Логи обращений к подписке пользователя панели',
     description:
-      'Записи PanelUserAccessLog при успешной выдаче ленты GET /public/sub/:code: IP, User-Agent, HWID (если передан), query и дополнительные заголовки. Сортировка по убыванию времени. Параметр limit — от 1 до 500, по умолчанию 200.',
+      'Записи PanelUserAccessLog при GET /public/sub/:code: IP, User-Agent, HWID (если передан), query, success (полная лента или заглушка-отказ) и доп. заголовки. Сортировка по убыванию времени. Параметр limit — от 1 до 500, по умолчанию 200.',
   })
   @ApiResponse({
     status: 200,
@@ -192,7 +192,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Очистить логи обращений к подписке',
     description:
-      'Удаляет все записи PanelUserAccessLog пользователя (HWID, IP, User-Agent и пр. при запросах base64 GET /public/sub/:code). Счётчик уникальных HWID в списке пользователей обнулится после перезагрузки списка.',
+      'Удаляет все записи PanelUserAccessLog пользователя. Счётчики уникальных HWID и последней активности в списке пользователей обновятся после перезагрузки списка.',
   })
   @ApiResponse({
     status: 200,
@@ -342,6 +342,7 @@ export class ManagementController {
       encoded: string;
       profileTitle: string;
       panelUserId: string | null;
+      subscriptionDelivered: boolean;
     };
 
     if (!user) {
@@ -411,6 +412,7 @@ export class ManagementController {
         await this.managementService.logPanelUserSubscriptionAccess(
           payload.panelUserId,
           extractSubscriptionAccessMeta(req),
+          payload.subscriptionDelivered,
         );
       } catch (err) {
         this.logger.warn(

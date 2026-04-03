@@ -104,6 +104,8 @@ model PanelUserAccessLog {
   queryParams   Json?
   /// Доп. заголовки (X-*, happ-*, device-* и т.п.), усечённые по длине
   extraHeaders  Json?
+  /// false — выдана заглушка (отказ доступа); true — полная лента подписки. Учитывается в лимите HWID и «последней активности».
+  success       Boolean   @default(true)
   createdAt     DateTime  @default(now())
 
   @@index([panelUserId, createdAt])

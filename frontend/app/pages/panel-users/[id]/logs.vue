@@ -15,6 +15,8 @@ type AccessLogRow = {
   referer: string | null;
   queryParams: unknown;
   extraHeaders: unknown;
+  /** false — заглушка (отказ); true или отсутствие — полная лента (старые записи) */
+  success?: boolean;
   createdAt: string;
 };
 
@@ -49,6 +51,10 @@ const columns: TableColumn<AccessLogRow>[] = [
   {
     accessorKey: 'clientIp',
     header: 'IP',
+  },
+  {
+    id: 'outcome',
+    header: 'Результат',
   },
   {
     accessorKey: 'hwid',
@@ -150,6 +156,14 @@ function truncateText(s: string | null | undefined, max: number): string {
     return '—';
   }
   return t.length <= max ? t : `${t.slice(0, max)}…`;
+}
+
+/** Старые логи без поля success считаем успешной выдачей */
+function logOutcomeLabel(success: boolean | undefined): { label: string; color: 'success' | 'error' | 'neutral' } {
+  if (success === false) {
+    return { label: 'Отказ', color: 'error' };
+  }
+  return { label: 'Лента', color: 'success' };
 }
 </script>
 

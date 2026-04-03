@@ -68,16 +68,18 @@ export class ManagementService {
     const users = await this.prisma.panelUser.findMany({
       orderBy: { createdAt: 'desc' },
     });
+    const successOnly = { NOT: { success: false } };
     const aggregates = await this.prisma.panelUserAccessLog.groupBy({
       by: ['panelUserId'],
       _max: { createdAt: true },
+      where: successOnly,
     });
     const lastByUser = new Map(
       aggregates.map((a) => [a.panelUserId, a._max.createdAt]),
     );
     const hwidPairs = await this.prisma.panelUserAccessLog.groupBy({
       by: ['panelUserId', 'hwid'],
-      where: { hwid: { not: null } },
+      where: { hwid: { not: null }, ...successOnly },
     });
     const uniqueHwidCountByUser = new Map<string, number>();
     for (const row of hwidPairs) {
@@ -514,7 +516,11 @@ export class ManagementService {
     }
     const rows = await this.prisma.panelUserAccessLog.groupBy({
       by: ['hwid'],
-      where: { panelUserId, hwid: { not: null } },
+      where: {
+        panelUserId,
+        hwid: { not: null },
+        NOT: { success: false },
+      },
     });
     const known = new Set(
       rows.map((r) => r.hwid).filter((h): h is string => Boolean(h)),
@@ -585,6 +591,7 @@ export class ManagementService {
     encoded: string;
     profileTitle: string;
     panelUserId: string;
+    subscriptionDelivered: true;
   }> {
     const groupTitle =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
@@ -623,6 +630,7 @@ export class ManagementService {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
       panelUserId: user.id,
+      subscriptionDelivered: true,
     };
   }
 
@@ -640,6 +648,7 @@ export class ManagementService {
     encoded: string;
     profileTitle: string;
     panelUserId: string | null;
+    subscriptionDelivered: false;
   } {
     const meta = profileTitleForMeta.trim() || 'Нет подключений';
     const conn = connectionDisplayName.trim() || 'Нет подключений';
@@ -650,6 +659,7 @@ export class ManagementService {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle: meta,
       panelUserId,
+      subscriptionDelivered: false,
     };
   }
 
@@ -665,6 +675,7 @@ export class ManagementService {
     encoded: string;
     profileTitle: string;
     panelUserId: string | null;
+    subscriptionDelivered: false;
   } {
     return this.buildNamedSubscriptionPlaceholderFeed(
       panelUserId,
@@ -674,10 +685,11 @@ export class ManagementService {
     );
   }
 
-  /** Запись в лог обращений к подписке (Happ и др.): IP, HWID, UA */
+  /** Запись в лог обращений к подписке (Happ и др.): IP, HWID, UA; success — выдана полная лента, не заглушка */
   async logPanelUserSubscriptionAccess(
     panelUserId: string,
     meta: SubscriptionAccessMeta,
+    success: boolean,
   ): Promise<void> {
     const cap = (s: string | undefined, max: number) =>
       s && s.length > max ? `${s.slice(0, max)}…` : s;
@@ -692,6 +704,7 @@ export class ManagementService {
         referer: cap(meta.referer, 2000) ?? undefined,
         queryParams: meta.queryParams ?? undefined,
         extraHeaders: meta.extraHeaders ?? undefined,
+        success,
       },
     });
   }
@@ -714,6 +727,7 @@ export class ManagementService {
       referer: string | null;
       queryParams: unknown;
       extraHeaders: unknown;
+      success: boolean;
       createdAt: Date;
     }>;
   }> {
@@ -736,6 +750,7 @@ export class ManagementService {
         referer: true,
         queryParams: true,
         extraHeaders: true,
+        success: true,
         createdAt: true,
       },
     });
