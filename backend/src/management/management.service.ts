@@ -714,7 +714,11 @@ export class ManagementService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const { happCryptoUrl, ...publicUser } = user;
+    const { happCryptoUrl: rawHappCrypto, ...publicUser } = user;
+    const happCryptoUrl =
+      typeof rawHappCrypto === 'string' && rawHappCrypto.trim().startsWith('happ://')
+        ? rawHappCrypto.trim()
+        : null;
 
     const groups = await this.collectPublicDisplayGroupNames(user.groupName);
 
@@ -733,6 +737,8 @@ export class ManagementService {
 
     return {
       ...publicUser,
+      /** happ:// для блока ENDPOINT на публичной странице; null если не создана */
+      happCryptoUrl,
       subscriptionDisplayName: trimmedSub || null,
       /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,

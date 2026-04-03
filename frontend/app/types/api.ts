@@ -8,6 +8,8 @@ export type PublicUserResponse = {
   profileTitle: string | null
   /** Реальная лента только через crypto happ:// и секретный путь; /sub/… даёт заглушку */
   cryptoOnlySubscription?: boolean
+  /** happ:// от crypto.happ.su для копирования на публичной странице; null если не создана */
+  happCryptoUrl?: string | null
   groups: string[]
   appLinks: { name: string; url: string }[]
 }

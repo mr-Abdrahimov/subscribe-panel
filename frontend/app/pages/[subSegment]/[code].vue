@@ -4,6 +4,8 @@ import type { PublicUserResponse } from '~/types/api'
 definePageMeta({
   layout: 'sub',
   middleware: ['sub-public-segment'],
+  /** Только тёмная тема на публичной странице подписки (без переключателя) */
+  colorMode: 'dark',
 })
 
 const route = useRoute()
@@ -38,6 +40,11 @@ const appLinks = computed(() => data.value?.appLinks ?? [])
 const cryptoOnlySubscription = computed(
   () => data.value?.cryptoOnlySubscription === true,
 )
+
+const happCryptoUrl = computed(() => {
+  const u = (data.value?.happCryptoUrl ?? '').trim()
+  return u.startsWith('happ://') ? u : ''
+})
 
 const headTitle = computed(() => {
   const u = displayName.value
@@ -86,19 +93,18 @@ useSeoMeta({
   twitterImage: ogImageAbsolute,
 })
 
-const subscriptionUrl = computed(() => {
-  if (import.meta.client) {
-    return window.location.href
+async function copyCryptoLink() {
+  const url = happCryptoUrl.value
+  if (!url) {
+    useToast().add({
+      title: 'Нет happ:// ссылки — создайте crypto в панели администратора',
+      color: 'warning',
+    })
+    return
   }
-  return ''
-})
-
-async function copyToClipboard() {
-  const url = subscriptionUrl.value
-  if (!url) return
   try {
     await navigator.clipboard.writeText(url)
-    useToast().add({ title: 'Ссылка скопирована', color: 'success' })
+    useToast().add({ title: 'Crypto-ссылка (happ://) скопирована', color: 'success' })
   } catch {
     useToast().add({ title: 'Не удалось скопировать', color: 'error' })
   }
@@ -159,13 +165,16 @@ async function copyToClipboard() {
         </div>
 
         <div class="cp__url-block">
-          <label class="cp__label">ENDPOINT</label>
+          <label class="cp__label">ENDPOINT · HAPP CRYPTO</label>
           <div class="cp__url-row">
-            <code class="cp__url">{{ subscriptionUrl || '…' }}</code>
-            <button type="button" class="cp__btn cp__btn--ghost" @click="copyToClipboard">
+            <code class="cp__url">{{ happCryptoUrl || '— нет happ:// ссылки (создайте в панели) —' }}</code>
+            <button type="button" class="cp__btn cp__btn--ghost" @click="copyCryptoLink">
               КОПИРОВАТЬ
             </button>
           </div>
+          <p class="cp__url-hint">
+            Импорт в Happ — вставьте скопированную happ:// ссылку; обычный https здесь не используется.
+          </p>
         </div>
 
         <section class="cp__section cp__section--apps" aria-labelledby="cp-apps-heading">
@@ -492,6 +501,14 @@ async function copyToClipboard() {
 
 .cp__url-block {
   margin-bottom: 1.5rem;
+}
+
+.cp__url-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(232, 244, 255, 0.48);
+  font-weight: 500;
 }
 
 .cp__label {

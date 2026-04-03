@@ -1,11 +1,6 @@
 <template>
   <div class="sub-layout cosmic-shell relative">
     <CosmicBackdrop />
-    <div
-      class="pointer-events-auto absolute right-3 top-3 z-30 rounded-full border border-[var(--cosmic-border)] bg-[var(--cosmic-glass)] p-1.5 shadow-sm backdrop-blur-md sm:right-4 sm:top-4"
-    >
-      <ThemeToggle />
-    </div>
     <UMain class="sub-layout__main">
       <slot />
     </UMain>

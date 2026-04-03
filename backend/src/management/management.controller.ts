@@ -255,7 +255,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — для страницы подписки. cryptoOnlySubscription — подсказка UI: реальная лента только с альтернативного пути и happ crypto. Массив appLinks: {link} — URL страницы (/sub/… или /{cryptoSegment}/… при «только crypto»), {crypto} — happ:// при наличии.',
+      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — для страницы подписки. happCryptoUrl — готовая happ:// ссылка для импорта в Happ (или null). cryptoOnlySubscription — подсказка UI. Массив appLinks: {link}, {crypto}.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
