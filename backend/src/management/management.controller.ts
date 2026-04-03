@@ -112,7 +112,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Массовое обновление пользователей панели',
     description:
-      'По списку ids: назначение группы (опционально restrictToCurrentGroupName), смена enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription (сброс happCryptoUrl), очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
+      'По списку ids: назначение группы (опционально restrictToCurrentGroupName), смена enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription, очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
   })
   @ApiResponse({
     status: 200,
@@ -128,7 +128,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (при смене сбрасывается happCryptoUrl — пересоздайте crypto). Код подписки (code) не меняется.',
+      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (happCryptoUrl не сбрасывается). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })

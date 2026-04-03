@@ -75,7 +75,7 @@ export class UpdatePanelUserDto {
 
   @ApiPropertyOptional({
     description:
-      'Режим «только crypto»: реальные коннекты только при запросе ленты с альтернативного пути (см. SUBSCRIPTION_CRYPTO_PATH_SEGMENT) и via=crypto-page; обычный /sub/CODE даёт заглушку. При смене сбрасывается happCryptoUrl — пересоздайте crypto-ссылку.',
+      'Режим «только crypto»: полная лента с альтернативного пути (via=crypto-page); запрос ленты по /sub/CODE?t=… без via — заглушка «Только crypto». Сохранённая happ:// ссылка не сбрасывается.',
   })
   @IsOptional()
   @IsBoolean()

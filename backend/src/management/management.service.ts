@@ -331,7 +331,6 @@ export class ManagementService {
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
-      happCryptoUrl?: null;
     } = {};
     if (dto.enabled !== undefined) {
       data.enabled = dto.enabled;
@@ -376,7 +375,6 @@ export class ManagementService {
     }
     if (dto.cryptoOnlySubscription !== undefined) {
       data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
-      data.happCryptoUrl = null;
     }
     if (Object.keys(data).length === 0) {
       const row = await this.prisma.panelUser.findUnique({ where: { id } });
@@ -457,7 +455,6 @@ export class ManagementService {
       allowAllUserAgents?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
-      happCryptoUrl?: null;
     } = {};
     if (dto.groupName !== undefined) {
       data.groupName = dto.groupName.trim();
@@ -473,7 +470,6 @@ export class ManagementService {
     }
     if (dto.cryptoOnlySubscription !== undefined) {
       data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
-      data.happCryptoUrl = null;
     }
 
     let updated = 0;

@@ -487,11 +487,10 @@ async function patchCryptoOnlySubscription(
       body: { cryptoOnlySubscription: next },
     });
     user.cryptoOnlySubscription = next;
-    user.happCryptoUrl = null;
     toast.add({
       title: next
-        ? 'Включён режим «только crypto». Создайте crypto-ссылку заново.'
-        : 'Режим «только crypto» выключен. При необходимости пересоздайте crypto-ссылку.',
+        ? 'Включён режим «только crypto»: по /sub/… в Happ — заглушка, полная лента — с секретной страницы (happ://).'
+        : 'Режим «только crypto» выключен.',
       color: 'success',
     });
   } catch {
@@ -525,23 +524,18 @@ async function patchMaxUniqueHwids(user: UserItem, raw: string) {
   }
 }
 
-function subscriptionUrl(code: string, cryptoOnly?: boolean) {
+function subscriptionUrl(code: string) {
   if (!import.meta.client) {
     return '';
   }
-  const seg = cryptoOnly
-    ? String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
-        .trim()
-        .replace(/^\/+|\/+$/g, '')
-    : 'sub';
-  return `${window.location.origin}/${seg}/${encodeURIComponent(code)}`;
+  return `${window.location.origin}/sub/${encodeURIComponent(code)}`;
 }
 
-async function copySubscriptionLink(code: string, cryptoOnly?: boolean) {
+async function copySubscriptionLink(code: string) {
   if (!import.meta.client) {
     return;
   }
-  const url = subscriptionUrl(code, cryptoOnly);
+  const url = subscriptionUrl(code);
   try {
     await navigator.clipboard.writeText(url);
     toast.add({ title: 'Ссылка на подписку скопирована', color: 'success' });
@@ -963,11 +957,7 @@ async function confirmBulkClearLogs() {
         <template #code-cell="{ row }">
           <div class="flex w-full items-center justify-center gap-0.5 sm:gap-1">
             <UTooltip
-              :text="
-                row.original.cryptoOnlySubscription
-                  ? 'Ссылка страницы с секретным путём для браузера. В Happ — только crypto-ссылку (ключ).'
-                  : 'Ссылка страницы /sub/… для браузера. В Happ — crypto-ссылку (ключ).'
-              "
+              text="Публичная страница /sub/… (браузер). В Happ для полной ленты — happ:// crypto-ссылка; при «Только crypto» по этой https-ссылке в клиенте будет заглушка «Только crypto»."
             >
               <UButton
                 color="primary"
@@ -976,12 +966,7 @@ async function confirmBulkClearLogs() {
                 class="shrink-0 rounded-lg p-1.5 min-w-8 min-h-8"
                 icon="i-lucide-link-2"
                 aria-label="Скопировать ссылку на подписку"
-                @click="
-                  copySubscriptionLink(
-                    row.original.code,
-                    row.original.cryptoOnlySubscription,
-                  )
-                "
+                @click="copySubscriptionLink(row.original.code)"
               />
             </UTooltip>
             <UTooltip
@@ -1018,7 +1003,7 @@ async function confirmBulkClearLogs() {
 
         <template #cryptoOnlySubscription-cell="{ row }">
           <UTooltip
-            text="Включено: реальная лента только через happ:// и секретный путь; по /sub/… в клиенте — «Только crypto». Сбрасывает crypto — пересоздайте ключ."
+            text="Включено: полная лента с секретной страницы (happ://). Импорт вида https://…/sub/CODE?t=… в Happ покажет одно подключение «Только crypto»."
           >
             <div class="flex justify-center">
               <USwitch
