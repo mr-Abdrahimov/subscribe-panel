@@ -74,7 +74,7 @@ model PanelUser {
   requireHwid          Boolean                @default(true)
   /// Если true — при наличии HWID в запросе отдаётся заглушка «Отключите HWID»; несовместимо с requireHwid
   requireNoHwid       Boolean                @default(false)
-  /// Макс. число уникальных HWID по логам подписки; 0 — не проверять. Не действует при включённом requireNoHwid
+  /// Макс. число уникальных HWID по логам подписки; 0 — не проверять. Запрос с уже зарегистрированным HWID не блокируется. Не действует при включённом requireNoHwid
   maxUniqueHwids      Int                    @default(0)
   /// Ссылка happ://… от crypto.happ.su для шаблонов приложений с плейсхолдером {crypto}; заполняется при создании пользователя
   happCryptoUrl       String?

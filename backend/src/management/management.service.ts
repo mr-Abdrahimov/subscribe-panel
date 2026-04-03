@@ -500,6 +500,7 @@ export class ManagementService {
 
   /**
    * Превышен лимит уникальных HWID: учитываются логи и HWID текущего запроса.
+   * Если HWID в запросе уже есть в логах этого пользователя — лимит не срабатывает (выдаём ленту).
    * Не применяется при maxUniqueHwids ≤ 0 или при requireNoHwid.
    */
   async isUniqueHwidLimitExceeded(
@@ -524,7 +525,7 @@ export class ManagementService {
       return n > maxUniqueHwids;
     }
     if (known.has(h)) {
-      return n > maxUniqueHwids;
+      return false;
     }
     return n + 1 > maxUniqueHwids;
   }

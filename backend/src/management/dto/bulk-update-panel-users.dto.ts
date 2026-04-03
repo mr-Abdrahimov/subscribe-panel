@@ -65,7 +65,7 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
-      'Лимит уникальных HWID по логам GET /public/sub/:code. 0 — не ограничивать',
+      'Лимит уникальных HWID по логам GET /public/sub/:code. 0 — не ограничивать. Новый HWID сверх лимита — заглушка; уже учтённый HWID этого пользователя — полная лента.',
     minimum: 0,
     maximum: 10_000,
   })
