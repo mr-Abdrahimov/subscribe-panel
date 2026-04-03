@@ -72,4 +72,12 @@ export class UpdatePanelUserDto {
   @Min(0)
   @Max(10_000)
   maxUniqueHwids?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Режим «только crypto»: реальные коннекты только при запросе ленты с альтернативного пути (см. SUBSCRIPTION_CRYPTO_PATH_SEGMENT) и via=crypto-page; обычный /sub/CODE даёт заглушку. При смене сбрасывается happCryptoUrl — пересоздайте crypto-ссылку.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  cryptoOnlySubscription?: boolean;
 }

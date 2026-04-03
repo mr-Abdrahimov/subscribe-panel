@@ -146,12 +146,18 @@ export class ManagementService {
     }
   }
 
-  async createUser(name: string, code: string, groupName: string) {
+  async createUser(
+    name: string,
+    code: string,
+    groupName: string,
+    cryptoOnlySubscription = false,
+  ) {
     const trimmedCode = code.trim();
     const subscriptionAccessToken = randomBytes(32).toString('hex');
     const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
       trimmedCode,
       subscriptionAccessToken,
+      cryptoOnlySubscription,
     );
     const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
     const created = await this.prisma.panelUser.create({
@@ -164,6 +170,7 @@ export class ManagementService {
         requireNoHwid: false,
         maxUniqueHwids: 0,
         subscriptionAccessToken,
+        cryptoOnlySubscription: Boolean(cryptoOnlySubscription),
         ...(happCryptoUrl !== null ? { happCryptoUrl } : {}),
       },
     });
@@ -218,23 +225,39 @@ export class ManagementService {
   }
 
   /**
-   * Абсолютный URL страницы /sub/{code}?t=… для crypto.happ.su (токен обязателен для выдачи ленты).
+   * Абсолютный URL для crypto.happ.su: обычно /sub/CODE?t=…; при cryptoOnly — /{SUBSCRIPTION_CRYPTO_PATH_SEGMENT}/CODE?t=…
    */
   private buildAbsoluteSubscriptionPageUrlForCrypto(
     code: string,
     subscriptionAccessToken: string,
+    cryptoOnlySubscription: boolean,
   ): string {
-    let full = this.buildSubscriptionPageUrl(code);
+    const origin = this.subscriptionPublicOrigin();
+    const path = cryptoOnlySubscription
+      ? `/${this.subscriptionCryptoPathSegment()}/${encodeURIComponent(code)}`
+      : `/sub/${encodeURIComponent(code)}`;
+    let full = origin ? `${origin.replace(/\/$/, '')}${path}` : path;
     if (!full.startsWith('http')) {
       const fallback = (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
         .trim()
         .replace(/\/$/, '');
       if (fallback) {
-        full = `${fallback}${full.startsWith('/') ? full : `/${full}`}`;
+        full = `${fallback}${path}`;
       }
     }
     const sep = full.includes('?') ? '&' : '?';
     return `${full}${sep}t=${encodeURIComponent(subscriptionAccessToken)}`;
+  }
+
+  /** Сегмент пути альтернативной страницы подписки (совпадает с NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH) */
+  private subscriptionCryptoPathSegment(): string {
+    const raw = (
+      this.config.get<string>('SUBSCRIPTION_CRYPTO_PATH_SEGMENT') ??
+      'sub2128937123'
+    )
+      .trim()
+      .replace(/^\/+|\/+$/g, '');
+    return raw || 'sub2128937123';
   }
 
   /**
@@ -247,7 +270,7 @@ export class ManagementService {
     const token = await this.ensureSubscriptionAccessToken(id);
     const user = await this.prisma.panelUser.findUniqueOrThrow({
       where: { id },
-      select: { code: true, happCryptoUrl: true },
+      select: { code: true, happCryptoUrl: true, cryptoOnlySubscription: true },
     });
     const existing = user.happCryptoUrl?.trim();
     if (existing?.startsWith('happ://')) {
@@ -256,6 +279,7 @@ export class ManagementService {
     const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
       user.code,
       token,
+      user.cryptoOnlySubscription === true,
     );
     const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
     if (!happCryptoUrl) {
@@ -294,6 +318,7 @@ export class ManagementService {
       requireHwid?: boolean;
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
+      cryptoOnlySubscription?: boolean;
     },
   ) {
     await this.ensureUser(id);
@@ -305,6 +330,8 @@ export class ManagementService {
       requireHwid?: boolean;
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
+      cryptoOnlySubscription?: boolean;
+      happCryptoUrl?: null;
     } = {};
     if (dto.enabled !== undefined) {
       data.enabled = dto.enabled;
@@ -347,6 +374,10 @@ export class ManagementService {
     if (dto.maxUniqueHwids !== undefined) {
       data.maxUniqueHwids = dto.maxUniqueHwids;
     }
+    if (dto.cryptoOnlySubscription !== undefined) {
+      data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
+      data.happCryptoUrl = null;
+    }
     if (Object.keys(data).length === 0) {
       const row = await this.prisma.panelUser.findUnique({ where: { id } });
       return row ? this.omitSubscriptionAccessToken(row) : null;
@@ -368,6 +399,7 @@ export class ManagementService {
     enabled?: boolean;
     allowAllUserAgents?: boolean;
     maxUniqueHwids?: number;
+    cryptoOnlySubscription?: boolean;
     clearSubscriptionAccessLogs?: boolean;
   }): Promise<{ updated: number; deletedLogs: number }> {
     const uniq = [...new Set(dto.ids.map((id) => id.trim()).filter(Boolean))];
@@ -386,7 +418,8 @@ export class ManagementService {
       dto.groupName !== undefined ||
       dto.enabled !== undefined ||
       dto.allowAllUserAgents !== undefined ||
-      dto.maxUniqueHwids !== undefined;
+      dto.maxUniqueHwids !== undefined ||
+      dto.cryptoOnlySubscription !== undefined;
     if (dto.clearSubscriptionAccessLogs !== true && !hasPatch) {
       throw new BadRequestException(
         'Укажите хотя бы одно действие: поля обновления или очистку логов',
@@ -423,6 +456,8 @@ export class ManagementService {
       enabled?: boolean;
       allowAllUserAgents?: boolean;
       maxUniqueHwids?: number;
+      cryptoOnlySubscription?: boolean;
+      happCryptoUrl?: null;
     } = {};
     if (dto.groupName !== undefined) {
       data.groupName = dto.groupName.trim();
@@ -435,6 +470,10 @@ export class ManagementService {
     }
     if (dto.maxUniqueHwids !== undefined) {
       data.maxUniqueHwids = dto.maxUniqueHwids;
+    }
+    if (dto.cryptoOnlySubscription !== undefined) {
+      data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
+      data.happCryptoUrl = null;
     }
 
     let updated = 0;
@@ -672,6 +711,7 @@ export class ManagementService {
         enabled: true,
         groupName: true,
         happCryptoUrl: true,
+        cryptoOnlySubscription: true,
       },
     });
     if (!user) {
@@ -692,6 +732,7 @@ export class ManagementService {
     const appLinks = await this.getPublicAppLinksForCode(
       user.code,
       happCryptoUrl,
+      user.cryptoOnlySubscription === true,
     );
 
     return {
@@ -699,6 +740,8 @@ export class ManagementService {
       subscriptionDisplayName: trimmedSub || null,
       /** Как profile-title ленты: subscriptionDisplayName группы пользователя */
       profileTitle,
+      /** Режим «только crypto» для подсказок на публичных страницах */
+      cryptoOnlySubscription: user.cryptoOnlySubscription === true,
       /** Имена групп для блока «Группа» на /sub: привязка пользователя и группы коннектов ленты */
       groups,
       /** Название и готовая ссылка для блока «Приложения» на /sub */
@@ -917,10 +960,16 @@ export class ManagementService {
       .replace(/\/$/, '');
   }
 
-  /** Полный абсолютный URL: origin + /sub/{code} (code — подписка пользователя панели) */
-  private buildSubscriptionPageUrl(code: string): string {
+  /** Полный абсолютный URL страницы подписки в браузере: /sub/CODE или /{cryptoSegment}/CODE при «только crypto». */
+  private buildSubscriptionPageUrl(
+    code: string,
+    cryptoOnlySubscription = false,
+  ): string {
     const base = this.subscriptionPublicOrigin();
-    const path = `/sub/${encodeURIComponent(code)}`;
+    const seg = cryptoOnlySubscription
+      ? this.subscriptionCryptoPathSegment()
+      : 'sub';
+    const path = `/${seg}/${encodeURIComponent(code)}`;
     if (!base) {
       return path;
     }
@@ -941,6 +990,7 @@ export class ManagementService {
   private async getPublicAppLinksForCode(
     code: string,
     happCryptoUrl: string | null | undefined,
+    cryptoOnlySubscription = false,
   ): Promise<{ name: string; url: string }[]> {
     const links = await this.prisma.subscriptionAppLink.findMany({
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -948,7 +998,10 @@ export class ManagementService {
     if (links.length === 0) {
       return [];
     }
-    const subscriptionPageUrl = this.buildSubscriptionPageUrl(code);
+    const subscriptionPageUrl = this.buildSubscriptionPageUrl(
+      code,
+      cryptoOnlySubscription,
+    );
     return links.map((l) => ({
       name: l.name,
       url: this.resolveAppLinkUrl(

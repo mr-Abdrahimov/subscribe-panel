@@ -36,6 +36,8 @@ type UserItem = {
   createdAt: string;
   /** ISO-8601, последний запрос подписки из логов */
   lastSubscriptionActivityAt?: string | null;
+  /** Реальная лента только через happ crypto и секретный путь */
+  cryptoOnlySubscription?: boolean;
 };
 
 const toast = useToast();
@@ -62,6 +64,7 @@ const bulkTransferToGroup = ref<string>('');
 const bulkMaxUniqueHwidsInput = ref<string>('0');
 const isBulkClearLogsOpen = ref(false);
 const happCryptoCreatingUserId = ref<string | null>(null);
+const formCryptoOnlySubscription = ref(false);
 
 const selectedUsersCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length,
@@ -123,6 +126,16 @@ const columns: TableColumn<UserItem>[] = [
   {
     id: 'allowAllUserAgents',
     header: 'Все приложения',
+    meta: {
+      class: {
+        th: `${thBase} max-w-[6.5rem] whitespace-normal`,
+        td: 'align-middle',
+      },
+    },
+  },
+  {
+    id: 'cryptoOnlySubscription',
+    header: 'Только crypto',
     meta: {
       class: {
         th: `${thBase} max-w-[6.5rem] whitespace-normal`,
@@ -284,6 +297,7 @@ function openCreate() {
   formName.value = '';
   formCode.value = generateCode(32);
   formGroupName.value = groups.value[0]?.name ?? '';
+  formCryptoOnlySubscription.value = false;
   isModalOpen.value = true;
 }
 
@@ -296,6 +310,7 @@ function openEdit(user: UserItem) {
   formName.value = user.name;
   formCode.value = user.code;
   formGroupName.value = user.groupName;
+  formCryptoOnlySubscription.value = Boolean(user.cryptoOnlySubscription);
   isModalOpen.value = true;
 }
 
@@ -336,7 +351,8 @@ async function submitUser() {
           method: 'PATCH',
           body: {
             name,
-            groupName
+            groupName,
+            cryptoOnlySubscription: formCryptoOnlySubscription.value,
           }
         }
       );
@@ -347,7 +363,8 @@ async function submitUser() {
         body: {
           name,
           code: formCode.value,
-          groupName
+          groupName,
+          cryptoOnlySubscription: formCryptoOnlySubscription.value,
         }
       });
       toast.add({ title: 'Пользователь добавлен', color: 'success' });
@@ -456,6 +473,33 @@ async function patchAccessFlags(
   }
 }
 
+async function patchCryptoOnlySubscription(
+  user: UserItem,
+  value: boolean | 'indeterminate',
+) {
+  const next = Boolean(value);
+  if (next === Boolean(user.cryptoOnlySubscription)) {
+    return;
+  }
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body: { cryptoOnlySubscription: next },
+    });
+    user.cryptoOnlySubscription = next;
+    user.happCryptoUrl = null;
+    toast.add({
+      title: next
+        ? 'Включён режим «только crypto». Создайте crypto-ссылку заново.'
+        : 'Режим «только crypto» выключен. При необходимости пересоздайте crypto-ссылку.',
+      color: 'success',
+    });
+  } catch {
+    toast.add({ title: 'Не удалось сохранить режим crypto', color: 'error' });
+    await loadData();
+  }
+}
+
 function clampMaxUniqueHwids(n: number): number {
   if (!Number.isFinite(n) || n < 0) {
     return 0;
@@ -481,18 +525,23 @@ async function patchMaxUniqueHwids(user: UserItem, raw: string) {
   }
 }
 
-function subscriptionUrl(code: string) {
+function subscriptionUrl(code: string, cryptoOnly?: boolean) {
   if (!import.meta.client) {
     return '';
   }
-  return `${window.location.origin}/sub/${encodeURIComponent(code)}`;
+  const seg = cryptoOnly
+    ? String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
+        .trim()
+        .replace(/^\/+|\/+$/g, '')
+    : 'sub';
+  return `${window.location.origin}/${seg}/${encodeURIComponent(code)}`;
 }
 
-async function copySubscriptionLink(code: string) {
+async function copySubscriptionLink(code: string, cryptoOnly?: boolean) {
   if (!import.meta.client) {
     return;
   }
-  const url = subscriptionUrl(code);
+  const url = subscriptionUrl(code, cryptoOnly);
   try {
     await navigator.clipboard.writeText(url);
     toast.add({ title: 'Ссылка на подписку скопирована', color: 'success' });
@@ -565,7 +614,8 @@ async function runBulkUpdate(body: Record<string, unknown>) {
       body.groupName !== undefined ||
       body.enabled !== undefined ||
       body.allowAllUserAgents !== undefined ||
-      body.maxUniqueHwids !== undefined;
+      body.maxUniqueHwids !== undefined ||
+      body.cryptoOnlySubscription !== undefined;
     const hadClear = body.clearSubscriptionAccessLogs === true;
     if (hadDataPatch && res.updated === 0 && !hadClear) {
       toast.add({
@@ -649,6 +699,10 @@ async function bulkSetEnabled(enabled: boolean) {
 
 async function bulkSetAllowAllUserAgents(value: boolean) {
   await runBulkUpdate({ allowAllUserAgents: value });
+}
+
+async function bulkSetCryptoOnlySubscription(value: boolean) {
+  await runBulkUpdate({ cryptoOnlySubscription: value });
 }
 
 async function bulkApplyMaxUniqueHwids() {
@@ -799,6 +853,27 @@ async function confirmBulkClearLogs() {
                 Выключить
               </UButton>
             </div>
+            <p class="text-xs text-muted pt-1">
+              Только crypto
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                size="sm"
+                :loading="bulkLoading"
+                @click="bulkSetCryptoOnlySubscription(true)"
+              >
+                Включить
+              </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :loading="bulkLoading"
+                @click="bulkSetCryptoOnlySubscription(false)"
+              >
+                Выключить
+              </UButton>
+            </div>
           </div>
 
           <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3 sm:col-span-2 lg:col-span-1">
@@ -888,7 +963,11 @@ async function confirmBulkClearLogs() {
         <template #code-cell="{ row }">
           <div class="flex w-full items-center justify-center gap-0.5 sm:gap-1">
             <UTooltip
-              text="Ссылка страницы /sub/… для браузера. В Happ импортируйте только crypto-ссылку (ключ) — без неё лента не откроется"
+              :text="
+                row.original.cryptoOnlySubscription
+                  ? 'Ссылка страницы с секретным путём для браузера. В Happ — только crypto-ссылку (ключ).'
+                  : 'Ссылка страницы /sub/… для браузера. В Happ — crypto-ссылку (ключ).'
+              "
             >
               <UButton
                 color="primary"
@@ -897,7 +976,12 @@ async function confirmBulkClearLogs() {
                 class="shrink-0 rounded-lg p-1.5 min-w-8 min-h-8"
                 icon="i-lucide-link-2"
                 aria-label="Скопировать ссылку на подписку"
-                @click="copySubscriptionLink(row.original.code)"
+                @click="
+                  copySubscriptionLink(
+                    row.original.code,
+                    row.original.cryptoOnlySubscription,
+                  )
+                "
               />
             </UTooltip>
             <UTooltip
@@ -927,6 +1011,19 @@ async function confirmBulkClearLogs() {
                 @update:model-value="
                   patchAccessFlags(row.original, { allowAllUserAgents: Boolean($event) })
                 "
+              />
+            </div>
+          </UTooltip>
+        </template>
+
+        <template #cryptoOnlySubscription-cell="{ row }">
+          <UTooltip
+            text="Включено: реальная лента только через happ:// и секретный путь; по /sub/… в клиенте — «Только crypto». Сбрасывает crypto — пересоздайте ключ."
+          >
+            <div class="flex justify-center">
+              <USwitch
+                :model-value="Boolean(row.original.cryptoOnlySubscription)"
+                @update:model-value="patchCryptoOnlySubscription(row.original, $event)"
               />
             </div>
           </UTooltip>
@@ -1090,6 +1187,13 @@ async function confirmBulkClearLogs() {
               placeholder="Выберите группу"
               class="w-full"
             />
+          </UFormField>
+
+          <UFormField
+            label="Только crypto"
+            description="Реальная подписка в Happ только через happ://; страница для crypto.happ.su — с секретным путём, не /sub/…"
+          >
+            <USwitch v-model="formCryptoOnlySubscription" />
           </UFormField>
         </div>
       </template>

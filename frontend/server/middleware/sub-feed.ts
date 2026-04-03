@@ -13,6 +13,10 @@ import {
 } from '../utils/happ-profile-title';
 import { getNestApiRoot } from '../utils/nest-api-root';
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 type PublicUserPayload = {
   name: string;
   subscriptionDisplayName: string | null;
@@ -96,7 +100,22 @@ async function attachProfileTitleHeadersForHtml(
 
 export default defineEventHandler(async (event) => {
   const url = getRequestURL(event);
-  const match = url.pathname.match(/^\/sub\/([^/]+)$/);
+  const runtime = useRuntimeConfig(event);
+  const cryptoSeg = String(runtime.public.subscriptionCryptoPath ?? 'sub2128937123')
+    .trim()
+    .replace(/^\/+|\/+$/g, '');
+  const cryptoRe = new RegExp(
+    `^/${escapeRegExp(cryptoSeg)}/([^/]+)$`,
+  );
+  let match = url.pathname.match(/^\/sub\/([^/]+)$/);
+  let isCryptoProxyPath = false;
+  if (!match) {
+    const m2 = url.pathname.match(cryptoRe);
+    if (m2) {
+      match = m2;
+      isCryptoProxyPath = true;
+    }
+  }
   if (!match) {
     return;
   }
@@ -145,6 +164,9 @@ export default defineEventHandler(async (event) => {
 
   const forwardParams = new URLSearchParams(url.search);
   forwardParams.delete('format');
+  if (isCryptoProxyPath && !forwardParams.has('via')) {
+    forwardParams.set('via', 'crypto-page');
+  }
   const forwardQuery = forwardParams.toString();
   const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${forwardQuery ? `?${forwardQuery}` : ''}`;
   let res: Awaited<ReturnType<typeof $fetch.raw>>;

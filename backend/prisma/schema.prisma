@@ -80,6 +80,8 @@ model PanelUser {
   happCryptoUrl       String?
   /// Секрет для выдачи ленты: GET …/sub/CODE?t=TOKEN (без совпадения — 403). Не отдаётся в API панели.
   subscriptionAccessToken String?
+  /// Если true — реальная лента только с альтернативного пути …/sub2128937123/CODE?…&via=crypto-page; обычный /sub/… даёт заглушку «Только crypto»; happ crypto регистрируется на альтернативный URL
+  cryptoOnlySubscription  Boolean              @default(false)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]

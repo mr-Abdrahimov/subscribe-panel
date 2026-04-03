@@ -77,6 +77,14 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
+      'Режим «только crypto»: реальная лента с альтернативного пути с via=crypto-page; по /sub/… — заглушка. При смене сбрасывается happCryptoUrl у затронутых пользователей — пересоздайте crypto-ссылки',
+  })
+  @IsOptional()
+  @IsBoolean()
+  cryptoOnlySubscription?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'Удалить все записи PanelUserAccessLog для каждого из ids (HWID, IP, User-Agent в логах подписки)',
   })
   @IsOptional()

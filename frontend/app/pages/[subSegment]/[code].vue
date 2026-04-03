@@ -3,12 +3,25 @@ import type { PublicUserResponse } from '~/types/api'
 
 definePageMeta({
   layout: 'sub',
+  middleware: ['sub-public-segment'],
 })
 
 const route = useRoute()
 const config = useRuntimeConfig()
 const requestURL = useRequestURL()
+
+const cryptoPathSegment = computed(() =>
+  String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
+    .trim()
+    .replace(/^\/+|\/+$/g, ''),
+)
+
+const subSegment = computed(() => String(route.params.subSegment ?? '').trim())
 const code = computed(() => String(route.params.code ?? ''))
+
+const isCryptoPageRoute = computed(
+  () => subSegment.value === cryptoPathSegment.value,
+)
 
 const publicUserUrl = computed(() => {
   const base = String(config.public.apiBaseUrl ?? '').replace(/\/$/, '')
@@ -22,6 +35,9 @@ const { data, pending, error } = await useFetch<PublicUserResponse>(publicUserUr
 const displayName = computed(() => data.value?.name ?? '')
 const groupLabels = computed(() => data.value?.groups ?? [])
 const appLinks = computed(() => data.value?.appLinks ?? [])
+const cryptoOnlySubscription = computed(
+  () => data.value?.cryptoOnlySubscription === true,
+)
 
 const headTitle = computed(() => {
   const u = displayName.value
@@ -36,9 +52,10 @@ const pageOrigin = computed(() => {
   return requestURL.origin
 })
 
-const canonicalUrl = computed(
-  () => `${pageOrigin.value}/sub/${encodeURIComponent(code.value)}`,
-)
+const canonicalUrl = computed(() => {
+  const seg = isCryptoPageRoute.value ? cryptoPathSegment.value : 'sub'
+  return `${pageOrigin.value}/${seg}/${encodeURIComponent(code.value)}`
+})
 
 const seoDescription = computed(() =>
   displayName.value
@@ -129,6 +146,23 @@ async function copyToClipboard() {
           <p class="cp__sub">Канал подписки · шифрование end-to-edge</p>
         </div>
 
+        <div
+          v-if="cryptoOnlySubscription && !isCryptoPageRoute"
+          class="cp__notice"
+          role="status"
+        >
+          <p class="cp__notice-title">Только crypto</p>
+          <p class="cp__notice-text">
+            Рабочий импорт в Happ — через
+            <strong class="cp__notice-strong">happ:// crypto-ссылку</strong>
+            из панели. По адресу
+            <span class="cp__code-inline">/sub/…</span>
+            в клиенте будет заглушка «Только crypto»; полная лента открывается с секретной страницы
+            <span class="cp__code-inline">/{{ cryptoPathSegment }}/…</span>
+            (её URL зашит в crypto-ссылку).
+          </p>
+        </div>
+
         <div class="cp__url-block">
           <label class="cp__label">ENDPOINT</label>
           <div class="cp__url-row">
@@ -175,7 +209,10 @@ async function copyToClipboard() {
                 <strong class="cp__apps-empty-strong">Настройки</strong>
                 →
                 <strong class="cp__apps-empty-strong">Приложения</strong>
-                — они появятся здесь для всех страниц <span class="cp__code-inline">/sub/…</span>.
+                — они появятся здесь для страниц подписки
+                <span class="cp__code-inline">/sub/…</span>
+                и
+                <span class="cp__code-inline">/{{ cryptoPathSegment }}/…</span>.
               </p>
             </div>
           </div>
@@ -394,6 +431,35 @@ async function copyToClipboard() {
   bottom: -1px;
   right: -1px;
   border-width: 0 2px 2px 0;
+}
+
+.cp__notice {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(245, 224, 0, 0.45);
+  background: rgba(245, 224, 0, 0.06);
+  box-shadow: 0 0 20px rgba(245, 224, 0, 0.08);
+}
+
+.cp__notice-title {
+  margin: 0 0 0.4rem;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--cp-yellow);
+}
+
+.cp__notice-text {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(232, 244, 255, 0.72);
+}
+
+.cp__notice-strong {
+  color: #fff;
+  font-weight: 600;
 }
 
 .cp__hero {

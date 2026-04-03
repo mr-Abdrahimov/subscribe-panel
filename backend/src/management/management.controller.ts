@@ -82,10 +82,23 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Создать пользователя панели',
     description:
-      'После создания записи бэкенд запрашивает у crypto.happ.su зашифрованную ссылку happ://… для URL вида …/sub/CODE?t=TOKEN (секрет хранится только в БД и внутри crypto-ссылки). Выдача ленты GET /public/sub/:code без верного query t= запрещена. При недоступности API пользователь всё равно создаётся, happCryptoUrl может быть пустым.',
+      'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL страницы с ?t=TOKEN: обычно …/sub/CODE, при cryptoOnlySubscription — …/{SUBSCRIPTION_CRYPTO_PATH_SEGMENT}/CODE (сегмент как у Nuxt NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH). Поле cryptoOnlySubscription опционально (по умолчанию false). Выдача ленты без верного t запрещена. При cryptoOnly по /sub/… — заглушка «Только crypto» без via=crypto-page.',
   })
-  createUser(@Body() body: { name: string; code: string; groupName: string }) {
-    return this.managementService.createUser(body.name, body.code, body.groupName);
+  createUser(
+    @Body()
+    body: {
+      name: string;
+      code: string;
+      groupName: string;
+      cryptoOnlySubscription?: boolean;
+    },
+  ) {
+    return this.managementService.createUser(
+      body.name,
+      body.code,
+      body.groupName,
+      body.cryptoOnlySubscription === true,
+    );
   }
 
   @Delete('panel-users/:id')
@@ -99,7 +112,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Массовое обновление пользователей панели',
     description:
-      'По списку ids: назначение группы (опционально только для пользователей с restrictToCurrentGroupName — перенос из группы), смена enabled, allowAllUserAgents, maxUniqueHwids, очистка логов подписки (PanelUserAccessLog) для всех указанных id. Требуется хотя бы одно действие.',
+      'По списку ids: назначение группы (опционально restrictToCurrentGroupName), смена enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription (сброс happCryptoUrl), очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
   })
   @ApiResponse({
     status: 200,
@@ -115,7 +128,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids (лимит уникальных HWID по логам; 0 — не проверять). Код подписки (code) не меняется.',
+      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (при смене сбрасывается happCryptoUrl — пересоздайте crypto). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
@@ -242,7 +255,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle — subscriptionDisplayName группы пользователя (заголовок ленты). Поле groups — названия групп для страницы /sub: привязка пользователя (groupName) и все группы из активных коннектов его ленты, без дублей, сортировка по-русски. subscriptionDisplayName остаётся в ответе для совместимости. Массив appLinks: в шаблонах подставляются {link} (URL подписки) и при наличии у пользователя {crypto} (happ://…).',
+      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — для страницы подписки. cryptoOnlySubscription — подсказка UI: реальная лента только с альтернативного пути и happ crypto. Массив appLinks: {link} — URL страницы (/sub/… или /{cryptoSegment}/… при «только crypto»), {crypto} — happ:// при наличии.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
@@ -252,7 +265,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Для Happ: в теле подписки — строка #hide-settings: 1, в HTTP-ответе — заголовок hide-settings: 1 (скрыть настройки серверов). Если пользователь с таким code существует, обязателен query-параметр t=subscriptionAccessToken (тот же URL внутри happ:// crypto-ссылки); без него — 403, чтобы нельзя было добавить в Happ только https://…/sub/CODE. Для несуществующего code ответ без t — заглушка «Нет подключений». При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Обязателен query t= (как в happ:// ссылке). Прокси Nuxt с альтернативного пути (SUBSCRIPTION_CRYPTO_PATH_SEGMENT) добавляет via=crypto-page. Если у пользователя cryptoOnlySubscription=true, без via=crypto-page отдаётся заглушка «Только crypto» (обычный /sub/…); реальная лента — только с альтернативного пути и via=crypto-page. Для несуществующего code без t — заглушка «Нет подключений». Иначе — коннекты или заглушки HWID/лимита. Логи PanelUserAccessLog при известном panelUserId.',
   })
   @ApiResponse({
     status: 200,
@@ -300,6 +313,11 @@ export class ManagementController {
       }
     }
 
+    const rawVia = req.query['via'];
+    const viaCryptoPage =
+      rawVia === 'crypto-page' ||
+      (Array.isArray(rawVia) && rawVia[0] === 'crypto-page');
+
     const uaHeader = req.headers['user-agent'];
     const ua =
       typeof uaHeader === 'string'
@@ -320,6 +338,11 @@ export class ManagementController {
     } else if (!user.enabled) {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         user.id,
+      );
+    } else if (user.cryptoOnlySubscription === true && !viaCryptoPage) {
+      payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
+        user.id,
+        'Только crypto',
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;

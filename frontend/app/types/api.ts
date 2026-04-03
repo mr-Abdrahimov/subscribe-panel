@@ -6,6 +6,8 @@ export type PublicUserResponse = {
   groupName: string
   subscriptionDisplayName: string | null
   profileTitle: string | null
+  /** Реальная лента только через crypto happ:// и секретный путь; /sub/… даёт заглушку */
+  cryptoOnlySubscription?: boolean
   groups: string[]
   appLinks: { name: string; url: string }[]
 }

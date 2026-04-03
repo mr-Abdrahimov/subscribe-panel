@@ -1,4 +1,9 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+const subscriptionCryptoPath =
+  (process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH ?? 'sub2128937123')
+    .trim()
+    .replace(/^\/+|\/+$/g, '') || 'sub2128937123';
+
 export default defineNuxtConfig({
   /** Превью ссылок (Telegram и др.): HTML с og:* должен отдаваться с сервера */
   ssr: true,
@@ -72,5 +77,6 @@ export default defineNuxtConfig({
   routeRules: {
     /** Явно: превью /sub/… в мессенджерах читают разметку с сервера */
     '/sub/**': { ssr: true },
+    [`/${subscriptionCryptoPath}/**`]: { ssr: true },
   },
 })
