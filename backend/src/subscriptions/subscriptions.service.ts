@@ -85,10 +85,6 @@ export class SubscriptionsService {
       ]),
     );
 
-    const existingByRaw = new Map(
-      existingConnects.map((connect) => [connect.raw, connect]),
-    );
-
     const toDeleteIds = existingConnects
       .filter((connect) => !incomingByRaw.has(connect.raw))
       .map((connect) => connect.id);
@@ -103,13 +99,27 @@ export class SubscriptionsService {
       });
     }
 
-    let nextSortOrder = existingConnects.reduce(
+    /** После удаления устаревших — актуальные строки БД (важно для create vs update и для max(sortOrder)). */
+    const remainingConnects = await this.prisma.connect.findMany({
+      where: { subscriptionId: id },
+      select: {
+        id: true,
+        raw: true,
+        originalName: true,
+        sortOrder: true,
+      },
+    });
+    const existingByRawAfterDelete = new Map(
+      remainingConnects.map((c) => [c.raw, c]),
+    );
+
+    let nextSortOrder = remainingConnects.reduce(
       (max, item) => (item.sortOrder > max ? item.sortOrder : max),
       0,
     );
 
     for (const [raw, incoming] of incomingByRaw) {
-      const existing = existingByRaw.get(raw);
+      const existing = existingByRawAfterDelete.get(raw);
       if (!existing) {
         nextSortOrder += 1;
 
@@ -146,7 +156,7 @@ export class SubscriptionsService {
 
     const connects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
         name: true,
