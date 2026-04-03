@@ -77,7 +77,7 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
-      'Режим «только crypto»: полная лента с альтернативного пути; по /sub/… — заглушка «Только crypto». happCryptoUrl не очищается.',
+      'Режим «только crypto»: полная лента с альтернативного пути; по /sub/… — заглушка «Только Cripto». happCryptoUrl не очищается.',
   })
   @IsOptional()
   @IsBoolean()

@@ -267,7 +267,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Обязателен query t= (как в happ:// ссылке). Прокси Nuxt с альтернативного пути (SUBSCRIPTION_CRYPTO_PATH_SEGMENT) добавляет via=crypto-page. Если у пользователя cryptoOnlySubscription=true, без via=crypto-page отдаётся заглушка «Только crypto» (обычный /sub/…); реальная лента — только с альтернативного пути и via=crypto-page. Для несуществующего code без t — заглушка «Нет подключений». Иначе — коннекты или заглушки HWID/лимита. Логи PanelUserAccessLog при известном panelUserId.',
+      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Обязателен query t= (как в happ:// ссылке). Прокси Nuxt с альтернативного пути (SUBSCRIPTION_CRYPTO_PATH_SEGMENT) добавляет via=crypto-page. Если у пользователя cryptoOnlySubscription=true, без via=crypto-page отдаётся заглушка: одно подключение с заголовком «Только Cripto» (обычный /sub/…). Реальная лента — с альтернативного пути и via=crypto-page. Для несуществующего code без t — заглушка «Нет подключений». Иначе — коннекты или заглушки HWID/лимита. Логи PanelUserAccessLog при известном panelUserId.',
   })
   @ApiResponse({
     status: 200,
@@ -344,7 +344,7 @@ export class ManagementController {
     } else if (user.cryptoOnlySubscription === true && !viaCryptoPage) {
       payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
         user.id,
-        'Только crypto',
+        'Только Cripto',
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;

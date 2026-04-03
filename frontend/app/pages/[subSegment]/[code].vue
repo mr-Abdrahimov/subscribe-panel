@@ -166,7 +166,7 @@ async function copyCryptoLink() {
           class="cp__notice"
           role="status"
         >
-          <p class="cp__notice-title">Только crypto</p>
+          <p class="cp__notice-title">Только Cripto</p>
           <p class="cp__notice-text">
             Рабочий импорт в Happ — через
             <strong class="cp__notice-strong">happ:// crypto-ссылку</strong>

@@ -970,7 +970,7 @@ async function confirmBulkClearLogs() {
         <template #code-cell="{ row }">
           <div class="flex w-full items-center justify-center gap-0.5 sm:gap-1">
             <UTooltip
-              text="Публичная страница /sub/… (браузер). В Happ для полной ленты — happ:// crypto-ссылка; при «Только crypto» по этой https-ссылке в клиенте будет заглушка «Только crypto»."
+              text="Публичная страница /sub/… (браузер). В Happ для полной ленты — happ:// crypto-ссылка; при режиме Crypto по этой https-ссылке в клиенте — одно подключение «Только Cripto»."
             >
               <UButton
                 color="primary"

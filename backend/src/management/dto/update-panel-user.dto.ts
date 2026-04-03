@@ -75,7 +75,7 @@ export class UpdatePanelUserDto {
 
   @ApiPropertyOptional({
     description:
-      'Режим «только crypto»: полная лента с альтернативного пути (via=crypto-page); запрос ленты по /sub/CODE?t=… без via — заглушка «Только crypto». Сохранённая happ:// ссылка не сбрасывается.',
+      'Режим «только crypto»: полная лента с альтернативного пути (via=crypto-page); запрос ленты по /sub/CODE?t=… без via — заглушка «Только Cripto». Сохранённая happ:// ссылка не сбрасывается.',
   })
   @IsOptional()
   @IsBoolean()
