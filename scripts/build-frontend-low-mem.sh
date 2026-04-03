@@ -26,7 +26,7 @@ if [[ ! -f .output/server/index.mjs ]]; then
   exit 1
 fi
 
-echo "==> Поднимаем Docker"
+echo "==> Поднимаем Docker (MONGO_HOST / REDIS_HOST — в ${COMPOSE_ENV})"
 cd "${ROOT}"
 docker compose --env-file "${COMPOSE_ENV}" up -d
 

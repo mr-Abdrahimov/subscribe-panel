@@ -1,3 +1,5 @@
+# Параметры из .env (например backend/.env.production): MONGO_PORT, REDIS_PORT, REDIS_PASSWORD.
+# Подключение с хоста к контейнерам: MONGO_HOST и REDIS_HOST в .env (обычно 127.0.0.1 при пробросе портов).
 services:
   # mongo:7 на части VPS падает с Restarting (132) — SIGILL, старый CPU без нужных инструкций.
   mongodb:

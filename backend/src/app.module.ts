@@ -7,6 +7,7 @@ import { ConnectsModule } from './connects/connects.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ManagementModule } from './management/management.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ManagementModule } from './management/management.module';
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`],
     }),
     PrismaModule,
+    RedisModule,
     AuthModule,
     SubscriptionsModule,
     ConnectsModule,

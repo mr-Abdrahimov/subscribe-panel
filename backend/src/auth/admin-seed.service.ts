@@ -14,6 +14,9 @@ export class AdminSeedService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     const email = this.config.get<string>('ADMIN_EMAIL');
     const password = this.config.get<string>('ADMIN_PASSWORD');
     const name = this.config.get<string>('ADMIN_NAME') ?? 'Admin';
