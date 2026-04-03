@@ -267,7 +267,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки без реальных коннектов: #profile-title из subscriptionDisplayName группы (настройки) или имени пользователя панели. Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. cryptoOnlySubscription без via — заглушка с именем из настроек. Логи PanelUserAccessLog при известном panelUserId.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. Логи PanelUserAccessLog при известном panelUserId.',
   })
   @ApiResponse({
     status: 200,
@@ -360,6 +360,7 @@ export class ManagementController {
         user.id,
         user.code,
         subscriptionProfileTitle,
+        'Только Cripto',
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;
@@ -376,6 +377,7 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
+          'Отключите HWID',
         );
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
@@ -397,6 +399,7 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
+          'Превышен лимит HWID',
         );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(user);

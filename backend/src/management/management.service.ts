@@ -626,36 +626,40 @@ export class ManagementService {
   }
 
   /**
-   * Заглушка без реальных коннектов: имя профиля из настроек (profileDisplayTitle),
-   * ссылка на страницу /sub/CODE, случайный vless с тем же отображаемым именем.
+   * Заглушка без реальных коннектов: #profile-title и HTTP profile-title — из profileTitleForMeta
+   * (настройки группы / имя пользователя); отображаемое имя строки vless (# в URI) — connectionDisplayName
+   * (сценарий ошибки: «Только Cripto», «Отключите HWID» и т.д.).
    */
   buildNamedSubscriptionPlaceholderFeed(
     panelUserId: string | null,
     code: string,
-    profileDisplayTitle: string,
+    profileTitleForMeta: string,
+    connectionDisplayName: string,
   ): {
     encoded: string;
     profileTitle: string;
     panelUserId: string | null;
   } {
-    const t = profileDisplayTitle.trim() || 'Нет подключений';
-    const line = this.buildRandomPlaceholderVlessLineForName(t);
+    const meta = profileTitleForMeta.trim() || 'Нет подключений';
+    const conn = connectionDisplayName.trim() || 'Нет подключений';
+    const line = this.buildRandomPlaceholderVlessLineForName(conn);
     const web = this.profileWebPageUrlMetaLine(code);
-    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n${web}\n#hide-settings: 1\n${line}`;
+    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(meta)}\n${web}\n#hide-settings: 1\n${line}`;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
-      profileTitle: t,
+      profileTitle: meta,
       panelUserId,
     };
   }
 
   /**
-   * Заглушка «нет коннектов» / отказ доступа. Код неизвестен — panelUserId null (лог не пишем).
+   * Заглушка «нет коннектов» / отказ доступа: строка подключения — «Нет подключений».
+   * Код неизвестен — panelUserId null (лог не пишем).
    */
   buildNoConnectionsPlaceholderFeed(
     panelUserId: string | null,
     code: string,
-    profileDisplayTitle = 'Нет подключений',
+    profileTitleForMeta = 'Нет подключений',
   ): {
     encoded: string;
     profileTitle: string;
@@ -664,7 +668,8 @@ export class ManagementService {
     return this.buildNamedSubscriptionPlaceholderFeed(
       panelUserId,
       code,
-      profileDisplayTitle,
+      profileTitleForMeta,
+      'Нет подключений',
     );
   }
 
