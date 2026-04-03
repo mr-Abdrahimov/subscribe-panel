@@ -58,6 +58,10 @@ model Group {
   name                      String   @unique
   /// Название профиля подписки: /sub и profile-title; фрагмент # в ленте — всегда Connect.name
   subscriptionDisplayName   String?
+  /// Текст объявления Happ для пользователей этой группы (#announce / announce); null — наследовать из глобальных настроек панели
+  subscriptionAnnounce      String?
+  /// Интервал автообновления Happ (часы); null — наследовать из глобальных настроек панели
+  profileUpdateInterval     Int?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

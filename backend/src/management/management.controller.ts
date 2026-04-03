@@ -26,6 +26,7 @@ import {
   extractSubscriptionAccessMeta,
   hasSubscriptionHwid,
 } from '../common/subscription-client-meta';
+import { CreateGroupDto } from './dto/create-group.dto';
 import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { BulkUpdatePanelUsersDto } from './dto/bulk-update-panel-users.dto';
@@ -45,7 +46,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить глобальные настройки панели',
     description:
-      'Объявление (subscriptionAnnounce) и интервал автообновления Happ (profileUpdateInterval, часы) для всех ответов GET /public/sub/:code.',
+      'Значения по умолчанию для объявления и интервала автообновления Happ: используются в GET /public/sub/:code, если у соответствующей группы пользователя поля не заданы (наследование). Пер-групповые значения настраиваются в PATCH /groups/:id.',
   })
   getPanelGlobalSettings() {
     return this.managementService.getPanelGlobalSettings();
@@ -55,7 +56,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить глобальные настройки панели',
     description:
-      'Частичное обновление: subscriptionAnnounce (текст до 200 символов; пустая строка — отключить); profileUpdateInterval (целые часы 1–8760; null — отключить). Не переданные поля не меняются.',
+      'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
   })
   @ApiResponse({ status: 200, description: 'Текущие настройки после сохранения' })
   updatePanelGlobalSettings(@Body() body: UpdatePanelGlobalSettingsDto) {
@@ -69,9 +70,13 @@ export class ManagementController {
   }
 
   @Post('groups')
-  @ApiOperation({ summary: 'Создать группу' })
-  createGroup(@Body() body: { name: string }) {
-    return this.managementService.createGroup(body.name);
+  @ApiOperation({
+    summary: 'Создать группу',
+    description:
+      'Имя группы обязательно. Опционально: subscriptionDisplayName, subscriptionAnnounce, profileUpdateInterval (часы). Пустые/null для объявления и интервала — наследование из глобальных настроек панели.',
+  })
+  createGroup(@Body() body: CreateGroupDto) {
+    return this.managementService.createGroup(body);
   }
 
   @Delete('groups/:id')
@@ -84,7 +89,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. Поле subscriptionDisplayName — название профиля для этой группы: для пользователей панели с PanelUser.groupName = имя группы — страница /sub и заголовки profile-title ленты. Строки ленты (#) — из name коннекта.',
+      'Частичное обновление. subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupName, затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -291,7 +296,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Если задано в настройках панели — во всех ответах: #announce / announce, #profile-update-interval / profile-update-interval (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала PanelUser.groupName, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
   })
   @ApiResponse({
     status: 200,
@@ -366,7 +371,7 @@ export class ManagementController {
       announceMetaLine,
       profileUpdateIntervalMetaLine,
       profileUpdateIntervalHours,
-    } = await this.managementService.getSubscriptionGlobalMetaFromSettings();
+    } = await this.managementService.getSubscriptionMetaForPublicSub(user);
 
     let payload: {
       encoded: string;

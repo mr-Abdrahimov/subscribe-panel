@@ -8,18 +8,6 @@ definePageMeta({
 
 const settingsAccordionItems: AccordionItem[] = [
   {
-    label: 'Объявление',
-    icon: 'i-lucide-megaphone',
-    value: 'announce',
-    slot: 'announce',
-  },
-  {
-    label: 'Интервал обновления',
-    icon: 'i-lucide-timer',
-    value: 'interval',
-    slot: 'interval',
-  },
-  {
     label: 'Название',
     icon: 'i-lucide-tags',
     value: 'group-titles',
@@ -41,14 +29,6 @@ type GroupItem = {
 };
 
 const titleFieldSchema = yup.string().max(200, 'Не более 200 символов');
-
-const announceSchema = yup.string().max(200, 'Не более 200 символов (лимит Happ для объявления)');
-
-const intervalHoursSchema = yup
-  .number()
-  .integer('Укажите целое число часов')
-  .min(1, 'Не менее 1 часа')
-  .max(8760, 'Не более 8760 ч (~год)');
 
 const appLinkFormSchema = yup.object({
   name: yup.string().trim().required('Укажите название').max(120, 'Не более 120 символов'),
@@ -81,21 +61,9 @@ const appLinkDeletingId = ref<string | null>(null);
 const newAppLink = ref({ name: '', urlTemplate: '' });
 const newAppLinkSaving = ref(false);
 
-type PanelGlobalSettingsResponse = {
-  subscriptionAnnounce: string | null;
-  profileUpdateInterval: number | null;
-};
-
-const announceDraft = ref('');
-const intervalDraft = ref('');
-const globalSettingsLoading = ref(false);
-const announceSaving = ref(false);
-const intervalSaving = ref(false);
-
 onMounted(() => {
   loadGroups();
   loadAppLinks();
-  loadPanelGlobalSettings();
 });
 
 async function loadGroups() {
@@ -120,82 +88,6 @@ function resetDraft(group: GroupItem) {
     ...draftTitles.value,
     [group.id]: group.subscriptionDisplayName ?? ''
   };
-}
-
-async function loadPanelGlobalSettings() {
-  globalSettingsLoading.value = true;
-  try {
-    const data = await $fetch<PanelGlobalSettingsResponse>(
-      `${config.public.apiBaseUrl}/panel-global-settings`,
-    );
-    announceDraft.value = data.subscriptionAnnounce ?? '';
-    intervalDraft.value =
-      data.profileUpdateInterval != null ? String(data.profileUpdateInterval) : '';
-  } catch {
-    toast.add({ title: 'Не удалось загрузить настройки подписки', color: 'error' });
-  } finally {
-    globalSettingsLoading.value = false;
-  }
-}
-
-async function saveAnnounce() {
-  try {
-    await announceSchema.validate(announceDraft.value);
-  } catch (e) {
-    if (e instanceof yup.ValidationError) {
-      toast.add({ title: e.message, color: 'error' });
-      return;
-    }
-    throw e;
-  }
-  announceSaving.value = true;
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/panel-global-settings`, {
-      method: 'PATCH',
-      body: { subscriptionAnnounce: announceDraft.value.trim() },
-    });
-    toast.add({ title: 'Объявление сохранено', color: 'success' });
-    await loadPanelGlobalSettings();
-  } catch {
-    toast.add({ title: 'Не удалось сохранить', color: 'error' });
-  } finally {
-    announceSaving.value = false;
-  }
-}
-
-async function saveInterval() {
-  const raw = intervalDraft.value.trim();
-  let profileUpdateInterval: number | null = null;
-  if (raw !== '') {
-    if (!/^\d+$/.test(raw)) {
-      toast.add({ title: 'Введите целое число часов (без дробной части)', color: 'error' });
-      return;
-    }
-    const n = Number.parseInt(raw, 10);
-    try {
-      await intervalHoursSchema.validate(n);
-      profileUpdateInterval = n;
-    } catch (e) {
-      if (e instanceof yup.ValidationError) {
-        toast.add({ title: e.message, color: 'error' });
-        return;
-      }
-      throw e;
-    }
-  }
-  intervalSaving.value = true;
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/panel-global-settings`, {
-      method: 'PATCH',
-      body: { profileUpdateInterval },
-    });
-    toast.add({ title: 'Интервал сохранён', color: 'success' });
-    await loadPanelGlobalSettings();
-  } catch {
-    toast.add({ title: 'Не удалось сохранить', color: 'error' });
-  } finally {
-    intervalSaving.value = false;
-  }
 }
 
 async function loadAppLinks() {
@@ -339,100 +231,6 @@ async function saveGroupTitle(groupId: string) {
         body: 'px-4 pb-4 pt-0 sm:px-5 border-t border-default/60',
       }"
     >
-      <template #announce-body>
-        <div class="space-y-4 pt-4">
-          <p class="text-sm text-muted">
-            Текст попадает во все ответы подписки Happ (<code class="text-xs font-mono text-highlighted">GET /public/sub/:code</code>): в теле
-            <code class="text-xs font-mono text-highlighted">#announce: base64:…</code>
-            и в заголовок
-            <code class="text-xs font-mono text-highlighted">announce</code>
-            — в том числе при заглушках. См.
-            <a
-              href="https://www.happ.su/main/ru/dev-docs/app-management"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-primary underline underline-offset-2"
-            >документацию Happ</a>.
-            До 200 символов.
-          </p>
-          <div v-if="globalSettingsLoading" class="space-y-3">
-            <USkeleton class="h-24 w-full rounded-lg" />
-          </div>
-          <div v-else class="space-y-3">
-            <UFormField
-              label="Текст объявления"
-              description="Оставьте пустым, чтобы отключить"
-              class="w-full"
-            >
-              <UTextarea
-                v-model="announceDraft"
-                class="w-full min-h-[5.5rem] sm:min-h-[6rem]"
-                :rows="4"
-                autoresize
-                placeholder="Например: Техработы с 02:00 до 04:00"
-              />
-            </UFormField>
-            <div class="flex flex-wrap justify-end gap-2">
-              <UButton
-                size="sm"
-                :loading="announceSaving"
-                @click="saveAnnounce"
-              >
-                Сохранить
-              </UButton>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <template #interval-body>
-        <div class="space-y-4 pt-4">
-          <p class="text-sm text-muted">
-            Попадает во все ответы подписки: в теле
-            <code class="text-xs font-mono text-highlighted">#profile-update-interval: N</code>
-            и в заголовок
-            <code class="text-xs font-mono text-highlighted">profile-update-interval</code>
-            (часы, целое число — см.
-            <a
-              href="https://www.happ.su/main/ru/dev-docs/app-management"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-primary underline underline-offset-2"
-            >документацию Happ</a>).
-            Пустое поле и «Сохранить» — отключить.
-          </p>
-          <div v-if="globalSettingsLoading" class="space-y-3">
-            <USkeleton class="h-14 w-full max-w-xs rounded-lg" />
-          </div>
-          <div v-else class="space-y-3">
-            <UFormField
-              label="Часов между обновлениями"
-              description="Например: 1 — обновление раз в час"
-              class="w-full max-w-xs"
-            >
-              <UInput
-                v-model="intervalDraft"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                class="w-full font-mono tabular-nums"
-                placeholder="1"
-                autocomplete="off"
-              />
-            </UFormField>
-            <div class="flex flex-wrap justify-end gap-2">
-              <UButton
-                size="sm"
-                :loading="intervalSaving"
-                @click="saveInterval"
-              >
-                Сохранить
-              </UButton>
-            </div>
-          </div>
-        </div>
-      </template>
-
       <template #group-titles-body>
         <div class="space-y-4 pt-4">
           <p class="text-sm text-muted">
@@ -442,6 +240,7 @@ async function saveGroupTitle(groupId: string) {
             и
             <code class="text-xs font-mono text-highlighted">#profile-title</code>
             в ленте Happ — из этого поля (до 25 символов). Имена серверов в URI — из коннектов.
+            Объявление Happ и интервал обновления настраиваются на странице «Группы».
           </p>
           <div v-if="loading" class="space-y-3">
             <USkeleton class="h-24 w-full rounded-lg" />

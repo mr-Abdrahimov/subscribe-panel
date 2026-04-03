@@ -4,6 +4,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { CreateGroupDto } from './dto/create-group.dto';
+import type { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import type { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
 import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
@@ -100,20 +102,18 @@ export class ManagementService {
   }
 
   /**
-   * Глобальные мета-строки и значения заголовков для всех ответов GET /public/sub (Happ app-management).
+   * Строки #announce / #profile-update-interval и часы для заголовка Happ из сырых полей настроек.
    */
-  async getSubscriptionGlobalMetaFromSettings(): Promise<{
+  private buildSubscriptionMetaLines(
+    subscriptionAnnounceRaw: string | null | undefined,
+    profileUpdateIntervalRaw: number | null | undefined,
+  ): {
     announceMetaLine: string | null;
     profileUpdateIntervalMetaLine: string | null;
     profileUpdateIntervalHours: number | null;
-  }> {
-    const row = await this.prisma.panelGlobalSettings.findUnique({
-      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
-      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
-    });
-
+  } {
     let announceMetaLine: string | null = null;
-    const rawAnn = row?.subscriptionAnnounce?.trim();
+    const rawAnn = subscriptionAnnounceRaw?.trim();
     if (rawAnn) {
       const text = sliceAnnounceForHappSubscription(rawAnn);
       if (text) {
@@ -122,7 +122,7 @@ export class ManagementService {
       }
     }
 
-    const h = row?.profileUpdateInterval;
+    const h = profileUpdateIntervalRaw;
     const profileUpdateIntervalHours =
       typeof h === 'number' && Number.isFinite(h) && Math.floor(h) >= 1
         ? Math.min(8760, Math.floor(h))
@@ -139,10 +139,186 @@ export class ManagementService {
     };
   }
 
-  createGroup(name: string) {
-    return this.prisma.group.create({
-      data: { name: name.trim() },
+  /**
+   * Глобальные мета-строки (только PanelGlobalSettings).
+   */
+  async getSubscriptionGlobalMetaFromSettings(): Promise<{
+    announceMetaLine: string | null;
+    profileUpdateIntervalMetaLine: string | null;
+    profileUpdateIntervalHours: number | null;
+  }> {
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
     });
+    return this.buildSubscriptionMetaLines(
+      row?.subscriptionAnnounce,
+      row?.profileUpdateInterval,
+    );
+  }
+
+  /**
+   * Мета для GET /public/sub: первая существующая группа из порядка
+   * (сначала PanelUser.groupName, затем остальные из ленты), поля группы с наследованием из глобальных настроек.
+   */
+  async getSubscriptionMetaForPublicSub(user: PanelUser | null): Promise<{
+    announceMetaLine: string | null;
+    profileUpdateIntervalMetaLine: string | null;
+    profileUpdateIntervalHours: number | null;
+  }> {
+    const globalRow = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+    });
+
+    let effectiveAnnounce: string | null | undefined =
+      globalRow?.subscriptionAnnounce;
+    let effectiveInterval: number | null | undefined =
+      globalRow?.profileUpdateInterval;
+
+    if (user) {
+      const ordered = await this.getOrderedPanelUserGroupNames(user);
+      for (const name of ordered) {
+        const g = await this.findGroupRowByPanelGroupName(name);
+        if (g) {
+          const ga = g.subscriptionAnnounce?.trim();
+          effectiveAnnounce =
+            ga && ga.length > 0
+              ? g.subscriptionAnnounce
+              : globalRow?.subscriptionAnnounce;
+          const gi = g.profileUpdateInterval;
+          effectiveInterval =
+            typeof gi === 'number' &&
+            Number.isFinite(gi) &&
+            Math.floor(gi) >= 1
+              ? gi
+              : globalRow?.profileUpdateInterval;
+          break;
+        }
+      }
+    }
+
+    return this.buildSubscriptionMetaLines(effectiveAnnounce, effectiveInterval);
+  }
+
+  /**
+   * Порядок имён групп для выбора настроек объявления/интервала: сначала группа пользователя панели,
+   * затем остальные из collectPublicDisplayGroupNames (без дубликатов).
+   */
+  private async getOrderedPanelUserGroupNames(
+    user: PanelUser,
+  ): Promise<string[]> {
+    const primary = user.groupName.trim();
+    const allDisplayed = await this.collectPublicDisplayGroupNames(
+      user.groupName,
+    );
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
+    const add = (n: string) => {
+      const t = n.trim();
+      if (!t) {
+        return;
+      }
+      const k = normKey(t);
+      if (seen.has(k)) {
+        return;
+      }
+      seen.add(k);
+      out.push(t);
+    };
+    if (primary) {
+      add(primary);
+    }
+    for (const n of allDisplayed) {
+      add(n);
+    }
+    return out;
+  }
+
+  /** Запись Group по имени из панели (точное, NFC и регистронезависимое совпадение с Group.name). */
+  private async findGroupRowByPanelGroupName(
+    panelGroupName: string,
+  ): Promise<{
+    subscriptionAnnounce: string | null;
+    profileUpdateInterval: number | null;
+  } | null> {
+    const trimmed = panelGroupName.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const exact = await this.prisma.group.findUnique({
+      where: { name: trimmed },
+      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+    });
+    if (exact) {
+      return exact;
+    }
+    const normalizedTarget = trimmed.normalize('NFC');
+    const targetLower = normalizedTarget.toLowerCase();
+    const groups = await this.prisma.group.findMany({
+      select: {
+        subscriptionAnnounce: true,
+        profileUpdateInterval: true,
+        name: true,
+      },
+    });
+    const row =
+      groups.find(
+        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
+      ) ??
+      groups.find(
+        (g) =>
+          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+      );
+    if (!row) {
+      return null;
+    }
+    return {
+      subscriptionAnnounce: row.subscriptionAnnounce,
+      profileUpdateInterval: row.profileUpdateInterval,
+    };
+  }
+
+  createGroup(dto: CreateGroupDto) {
+    const name = dto.name.trim();
+    if (!name) {
+      throw new BadRequestException('Имя группы не может быть пустым');
+    }
+    const data: {
+      name: string;
+      subscriptionDisplayName?: string | null;
+      subscriptionAnnounce?: string | null;
+      profileUpdateInterval?: number | null;
+    } = { name };
+
+    if (dto.subscriptionDisplayName !== undefined) {
+      const t = (dto.subscriptionDisplayName ?? '').trim();
+      data.subscriptionDisplayName = t === '' ? null : t;
+    }
+    if (dto.subscriptionAnnounce !== undefined) {
+      if (dto.subscriptionAnnounce === null) {
+        data.subscriptionAnnounce = null;
+      } else {
+        const t = dto.subscriptionAnnounce.trim();
+        if (t !== '') {
+          data.subscriptionAnnounce =
+            sliceAnnounceForHappSubscription(t) || null;
+        }
+      }
+    }
+    if (dto.profileUpdateInterval !== undefined) {
+      if (dto.profileUpdateInterval === null) {
+        data.profileUpdateInterval = null;
+      } else if (Number.isFinite(dto.profileUpdateInterval)) {
+        data.profileUpdateInterval = Math.min(
+          8760,
+          Math.max(1, Math.floor(dto.profileUpdateInterval)),
+        );
+      }
+    }
+
+    return this.prisma.group.create({ data });
   }
 
   async deleteGroup(id: string) {
@@ -1084,24 +1260,46 @@ export class ManagementService {
     await this.prisma.subscriptionAppLink.delete({ where: { id } });
   }
 
-  async updateGroupSettings(
-    id: string,
-    dto: { subscriptionDisplayName?: string | null },
-  ) {
+  async updateGroupSettings(id: string, dto: UpdateGroupSettingsDto) {
     await this.ensureGroupById(id);
-    if (dto.subscriptionDisplayName === undefined) {
-      return this.prisma.group.findUnique({ where: { id } });
+    const data: {
+      subscriptionDisplayName?: string | null;
+      subscriptionAnnounce?: string | null;
+      profileUpdateInterval?: number | null;
+    } = {};
+
+    if (dto.subscriptionDisplayName !== undefined) {
+      if (dto.subscriptionDisplayName === null) {
+        data.subscriptionDisplayName = null;
+      } else {
+        const trimmed = dto.subscriptionDisplayName.trim();
+        data.subscriptionDisplayName = trimmed === '' ? null : trimmed;
+      }
     }
-    let subscriptionDisplayName: string | null;
-    if (dto.subscriptionDisplayName === null) {
-      subscriptionDisplayName = null;
-    } else {
-      const trimmed = dto.subscriptionDisplayName.trim();
-      subscriptionDisplayName = trimmed === '' ? null : trimmed;
+
+    if (dto.subscriptionAnnounce !== undefined) {
+      if (dto.subscriptionAnnounce === null) {
+        data.subscriptionAnnounce = null;
+      } else {
+        const t = dto.subscriptionAnnounce.trim();
+        data.subscriptionAnnounce =
+          t === '' ? null : sliceAnnounceForHappSubscription(t) || null;
+      }
+    }
+
+    if (dto.profileUpdateInterval !== undefined) {
+      data.profileUpdateInterval =
+        dto.profileUpdateInterval === null
+          ? null
+          : Math.min(8760, Math.max(1, Math.floor(dto.profileUpdateInterval)));
+    }
+
+    if (Object.keys(data).length === 0) {
+      return this.prisma.group.findUnique({ where: { id } });
     }
     return this.prisma.group.update({
       where: { id },
-      data: { subscriptionDisplayName },
+      data,
     });
   }
 
