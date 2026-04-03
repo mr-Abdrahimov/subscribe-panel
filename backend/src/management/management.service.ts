@@ -548,6 +548,35 @@ export class ManagementService {
   }
 
   /**
+   * Имя подписки для ленты: subscriptionDisplayName группы, иначе имя пользователя панели.
+   */
+  async resolveSubscriptionProfileTitleForPanelUser(
+    user: PanelUser,
+  ): Promise<string> {
+    const fromGroup = await this.resolveSubscriptionDisplayNameForUserGroup(
+      user.groupName,
+    );
+    const g = (fromGroup ?? '').trim();
+    if (g) {
+      return g;
+    }
+    const n = (user.name ?? '').trim();
+    if (n) {
+      return n;
+    }
+    return 'Подписка';
+  }
+
+  /** Абсолютный URL страницы вида …/sub/CODE (для #profile-web-page-url). */
+  private buildPublicSubPageAbsoluteUrl(code: string): string {
+    return this.buildSubscriptionPageUrl(code.trim(), false);
+  }
+
+  private profileWebPageUrlMetaLine(code: string): string {
+    return `#profile-web-page-url: ${this.buildPublicSubPageAbsoluteUrl(code)}`;
+  }
+
+  /**
    * Обычная base64-подписка: коннекты группы пользователя.
    * Фрагмент # в URI — Connect.name; при названии группы — строка #profile-title для Happ.
    */
@@ -584,6 +613,7 @@ export class ManagementService {
         `#profile-title: ${sliceProfileTitleForHappSubscription(titleTrimmed)}`,
       );
     }
+    metaLines.push(this.profileWebPageUrlMetaLine(user.code));
     metaLines.push('#hide-settings: 1');
     const head = metaLines.join('\n');
     const bodyText =
@@ -596,19 +626,22 @@ export class ManagementService {
   }
 
   /**
-   * Заглушка: случайный vless (не из БД), profile-title и имя в URI — переданный title.
+   * Заглушка без реальных коннектов: имя профиля из настроек (profileDisplayTitle),
+   * ссылка на страницу /sub/CODE, случайный vless с тем же отображаемым именем.
    */
   buildNamedSubscriptionPlaceholderFeed(
     panelUserId: string | null,
-    title: string,
+    code: string,
+    profileDisplayTitle: string,
   ): {
     encoded: string;
     profileTitle: string;
     panelUserId: string | null;
   } {
-    const t = title.trim() || 'Нет подключений';
+    const t = profileDisplayTitle.trim() || 'Нет подключений';
     const line = this.buildRandomPlaceholderVlessLineForName(t);
-    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n#hide-settings: 1\n${line}`;
+    const web = this.profileWebPageUrlMetaLine(code);
+    const bodyText = `#profile-title: ${sliceProfileTitleForHappSubscription(t)}\n${web}\n#hide-settings: 1\n${line}`;
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle: t,
@@ -617,17 +650,21 @@ export class ManagementService {
   }
 
   /**
-   * Заглушка при ошибках доступа: случайный vless (не из БД), в клиенте — «Нет подключений».
-   * Код неизвестен — panelUserId null (лог не пишем).
+   * Заглушка «нет коннектов» / отказ доступа. Код неизвестен — panelUserId null (лог не пишем).
    */
-  buildNoConnectionsPlaceholderFeed(panelUserId: string | null): {
+  buildNoConnectionsPlaceholderFeed(
+    panelUserId: string | null,
+    code: string,
+    profileDisplayTitle = 'Нет подключений',
+  ): {
     encoded: string;
     profileTitle: string;
     panelUserId: string | null;
   } {
     return this.buildNamedSubscriptionPlaceholderFeed(
       panelUserId,
-      'Нет подключений',
+      code,
+      profileDisplayTitle,
     );
   }
 

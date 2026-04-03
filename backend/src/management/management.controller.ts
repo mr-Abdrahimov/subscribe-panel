@@ -267,7 +267,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Для Happ: #hide-settings в теле и заголовок hide-settings. Query t= опционален: если передан — должен совпадать с subscriptionAccessToken пользователя; если не передан — лента всё равно отдаётся (достаточно секрета в длинном code в пути). Прокси Nuxt с альтернативного пути добавляет via=crypto-page. cryptoOnlySubscription=true и без via=crypto-page — заглушка «Только Cripto» по /sub/…. Несуществующий code — «Нет подключений». Логи PanelUserAccessLog при известном panelUserId.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Заглушки без реальных коннектов: #profile-title из subscriptionDisplayName группы (настройки) или имени пользователя панели. Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. cryptoOnlySubscription без via — заглушка с именем из настроек. Логи PanelUserAccessLog при известном panelUserId.',
   })
   @ApiResponse({
     status: 200,
@@ -330,6 +330,14 @@ export class ManagementController {
           ? String(uaHeader[0]).trim()
           : '';
 
+    let subscriptionProfileTitle = 'Нет подключений';
+    if (user) {
+      subscriptionProfileTitle =
+        await this.managementService.resolveSubscriptionProfileTitleForPanelUser(
+          user,
+        );
+    }
+
     let payload: {
       encoded: string;
       profileTitle: string;
@@ -337,16 +345,21 @@ export class ManagementController {
     };
 
     if (!user) {
-      payload =
-        this.managementService.buildNoConnectionsPlaceholderFeed(null);
+      payload = this.managementService.buildNoConnectionsPlaceholderFeed(
+        null,
+        code,
+      );
     } else if (!user.enabled) {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         user.id,
+        user.code,
+        subscriptionProfileTitle,
       );
     } else if (user.cryptoOnlySubscription === true && !viaCryptoPage) {
       payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
         user.id,
-        'Только Cripto',
+        user.code,
+        subscriptionProfileTitle,
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;
@@ -355,15 +368,20 @@ export class ManagementController {
       if (!allowAll && !ua.startsWith('Happ')) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
           user.id,
+          user.code,
+          subscriptionProfileTitle,
         );
       } else if (requireNoHwid && hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
           user.id,
-          'Отключите HWID',
+          user.code,
+          subscriptionProfileTitle,
         );
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
           user.id,
+          user.code,
+          subscriptionProfileTitle,
         );
       } else if (
         requireNoHwid !== true &&
@@ -377,7 +395,8 @@ export class ManagementController {
       ) {
         payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
           user.id,
-          'Превышен лимит HWID',
+          user.code,
+          subscriptionProfileTitle,
         );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(user);
