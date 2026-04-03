@@ -82,7 +82,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Создать пользователя панели',
     description:
-      'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL страницы с ?t=TOKEN: обычно …/sub/CODE, при cryptoOnlySubscription — …/{SUBSCRIPTION_CRYPTO_PATH_SEGMENT}/CODE (сегмент как у Nuxt NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH). Поле cryptoOnlySubscription опционально (по умолчанию false). Выдача ленты без верного t запрещена. При cryptoOnly по /sub/… — заглушка «Только crypto» без via=crypto-page.',
+      'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL с ?t=TOKEN. Опционально: cryptoOnlySubscription, allowAllUserAgents (по умолчанию false). Выдача ленты без верного t запрещена.',
   })
   createUser(
     @Body()
@@ -91,6 +91,7 @@ export class ManagementController {
       code: string;
       groupName: string;
       cryptoOnlySubscription?: boolean;
+      allowAllUserAgents?: boolean;
     },
   ) {
     return this.managementService.createUser(
@@ -98,6 +99,7 @@ export class ManagementController {
       body.code,
       body.groupName,
       body.cryptoOnlySubscription === true,
+      body.allowAllUserAgents === true,
     );
   }
 

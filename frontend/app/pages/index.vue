@@ -64,7 +64,10 @@ const bulkTransferToGroup = ref<string>('');
 const bulkMaxUniqueHwidsInput = ref<string>('0');
 const isBulkClearLogsOpen = ref(false);
 const happCryptoCreatingUserId = ref<string | null>(null);
-const formCryptoOnlySubscription = ref(false);
+
+type SubscriptionAccessMode = 'allApps' | 'crypto' | 'happOnly';
+
+const formAccessMode = ref<SubscriptionAccessMode>('happOnly');
 
 const selectedUsersCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length,
@@ -124,21 +127,11 @@ const columns: TableColumn<UserItem>[] = [
     },
   },
   {
-    id: 'allowAllUserAgents',
-    header: 'Все приложения',
+    id: 'subscriptionAccess',
+    header: 'Доступ',
     meta: {
       class: {
-        th: `${thBase} max-w-[6.5rem] whitespace-normal`,
-        td: 'align-middle',
-      },
-    },
-  },
-  {
-    id: 'cryptoOnlySubscription',
-    header: 'Только crypto',
-    meta: {
-      class: {
-        th: `${thBase} max-w-[6.5rem] whitespace-normal`,
+        th: `${thBase} max-w-[9rem] whitespace-normal`,
         td: 'align-middle',
       },
     },
@@ -189,6 +182,35 @@ const groupOptions = computed(() => groups.value.map(group => group.name));
 
 type HwidPolicy = 'require' | 'forbid' | 'any';
 
+const SUBSCRIPTION_ACCESS_OPTIONS: {
+  value: SubscriptionAccessMode;
+  label: string;
+  icon: string;
+  tooltip: string;
+}[] = [
+  {
+    value: 'allApps',
+    label: 'Все приложения',
+    icon: 'i-lucide-layout-grid',
+    tooltip:
+      'Любой User-Agent. Режим «только crypto» выключен.',
+  },
+  {
+    value: 'crypto',
+    label: 'Crypto',
+    icon: 'i-lucide-key-round',
+    tooltip:
+      'Только crypto: полная лента с секретной страницы (happ://); по /sub/… — заглушка. User-Agent как у режима «только Happ».',
+  },
+  {
+    value: 'happOnly',
+    label: 'Только Happ',
+    icon: 'i-lucide-smartphone',
+    tooltip:
+      'Только клиенты с User-Agent «Happ…». Без режима «только crypto».',
+  },
+];
+
 const HWID_POLICY_OPTIONS: {
   value: HwidPolicy;
   label: string;
@@ -214,6 +236,50 @@ const HWID_POLICY_OPTIONS: {
     tooltip: 'HWID не проверяется — выдаётся обычная подписка',
   },
 ];
+
+function accessModeToFlags(mode: SubscriptionAccessMode): {
+  allowAllUserAgents: boolean;
+  cryptoOnlySubscription: boolean;
+} {
+  if (mode === 'allApps') {
+    return { allowAllUserAgents: true, cryptoOnlySubscription: false };
+  }
+  if (mode === 'crypto') {
+    return { allowAllUserAgents: false, cryptoOnlySubscription: true };
+  }
+  return { allowAllUserAgents: false, cryptoOnlySubscription: false };
+}
+
+function accessModeFromUser(user: UserItem): SubscriptionAccessMode {
+  if (user.allowAllUserAgents === true) {
+    return 'allApps';
+  }
+  if (user.cryptoOnlySubscription === true) {
+    return 'crypto';
+  }
+  return 'happOnly';
+}
+
+async function setSubscriptionAccessMode(
+  user: UserItem,
+  mode: SubscriptionAccessMode,
+) {
+  if (accessModeFromUser(user) === mode) {
+    return;
+  }
+  const body = accessModeToFlags(mode);
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body,
+    });
+    user.allowAllUserAgents = body.allowAllUserAgents;
+    user.cryptoOnlySubscription = body.cryptoOnlySubscription;
+  } catch {
+    toast.add({ title: 'Не удалось сохранить режим доступа', color: 'error' });
+    await loadData();
+  }
+}
 
 function hwidPolicyFromUser(user: UserItem): HwidPolicy {
   if (user.requireNoHwid) {
@@ -297,7 +363,7 @@ function openCreate() {
   formName.value = '';
   formCode.value = generateCode(32);
   formGroupName.value = groups.value[0]?.name ?? '';
-  formCryptoOnlySubscription.value = false;
+  formAccessMode.value = 'happOnly';
   isModalOpen.value = true;
 }
 
@@ -310,7 +376,7 @@ function openEdit(user: UserItem) {
   formName.value = user.name;
   formCode.value = user.code;
   formGroupName.value = user.groupName;
-  formCryptoOnlySubscription.value = Boolean(user.cryptoOnlySubscription);
+  formAccessMode.value = accessModeFromUser(user);
   isModalOpen.value = true;
 }
 
@@ -342,6 +408,7 @@ async function submitUser() {
   }
 
   const name = formName.value.trim();
+  const accessFlags = accessModeToFlags(formAccessMode.value);
 
   try {
     if (editingUserId.value) {
@@ -352,7 +419,7 @@ async function submitUser() {
           body: {
             name,
             groupName,
-            cryptoOnlySubscription: formCryptoOnlySubscription.value,
+            ...accessFlags,
           }
         }
       );
@@ -364,7 +431,7 @@ async function submitUser() {
           name,
           code: formCode.value,
           groupName,
-          cryptoOnlySubscription: formCryptoOnlySubscription.value,
+          ...accessFlags,
         }
       });
       toast.add({ title: 'Пользователь добавлен', color: 'success' });
@@ -453,48 +520,6 @@ async function toggleUser(user: UserItem, value: boolean | 'indeterminate') {
     user.enabled = Boolean(value);
   } catch {
     toast.add({ title: 'Не удалось изменить статус пользователя', color: 'error' });
-    await loadData();
-  }
-}
-
-async function patchAccessFlags(
-  user: UserItem,
-  patch: { allowAllUserAgents: boolean },
-) {
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
-      method: 'PATCH',
-      body: patch,
-    });
-    user.allowAllUserAgents = patch.allowAllUserAgents;
-  } catch {
-    toast.add({ title: 'Не удалось сохранить настройки доступа', color: 'error' });
-    await loadData();
-  }
-}
-
-async function patchCryptoOnlySubscription(
-  user: UserItem,
-  value: boolean | 'indeterminate',
-) {
-  const next = Boolean(value);
-  if (next === Boolean(user.cryptoOnlySubscription)) {
-    return;
-  }
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
-      method: 'PATCH',
-      body: { cryptoOnlySubscription: next },
-    });
-    user.cryptoOnlySubscription = next;
-    toast.add({
-      title: next
-        ? 'Включён режим «только crypto»: по /sub/… в Happ — заглушка, полная лента — с секретной страницы (happ://).'
-        : 'Режим «только crypto» выключен.',
-      color: 'success',
-    });
-  } catch {
-    toast.add({ title: 'Не удалось сохранить режим crypto', color: 'error' });
     await loadData();
   }
 }
@@ -691,12 +716,12 @@ async function bulkSetEnabled(enabled: boolean) {
   await runBulkUpdate({ enabled });
 }
 
-async function bulkSetAllowAllUserAgents(value: boolean) {
-  await runBulkUpdate({ allowAllUserAgents: value });
-}
-
-async function bulkSetCryptoOnlySubscription(value: boolean) {
-  await runBulkUpdate({ cryptoOnlySubscription: value });
+async function bulkSetSubscriptionAccessMode(mode: SubscriptionAccessMode) {
+  const flags = accessModeToFlags(mode);
+  await runBulkUpdate({
+    allowAllUserAgents: flags.allowAllUserAgents,
+    cryptoOnlySubscription: flags.cryptoOnlySubscription,
+  });
 }
 
 async function bulkApplyMaxUniqueHwids() {
@@ -827,45 +852,33 @@ async function confirmBulkClearLogs() {
               </UButton>
             </div>
             <p class="text-xs text-muted pt-1">
-              Все приложения (User-Agent)
+              Доступ к ленте (как три иконки в таблице)
             </p>
             <div class="flex flex-wrap gap-2">
               <UButton
                 size="sm"
                 :loading="bulkLoading"
-                @click="bulkSetAllowAllUserAgents(true)"
+                @click="bulkSetSubscriptionAccessMode('allApps')"
               >
-                Включить
+                Все клиенты
               </UButton>
               <UButton
                 size="sm"
                 color="neutral"
                 variant="soft"
                 :loading="bulkLoading"
-                @click="bulkSetAllowAllUserAgents(false)"
+                @click="bulkSetSubscriptionAccessMode('crypto')"
               >
-                Выключить
-              </UButton>
-            </div>
-            <p class="text-xs text-muted pt-1">
-              Только crypto
-            </p>
-            <div class="flex flex-wrap gap-2">
-              <UButton
-                size="sm"
-                :loading="bulkLoading"
-                @click="bulkSetCryptoOnlySubscription(true)"
-              >
-                Включить
+                Crypto
               </UButton>
               <UButton
                 size="sm"
                 color="neutral"
                 variant="soft"
                 :loading="bulkLoading"
-                @click="bulkSetCryptoOnlySubscription(false)"
+                @click="bulkSetSubscriptionAccessMode('happOnly')"
               >
-                Выключить
+                Только Happ
               </UButton>
             </div>
           </div>
@@ -986,32 +999,38 @@ async function confirmBulkClearLogs() {
           </div>
         </template>
 
-        <template #allowAllUserAgents-cell="{ row }">
-          <UTooltip
-            text="Подписка по ссылке /sub/… для любого User-Agent. Иначе только клиенты с User-Agent, начинающимся с «Happ»"
+        <template #subscriptionAccess-cell="{ row }">
+          <div
+            class="flex justify-center"
+            role="radiogroup"
+            :aria-label="'Доступ к подписке для ' + row.original.name"
           >
-            <div class="flex justify-center">
-              <USwitch
-                :model-value="Boolean(row.original.allowAllUserAgents)"
-                @update:model-value="
-                  patchAccessFlags(row.original, { allowAllUserAgents: Boolean($event) })
-                "
-              />
+            <div
+              class="inline-flex flex-row items-stretch gap-0.5 rounded-lg border border-default bg-elevated/50 p-0.5"
+            >
+              <UTooltip
+                v-for="opt in SUBSCRIPTION_ACCESS_OPTIONS"
+                :key="opt.value"
+                :text="opt.tooltip"
+              >
+                <UButton
+                  size="xs"
+                  :icon="opt.icon"
+                  :variant="
+                    accessModeFromUser(row.original) === opt.value ? 'solid' : 'ghost'
+                  "
+                  :color="
+                    accessModeFromUser(row.original) === opt.value ? 'primary' : 'neutral'
+                  "
+                  class="min-w-8 min-h-8 justify-center rounded-md sm:min-w-9"
+                  :aria-label="opt.label"
+                  :aria-checked="accessModeFromUser(row.original) === opt.value"
+                  role="radio"
+                  @click="setSubscriptionAccessMode(row.original, opt.value)"
+                />
+              </UTooltip>
             </div>
-          </UTooltip>
-        </template>
-
-        <template #cryptoOnlySubscription-cell="{ row }">
-          <UTooltip
-            text="Включено: полная лента с секретной страницы (happ://). Импорт вида https://…/sub/CODE?t=… в Happ покажет одно подключение «Только crypto»."
-          >
-            <div class="flex justify-center">
-              <USwitch
-                :model-value="Boolean(row.original.cryptoOnlySubscription)"
-                @update:model-value="patchCryptoOnlySubscription(row.original, $event)"
-              />
-            </div>
-          </UTooltip>
+          </div>
         </template>
 
         <template #hwidPolicy-cell="{ row }">

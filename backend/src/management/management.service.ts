@@ -151,6 +151,7 @@ export class ManagementService {
     code: string,
     groupName: string,
     cryptoOnlySubscription = false,
+    allowAllUserAgents = false,
   ) {
     const trimmedCode = code.trim();
     const subscriptionAccessToken = randomBytes(32).toString('hex');
@@ -165,7 +166,7 @@ export class ManagementService {
         name: name.trim(),
         code: trimmedCode,
         groupName: groupName.trim(),
-        allowAllUserAgents: false,
+        allowAllUserAgents: Boolean(allowAllUserAgents),
         requireHwid: true,
         requireNoHwid: false,
         maxUniqueHwids: 0,
