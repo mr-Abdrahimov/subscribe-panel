@@ -46,6 +46,8 @@ const happCryptoUrl = computed(() => {
   return u.startsWith('happ://') ? u : ''
 })
 
+const cryptoInputPlaceholder = 'Нет happ:// — создайте в панели'
+
 const headTitle = computed(() => {
   const u = displayName.value
   return u ? `${u} — VPN-подписка` : 'VPN-подписка'
@@ -92,6 +94,13 @@ useSeoMeta({
   twitterDescription: seoDescription,
   twitterImage: ogImageAbsolute,
 })
+
+function selectCryptoInput(ev: FocusEvent) {
+  const el = ev.target
+  if (el instanceof HTMLInputElement) {
+    el.select()
+  }
+}
 
 async function copyCryptoLink() {
   const url = happCryptoUrl.value
@@ -165,9 +174,19 @@ async function copyCryptoLink() {
         </div>
 
         <div class="cp__url-block">
-          <label class="cp__label">ENDPOINT · HAPP CRYPTO</label>
+          <label class="cp__label" for="cp-happ-crypto-input">ENDPOINT · HAPP CRYPTO</label>
           <div class="cp__url-row">
-            <code class="cp__url">{{ happCryptoUrl || '— нет happ:// ссылки (создайте в панели) —' }}</code>
+            <input
+              id="cp-happ-crypto-input"
+              type="text"
+              class="cp__url-input"
+              readonly
+              tabindex="0"
+              :value="happCryptoUrl"
+              :placeholder="cryptoInputPlaceholder"
+              aria-label="Happ crypto-ссылка для копирования"
+              @focus="selectCryptoInput"
+            />
             <button type="button" class="cp__btn cp__btn--ghost" @click="copyCryptoLink">
               КОПИРОВАТЬ
             </button>
@@ -522,29 +541,53 @@ async function copyCryptoLink() {
 
 .cp__url-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-@media (min-width: 480px) {
-  .cp__url-row {
-    flex-direction: row;
-    align-items: stretch;
-  }
-}
-
-.cp__url {
-  flex: 1;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.45rem;
   min-width: 0;
-  display: block;
-  padding: 0.65rem 0.85rem;
+}
+
+.cp__url-input {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  height: 2.25rem;
+  padding: 0 0.5rem;
   font-family: 'Share Tech Mono', monospace;
-  font-size: 0.7rem;
-  line-height: 1.4;
-  word-break: break-all;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  color: var(--cp-cyan);
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(0, 245, 255, 0.2);
-  color: var(--cp-cyan);
+  border-radius: 2px;
+  outline: none;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.cp__url-input::placeholder {
+  color: rgba(232, 244, 255, 0.38);
+  font-size: 0.62rem;
+}
+
+.cp__url-input:focus {
+  border-color: rgba(0, 245, 255, 0.42);
+  box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.12);
+}
+
+.cp__url-row .cp__btn {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
 }
 
 .cp__btn {
