@@ -168,6 +168,35 @@ export class ManagementService {
     return full;
   }
 
+  /**
+   * Создать happ crypto-ссылку для существующего пользователя или вернуть уже сохранённую.
+   */
+  async createHappCryptoUrlForPanelUser(
+    id: string,
+  ): Promise<{ happCryptoUrl: string }> {
+    await this.ensureUser(id);
+    const user = await this.prisma.panelUser.findUniqueOrThrow({
+      where: { id },
+      select: { code: true, happCryptoUrl: true },
+    });
+    const existing = user.happCryptoUrl?.trim();
+    if (existing?.startsWith('happ://')) {
+      return { happCryptoUrl: existing };
+    }
+    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(user.code);
+    const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
+    if (!happCryptoUrl) {
+      throw new BadRequestException(
+        'Не удалось получить ссылку от сервиса crypto.happ.su',
+      );
+    }
+    await this.prisma.panelUser.update({
+      where: { id },
+      data: { happCryptoUrl },
+    });
+    return { happCryptoUrl };
+  }
+
   async deleteUser(id: string) {
     await this.ensureUser(id);
     await this.prisma.panelUser.delete({ where: { id } });

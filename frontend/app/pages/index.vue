@@ -61,6 +61,7 @@ const bulkTransferFromGroup = ref<string>('');
 const bulkTransferToGroup = ref<string>('');
 const bulkMaxUniqueHwidsInput = ref<string>('0');
 const isBulkClearLogsOpen = ref(false);
+const happCryptoCreatingUserId = ref<string | null>(null);
 
 const selectedUsersCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length,
@@ -104,8 +105,8 @@ const columns: TableColumn<UserItem>[] = [
     header: 'Ссылка',
     meta: {
       class: {
-        th: `${thBase} w-px`,
-        td: 'w-px whitespace-nowrap',
+        th: thBase,
+        td: 'whitespace-nowrap align-middle',
       },
     },
   },
@@ -500,6 +501,40 @@ async function copySubscriptionLink(code: string) {
   }
 }
 
+async function copyHappCryptoUrl(happCryptoUrl: string | null | undefined) {
+  if (!import.meta.client) {
+    return;
+  }
+  const text = (happCryptoUrl ?? '').trim();
+  if (!text) {
+    toast.add({ title: 'Нет crypto-ссылки', color: 'warning' });
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.add({ title: 'Crypto-ссылка (happ://…) скопирована', color: 'success' });
+  } catch {
+    toast.add({ title: 'Не удалось скопировать в буфер', color: 'error' });
+  }
+}
+
+async function createHappCryptoForUser(user: UserItem) {
+  happCryptoCreatingUserId.value = user.id;
+  try {
+    const res = await $fetch<{ happCryptoUrl: string }>(
+      `${config.public.apiBaseUrl}/panel-users/${user.id}/happ-crypto`,
+      { method: 'POST' },
+    );
+    user.happCryptoUrl = res.happCryptoUrl;
+    toast.add({ title: 'Crypto-ссылка создана', color: 'success' });
+  } catch {
+    toast.add({ title: 'Не удалось создать crypto-ссылку', color: 'error' });
+    await loadData();
+  } finally {
+    happCryptoCreatingUserId.value = null;
+  }
+}
+
 function getUserRowId(row: UserItem) {
   return row.id;
 }
@@ -851,8 +886,8 @@ async function confirmBulkClearLogs() {
         </template>
 
         <template #code-cell="{ row }">
-          <div class="flex items-center justify-center">
-            <UTooltip text="Скопировать ссылку на подписку">
+          <div class="inline-flex items-center justify-center gap-0.5 sm:gap-1">
+            <UTooltip text="Скопировать ссылку на подписку (страница /sub/…)">
               <UButton
                 color="primary"
                 variant="soft"
@@ -861,6 +896,20 @@ async function confirmBulkClearLogs() {
                 icon="i-lucide-link-2"
                 aria-label="Скопировать ссылку на подписку"
                 @click="copySubscriptionLink(row.original.code)"
+              />
+            </UTooltip>
+            <UTooltip
+              v-if="row.original.happCryptoUrl"
+              text="Скопировать happ crypto-ссылку (для приложений Happ)"
+            >
+              <UButton
+                color="primary"
+                variant="soft"
+                size="xs"
+                class="shrink-0 rounded-lg p-1.5 min-w-8 min-h-8"
+                icon="i-lucide-key-round"
+                aria-label="Скопировать crypto-ссылку"
+                @click="copyHappCryptoUrl(row.original.happCryptoUrl)"
               />
             </UTooltip>
           </div>
@@ -965,6 +1014,19 @@ async function confirmBulkClearLogs() {
                 icon="i-lucide-scroll-text"
                 class="rounded-lg p-1.5 min-w-8 min-h-8"
                 aria-label="Логи подписки"
+              />
+            </UTooltip>
+            <UTooltip v-if="!row.original.happCryptoUrl" text="Создать crypto-ссылку (happ://…)">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-key-round"
+                class="rounded-lg p-1.5 min-w-8 min-h-8"
+                aria-label="Создать крипто-ссылку"
+                :loading="happCryptoCreatingUserId === row.original.id"
+                :disabled="happCryptoCreatingUserId !== null && happCryptoCreatingUserId !== row.original.id"
+                @click="createHappCryptoForUser(row.original)"
               />
             </UTooltip>
             <UTooltip text="Очистить логи подписки (список HWID)">

@@ -127,6 +127,26 @@ export class ManagementController {
     return this.managementService.toggleUser(id);
   }
 
+  @Post('panel-users/:id/happ-crypto')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Создать happ crypto-ссылку для пользователя панели',
+    description:
+      'Запрашивает у crypto.happ.su зашифрованную ссылку happ://… для публичного URL подписки пользователя и сохраняет в поле happCryptoUrl. Если ссылка уже сохранена — возвращает её без повторного запроса к внешнему API.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Объект { happCryptoUrl: строка happ://… }',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Не удалось получить ссылку (сервис crypto или настройки URL подписки)',
+  })
+  @ApiResponse({ status: 404, description: 'Пользователь не найден' })
+  createPanelUserHappCrypto(@Param('id') id: string) {
+    return this.managementService.createHappCryptoUrlForPanelUser(id);
+  }
+
   @Get('panel-users/:id/subscription-access-logs')
   @ApiOperation({
     summary: 'Логи обращений к подписке пользователя панели',
