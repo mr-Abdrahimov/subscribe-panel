@@ -158,6 +158,18 @@ function truncateText(s: string | null | undefined, max: number): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
+/** Первый адрес из цепочки (X-Forwarded-For и т.д.) — страница ipinfo.io */
+function ipinfoLookupUrl(clientIp: string | null | undefined): string | null {
+  if (!clientIp) {
+    return null;
+  }
+  const first = clientIp.split(',')[0]?.trim();
+  if (!first) {
+    return null;
+  }
+  return `https://ipinfo.io/${encodeURIComponent(first)}`;
+}
+
 /** Старые логи без поля success считаем успешной выдачей */
 function logOutcomeLabel(success: boolean | undefined): { label: string; color: 'success' | 'error' | 'neutral' } {
   if (success === false) {
@@ -206,7 +218,25 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
         </template>
 
         <template #clientIp-cell="{ row }">
-          <span class="font-mono text-xs">{{ row.original.clientIp || '—' }}</span>
+          <div class="flex items-center gap-0.5 max-w-[11rem] sm:max-w-none">
+            <span class="font-mono text-xs truncate min-w-0">{{ row.original.clientIp || '—' }}</span>
+            <UTooltip
+              v-if="ipinfoLookupUrl(row.original.clientIp)"
+              text="Открыть сведения об IP на ipinfo.io (новая вкладка)"
+            >
+              <UButton
+                :to="ipinfoLookupUrl(row.original.clientIp)!"
+                target="_blank"
+                external
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-external-link"
+                class="rounded-lg p-1.5 min-w-8 min-h-8 shrink-0"
+                aria-label="Открыть IP на ipinfo.io"
+              />
+            </UTooltip>
+          </div>
         </template>
 
         <template #outcome-cell="{ row }">
@@ -290,9 +320,27 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
             <p class="text-xs text-muted mb-1">
               IP
             </p>
-            <p class="font-mono text-xs break-all">
-              {{ detailLog.clientIp || '—' }}
-            </p>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <p class="font-mono text-xs break-all min-w-0">
+                {{ detailLog.clientIp || '—' }}
+              </p>
+              <UTooltip
+                v-if="ipinfoLookupUrl(detailLog.clientIp)"
+                text="Открыть сведения об IP на ipinfo.io (новая вкладка)"
+              >
+                <UButton
+                  :to="ipinfoLookupUrl(detailLog.clientIp)!"
+                  target="_blank"
+                  external
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  icon="i-lucide-external-link"
+                  class="rounded-lg p-1.5 min-w-8 min-h-8 shrink-0"
+                  aria-label="Открыть IP на ipinfo.io"
+                />
+              </UTooltip>
+            </div>
           </div>
           <div>
             <p class="text-xs text-muted mb-1">
