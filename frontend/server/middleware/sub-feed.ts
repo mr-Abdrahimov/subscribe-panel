@@ -180,12 +180,16 @@ export default defineEventHandler(async (event) => {
   const data = (res._data ?? '') as string;
   const profileTitleStar = res.headers.get('profile-title*');
   const profileTitlePlain = res.headers.get('profile-title');
+  const hideSettings = res.headers.get('hide-settings');
   setHeader(
     event,
     'cache-control',
     'private, no-store, no-cache, must-revalidate, max-age=0',
   );
   setHeader(event, 'pragma', 'no-cache');
+  if (hideSettings) {
+    setHeader(event, 'hide-settings', hideSettings);
+  }
   if (profileTitleStar) {
     setHeader(event, 'profile-title*', profileTitleStar);
   }

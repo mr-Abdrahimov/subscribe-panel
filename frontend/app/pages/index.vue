@@ -887,7 +887,9 @@ async function confirmBulkClearLogs() {
 
         <template #code-cell="{ row }">
           <div class="flex w-full items-center justify-center gap-0.5 sm:gap-1">
-            <UTooltip text="Скопировать ссылку на подписку (страница /sub/…)">
+            <UTooltip
+              text="Ссылка страницы /sub/… для браузера. В Happ импортируйте только crypto-ссылку (ключ) — без неё лента не откроется"
+            >
               <UButton
                 color="primary"
                 variant="soft"

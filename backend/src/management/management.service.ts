@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { sliceProfileTitleForHappSubscription } from '../common/profile-title-header';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
@@ -19,6 +19,14 @@ export class ManagementService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
+
+  /** Не отдаём subscriptionAccessToken в API панели. */
+  private omitSubscriptionAccessToken<T extends { subscriptionAccessToken?: string | null }>(
+    row: T,
+  ): Omit<T, 'subscriptionAccessToken'> {
+    const { subscriptionAccessToken: _omit, ...rest } = row;
+    return rest;
+  }
 
   listGroups() {
     return this.prisma.group.findMany({
@@ -81,18 +89,72 @@ export class ManagementService {
         (uniqueHwidCountByUser.get(row.panelUserId) ?? 0) + 1,
       );
     }
-    return users.map((u) => ({
-      ...u,
-      lastSubscriptionActivityAt: lastByUser.get(u.id) ?? null,
-      subscriptionUniqueHwidCount: uniqueHwidCountByUser.get(u.id) ?? 0,
-    }));
+    return users.map((u) => {
+      const { subscriptionAccessToken: _omit, ...rest } = u;
+      return {
+        ...rest,
+        lastSubscriptionActivityAt: lastByUser.get(u.id) ?? null,
+        subscriptionUniqueHwidCount: uniqueHwidCountByUser.get(u.id) ?? 0,
+      };
+    });
+  }
+
+  /**
+   * Выдаёт или создаёт subscriptionAccessToken. При первом создании сбрасывает happCryptoUrl,
+   * чтобы пересоздать happ:// ссылку с URL, содержащим ?t=.
+   */
+  async ensureSubscriptionAccessToken(panelUserId: string): Promise<string> {
+    const row = await this.prisma.panelUser.findUnique({
+      where: { id: panelUserId },
+      select: { subscriptionAccessToken: true },
+    });
+    const cur = row?.subscriptionAccessToken?.trim();
+    if (cur) {
+      return cur;
+    }
+    const token = randomBytes(32).toString('hex');
+    await this.prisma.panelUser.update({
+      where: { id: panelUserId },
+      data: { subscriptionAccessToken: token, happCryptoUrl: null },
+    });
+    return token;
+  }
+
+  subscriptionFetchTokenMatches(
+    provided: string | string[] | undefined,
+    expected: string,
+  ): boolean {
+    const p =
+      typeof provided === 'string'
+        ? provided.trim()
+        : Array.isArray(provided)
+          ? String(provided[0] ?? '').trim()
+          : '';
+    const e = expected.trim();
+    if (!p || !e) {
+      return false;
+    }
+    try {
+      const a = Buffer.from(p, 'utf8');
+      const b = Buffer.from(e, 'utf8');
+      if (a.length !== b.length) {
+        return false;
+      }
+      return timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
   }
 
   async createUser(name: string, code: string, groupName: string) {
     const trimmedCode = code.trim();
-    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(trimmedCode);
+    const subscriptionAccessToken = randomBytes(32).toString('hex');
+    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
+      trimmedCode,
+      subscriptionAccessToken,
+    );
     const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
-    return this.prisma.panelUser.create({
+    const created = await this.prisma.panelUser.create({
       data: {
         name: name.trim(),
         code: trimmedCode,
@@ -101,9 +163,11 @@ export class ManagementService {
         requireHwid: true,
         requireNoHwid: false,
         maxUniqueHwids: 0,
+        subscriptionAccessToken,
         ...(happCryptoUrl !== null ? { happCryptoUrl } : {}),
       },
     });
+    return this.omitSubscriptionAccessToken(created);
   }
 
   /**
@@ -153,19 +217,24 @@ export class ManagementService {
     }
   }
 
-  /** Абсолютный URL страницы /sub/{code} для передачи в crypto API */
-  private buildAbsoluteSubscriptionPageUrlForCrypto(code: string): string {
+  /**
+   * Абсолютный URL страницы /sub/{code}?t=… для crypto.happ.su (токен обязателен для выдачи ленты).
+   */
+  private buildAbsoluteSubscriptionPageUrlForCrypto(
+    code: string,
+    subscriptionAccessToken: string,
+  ): string {
     let full = this.buildSubscriptionPageUrl(code);
-    if (full.startsWith('http')) {
-      return full;
+    if (!full.startsWith('http')) {
+      const fallback = (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
+        .trim()
+        .replace(/\/$/, '');
+      if (fallback) {
+        full = `${fallback}${full.startsWith('/') ? full : `/${full}`}`;
+      }
     }
-    const fallback = (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
-      .trim()
-      .replace(/\/$/, '');
-    if (fallback) {
-      return `${fallback}${full.startsWith('/') ? full : `/${full}`}`;
-    }
-    return full;
+    const sep = full.includes('?') ? '&' : '?';
+    return `${full}${sep}t=${encodeURIComponent(subscriptionAccessToken)}`;
   }
 
   /**
@@ -175,6 +244,7 @@ export class ManagementService {
     id: string,
   ): Promise<{ happCryptoUrl: string }> {
     await this.ensureUser(id);
+    const token = await this.ensureSubscriptionAccessToken(id);
     const user = await this.prisma.panelUser.findUniqueOrThrow({
       where: { id },
       select: { code: true, happCryptoUrl: true },
@@ -183,7 +253,10 @@ export class ManagementService {
     if (existing?.startsWith('happ://')) {
       return { happCryptoUrl: existing };
     }
-    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(user.code);
+    const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
+      user.code,
+      token,
+    );
     const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
     if (!happCryptoUrl) {
       throw new BadRequestException(
@@ -204,10 +277,11 @@ export class ManagementService {
 
   async toggleUser(id: string) {
     const user = await this.ensureUser(id);
-    return this.prisma.panelUser.update({
+    const updated = await this.prisma.panelUser.update({
       where: { id },
       data: { enabled: !user.enabled },
     });
+    return this.omitSubscriptionAccessToken(updated);
   }
 
   async updatePanelUser(
@@ -274,12 +348,14 @@ export class ManagementService {
       data.maxUniqueHwids = dto.maxUniqueHwids;
     }
     if (Object.keys(data).length === 0) {
-      return this.prisma.panelUser.findUnique({ where: { id } });
+      const row = await this.prisma.panelUser.findUnique({ where: { id } });
+      return row ? this.omitSubscriptionAccessToken(row) : null;
     }
-    return this.prisma.panelUser.update({
+    const updated = await this.prisma.panelUser.update({
       where: { id },
       data,
     });
+    return this.omitSubscriptionAccessToken(updated);
   }
 
   /**

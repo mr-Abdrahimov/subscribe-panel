@@ -287,9 +287,9 @@ async function saveGroupTitle(groupId: string) {
           </h3>
           <p class="text-sm text-muted">
             Ссылки показываются на публичной странице <code class="text-xs font-mono text-highlighted">/sub/…</code>.
-            <code class="text-xs font-mono text-highlighted">{link}</code> заменяется на полный URL подписки вида
-            <code class="text-xs font-mono text-highlighted">https://inv.avtlk.ru/sub/КОД</code>
-            (домен из настроек бэкенда).
+            <code class="text-xs font-mono text-highlighted">{link}</code> — URL страницы подписки без секрета (удобно открыть в браузере; в Happ для импорта ленты не подойдёт — нужен параметр
+            <code class="text-xs font-mono text-highlighted">t</code>, он только внутри
+            <code class="text-xs font-mono text-highlighted">happ://…</code>).
             <code class="text-xs font-mono text-highlighted">{crypto}</code> — на зашифрованную ссылку
             <code class="text-xs font-mono text-highlighted">happ://…</code>, которую бэкенд запрашивает у
             crypto.happ.su при создании пользователя и хранит в базе; у старых пользователей без ссылки подстановка будет пустой.

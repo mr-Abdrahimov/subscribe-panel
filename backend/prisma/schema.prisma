@@ -78,6 +78,8 @@ model PanelUser {
   maxUniqueHwids      Int                    @default(0)
   /// Ссылка happ://… от crypto.happ.su для шаблонов приложений с плейсхолдером {crypto}; заполняется при создании пользователя
   happCryptoUrl       String?
+  /// Секрет для выдачи ленты: GET …/sub/CODE?t=TOKEN (без совпадения — 403). Не отдаётся в API панели.
+  subscriptionAccessToken String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]

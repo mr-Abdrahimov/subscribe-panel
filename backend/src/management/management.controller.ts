@@ -82,7 +82,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Создать пользователя панели',
     description:
-      'После создания записи бэкенд запрашивает у crypto.happ.su зашифрованную ссылку happ://… для URL подписки (PUBLIC_SUBSCRIPTION_BASE_URL/sub/CODE) и сохраняет в поле happCryptoUrl. При недоступности API пользователь всё равно создаётся, поле может быть пустым.',
+      'После создания записи бэкенд запрашивает у crypto.happ.su зашифрованную ссылку happ://… для URL вида …/sub/CODE?t=TOKEN (секрет хранится только в БД и внутри crypto-ссылки). Выдача ленты GET /public/sub/:code без верного query t= запрещена. При недоступности API пользователь всё равно создаётся, happCryptoUrl может быть пустым.',
   })
   createUser(@Body() body: { name: string; code: string; groupName: string }) {
     return this.managementService.createUser(body.name, body.code, body.groupName);
@@ -252,12 +252,17 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Для Happ: в теле подписки — строка #hide-settings: 1, в HTTP-ответе — заголовок hide-settings: 1 (скрыть настройки серверов). При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). Для Happ: в теле подписки — строка #hide-settings: 1, в HTTP-ответе — заголовок hide-settings: 1 (скрыть настройки серверов). Если пользователь с таким code существует, обязателен query-параметр t=subscriptionAccessToken (тот же URL внутри happ:// crypto-ссылки); без него — 403, чтобы нельзя было добавить в Happ только https://…/sub/CODE. Для несуществующего code ответ без t — заглушка «Нет подключений». При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
     description:
       'Тело: base64 (UTF-8): полная подписка или заглушка («Нет подключений» / «Отключите HWID» / «Превышен лимит HWID»).',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Пользователь найден, но отсутствует или неверен параметр t (нужна ссылка с секретом, например из happ:// crypto).',
   })
   async getPublicSubscription(
     @Param('code') code: string,
@@ -265,6 +270,35 @@ export class ManagementController {
     @Res() res: Response,
   ) {
     const user = await this.managementService.findPanelUserByCode(code);
+
+    if (user) {
+      const accessToken =
+        await this.managementService.ensureSubscriptionAccessToken(user.id);
+      const rawT = req.query['t'];
+      const providedT =
+        typeof rawT === 'string'
+          ? rawT
+          : Array.isArray(rawT) && typeof rawT[0] === 'string'
+            ? rawT[0]
+            : undefined;
+      if (
+        !this.managementService.subscriptionFetchTokenMatches(
+          providedT,
+          accessToken,
+        )
+      ) {
+        res.status(403);
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader(
+          'Cache-Control',
+          'private, no-store, no-cache, must-revalidate, max-age=0',
+        );
+        res.setHeader('Pragma', 'no-cache');
+        return res.send(
+          'Доступ к подписке только по URL с параметром t. Добавляйте в Happ happ:// crypto-ссылку, а не голый https://…/sub/… .',
+        );
+      }
+    }
 
     const uaHeader = req.headers['user-agent'];
     const ua =
