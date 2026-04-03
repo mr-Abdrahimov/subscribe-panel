@@ -11,7 +11,13 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const root = resolve(__dirname, '..');
 const envFile = process.argv[2] ?? resolve(root, `.env.${process.env.NODE_ENV ?? 'development'}`);
 
-config({ path: envFile });
+// quiet: иначе dotenv v17 пишет «injecting env…» в stdout и ломает $(node …) в npm-скриптах
+// override: значения из файла должны перебивать уже экспортированные в shell DATABASE_URL / MONGO_*
+config({
+  path: resolve(process.cwd(), envFile),
+  quiet: true,
+  override: true,
+});
 
 function build() {
   const host = process.env.MONGO_HOST?.trim();
@@ -40,4 +46,12 @@ function build() {
   process.exit(1);
 }
 
-process.stdout.write(build());
+const url = build();
+if (!/^mongodb(\+srv)?:\/\//i.test(url)) {
+  console.error(
+    'Ожидался URL MongoDB (mongodb:// или mongodb+srv://), получено:',
+    url.slice(0, 80),
+  );
+  process.exit(1);
+}
+process.stdout.write(url);

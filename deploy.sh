@@ -7,6 +7,8 @@
 # Допустимо также: ./deploy.sh или bash deploy.sh
 #
 # Prisma Client (prisma generate) для backend и frontend выполняется при КАЖДОМ деплое.
+# DATABASE_URL для Prisma CLI берётся из backend/.env.production через npm-скрипты
+# (backend/scripts/print-mongo-database-url.mjs: MONGO_* или DATABASE_URL в том же файле).
 #
 # Опционально применить схему к БД (осторожно на проде):
 #   ./deploy.sh --prisma-push
