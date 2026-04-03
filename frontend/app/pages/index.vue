@@ -314,15 +314,58 @@ async function setHwidPolicy(user: UserItem, policy: HwidPolicy) {
   }
 }
 
+const LAST_ACTIVITY_RELATIVE_MAX_MS = 24 * 60 * 60 * 1000;
+
+function formatLastSubscriptionActivityTooltip(
+  iso: string | null | undefined,
+): string | undefined {
+  if (!iso) {
+    return undefined;
+  }
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      return undefined;
+    }
+    return d.toLocaleString('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/** До 24 ч включительно — «1ч. 32мин.»; старше суток или в будущем — дата и время */
 function formatLastSubscriptionActivity(iso: string | null | undefined): string {
   if (!iso) {
     return '—';
   }
   try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      return '—';
+    }
+    const diff = Date.now() - d.getTime();
+    if (diff < 0 || diff > LAST_ACTIVITY_RELATIVE_MAX_MS) {
+      return d.toLocaleString('ru-RU', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+    }
+    const totalMin = Math.floor(diff / 60_000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h === 0) {
+      if (m <= 0) {
+        return 'только что';
+      }
+      return `${m}мин.`;
+    }
+    if (m === 0) {
+      return `${h}ч.`;
+    }
+    return `${h}ч. ${m}мин.`;
   } catch {
     return '—';
   }
@@ -963,7 +1006,7 @@ async function confirmBulkClearLogs() {
         <template #lastSubscriptionActivityAt-cell="{ row }">
           <span
             class="text-muted tabular-nums"
-            :title="row.original.lastSubscriptionActivityAt ?? undefined"
+            :title="formatLastSubscriptionActivityTooltip(row.original.lastSubscriptionActivityAt)"
           >{{ formatLastSubscriptionActivity(row.original.lastSubscriptionActivityAt) }}</span>
         </template>
 
