@@ -155,11 +155,6 @@ async function copyToClipboard() {
           <p class="cp__notice-text">
             Рабочий импорт в Happ — через
             <strong class="cp__notice-strong">happ:// crypto-ссылку</strong>
-            из панели. По адресу
-            <span class="cp__code-inline">/sub/…</span>
-            в клиенте будет заглушка «Только crypto»; полная лента открывается с секретной страницы
-            <span class="cp__code-inline">/{{ cryptoPathSegment }}/…</span>
-            (её URL зашит в crypto-ссылку).
           </p>
         </div>
 
