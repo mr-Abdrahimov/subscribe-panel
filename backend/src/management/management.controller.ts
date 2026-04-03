@@ -16,7 +16,10 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
-import { setProfileTitleResponseHeaders } from '../common/profile-title-header';
+import {
+  setHappHideSettingsHeader,
+  setProfileTitleResponseHeaders,
+} from '../common/profile-title-header';
 import {
   extractSubscriptionAccessMeta,
   hasSubscriptionHwid,
@@ -249,7 +252,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). В ленте в теле подписки для Happ передаётся #hide-settings: 1 (скрыть настройки серверов). При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
+      'Тело всегда base64(UTF-8). Для Happ: в теле подписки — строка #hide-settings: 1, в HTTP-ответе — заголовок hide-settings: 1 (скрыть настройки серверов). При успехе — реальные коннекты и при необходимости #profile-title группы. Иначе — случайный vless-заглушка (не из БД): «Нет подключений», «Отключите HWID», «Превышен лимит HWID» (если maxUniqueHwids > 0 и не включено «Обязательно без HWID»). Обращения с известным panelUserId пишутся в PanelUserAccessLog.',
   })
   @ApiResponse({
     status: 200,
@@ -340,6 +343,7 @@ export class ManagementController {
       'private, no-store, no-cache, must-revalidate, max-age=0',
     );
     res.setHeader('Pragma', 'no-cache');
+    setHappHideSettingsHeader(res);
     if (payload.profileTitle) {
       setProfileTitleResponseHeaders(res, payload.profileTitle);
     }

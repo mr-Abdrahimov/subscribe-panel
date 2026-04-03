@@ -46,3 +46,10 @@ export function setProfileTitleResponseHeaders(
 
   res.setHeader('profile-title', formatHappProfileTitleHeaderValue(short));
 }
+
+/**
+ * Happ: скрыть настройки серверов в подписке (HTTP-заголовок), см. app-management.
+ */
+export function setHappHideSettingsHeader(res: Response): void {
+  res.setHeader('hide-settings', '1');
+}
