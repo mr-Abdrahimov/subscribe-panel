@@ -181,6 +181,28 @@ const bucketKeysOrdered = computed(() => [
 /** bucketKey → порядок id коннектов (только из текущего фильтра) */
 const bucketOrder = ref<Record<string, string[]>>({});
 
+/** Режим сортировки внутри колонки (главная группа / «Без группы»). «panel» — порядок из БД; после ручного drag сбрасывается в panel. */
+type BucketConnectSortMode =
+  | 'panel'
+  | 'name_az'
+  | 'name_za'
+  | 'subscription_az'
+  | 'subscription_za';
+
+const bucketConnectSortMode = ref<Record<string, BucketConnectSortMode>>({});
+
+const connectBucketSortMenuItems: {
+  id: BucketConnectSortMode | 'random';
+  label: string;
+}[] = [
+  { id: 'panel', label: 'Как в панели' },
+  { id: 'name_az', label: 'По названию А → Я' },
+  { id: 'name_za', label: 'По названию Я → А' },
+  { id: 'subscription_az', label: 'По подписке А → Я' },
+  { id: 'subscription_za', label: 'По подписке Я → А' },
+  { id: 'random', label: 'Случайно' },
+];
+
 const bucketListEls: Record<string, HTMLElement | undefined> = {};
 let bucketSortableInstances: Sortable[] = [];
 
@@ -200,6 +222,72 @@ function compareConnectsForBucket(a: ConnectRow, b: ConnectRow): number {
   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
+const connectNameCollator = new Intl.Collator('ru', { sensitivity: 'base' });
+
+function sortConnectIdsForBucketMode(
+  ids: string[],
+  mode: Exclude<BucketConnectSortMode, 'panel'>,
+): string[] {
+  type Row = { id: string; c: ConnectRow | undefined };
+  const rows: Row[] = ids.map((id) => ({ id, c: connectById(id) }));
+  const nameKey = (r: Row) =>
+    (r.c?.name ?? r.c?.originalName ?? r.id).trim();
+  const subKey = (r: Row) => (r.c?.subscription.title ?? '').trim();
+
+  const cmpName = (a: Row, b: Row) => connectNameCollator.compare(nameKey(a), nameKey(b));
+  const cmpSub = (a: Row, b: Row) => {
+    const d = connectNameCollator.compare(subKey(a), subKey(b));
+    if (d !== 0) {
+      return d;
+    }
+    return cmpName(a, b);
+  };
+
+  const arr = [...rows];
+  switch (mode) {
+    case 'name_az':
+      arr.sort(cmpName);
+      break;
+    case 'name_za':
+      arr.sort((a, b) => cmpName(b, a));
+      break;
+    case 'subscription_az':
+      arr.sort(cmpSub);
+      break;
+    case 'subscription_za':
+      arr.sort((a, b) => cmpSub(b, a));
+      break;
+    default:
+      return ids;
+  }
+  return arr.map((r) => r.id);
+}
+
+/** После базовой сборки колонок — применить сохранённые режимы сортировки (кроме «panel»). */
+function applyBucketConnectSortModes() {
+  const modes = bucketConnectSortMode.value;
+  const out = { ...bucketOrder.value };
+  let changed = false;
+  for (const key of bucketKeysOrdered.value) {
+    const mode = modes[key] ?? 'panel';
+    if (mode === 'panel') {
+      continue;
+    }
+    const ids = [...(out[key] ?? [])];
+    if (ids.length < 2) {
+      continue;
+    }
+    const sorted = sortConnectIdsForBucketMode(ids, mode);
+    if (sorted.join() !== ids.join()) {
+      changed = true;
+    }
+    out[key] = sorted;
+  }
+  if (changed) {
+    bucketOrder.value = out;
+  }
+}
+
 function rebuildBucketOrder() {
   const list = filteredConnects.value;
   const next: Record<string, string[]> = {};
@@ -215,6 +303,72 @@ function rebuildBucketOrder() {
     .sort(compareConnectsForBucket)
     .map((c) => c.id);
   bucketOrder.value = next;
+  applyBucketConnectSortModes();
+}
+
+function getBucketConnectSortMode(bucketKey: string): BucketConnectSortMode {
+  return bucketConnectSortMode.value[bucketKey] ?? 'panel';
+}
+
+function clearConnectSortModeForBuckets(...bucketKeys: string[]) {
+  const next = { ...bucketConnectSortMode.value };
+  for (const k of bucketKeys) {
+    if (k) {
+      next[k] = 'panel';
+    }
+  }
+  bucketConnectSortMode.value = next;
+}
+
+function shuffleConnectIds(ids: string[]): string[] {
+  const a = [...ids];
+  for (let i = a.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+async function onConnectBucketSortPick(bucketKey: string, value: unknown) {
+  if (filtersActive.value) {
+    return;
+  }
+  const mode =
+    typeof value === 'string'
+      ? value
+      : value &&
+          typeof value === 'object' &&
+          value !== null &&
+          'id' in value &&
+          typeof (value as { id: unknown }).id === 'string'
+        ? (value as { id: string }).id
+        : null;
+  if (mode == null) {
+    return;
+  }
+
+  if (mode === 'random') {
+    const ids = bucketOrder.value[bucketKey] ?? [];
+    if (ids.length < 2) {
+      toast.add({ title: 'В колонке меньше двух коннектов', color: 'warning' });
+      return;
+    }
+    bucketOrder.value = {
+      ...bucketOrder.value,
+      [bucketKey]: shuffleConnectIds(ids),
+    };
+    clearConnectSortModeForBuckets(bucketKey);
+    await persistGlobalOrderFromBuckets(false);
+    toast.add({ title: 'Случайный порядок сохранён', color: 'success' });
+    return;
+  }
+
+  bucketConnectSortMode.value = {
+    ...bucketConnectSortMode.value,
+    [bucketKey]: mode,
+  };
+  rebuildBucketOrder();
+  await persistGlobalOrderFromBuckets(true);
 }
 
 function bucketColumnTitle(key: string): string {
@@ -406,6 +560,7 @@ async function onBucketSortEnd(evt: SortableEvent) {
           color: 'success',
         });
       }
+      clearConnectSortModeForBuckets(fromKey, toKey);
       bucketOrder.value = merged;
       await persistGlobalOrderFromBuckets(fromKey === toKey);
     } catch (err: unknown) {
@@ -444,11 +599,13 @@ async function onBucketSortEnd(evt: SortableEvent) {
       initBucketSortables();
       return;
     }
+    clearConnectSortModeForBuckets(fromKey, toKey);
     bucketOrder.value = newBuckets;
     await persistGlobalOrderFromBuckets(false);
     return;
   }
 
+  clearConnectSortModeForBuckets(fromKey);
   bucketOrder.value = newBuckets;
   await persistGlobalOrderFromBuckets(true);
 }
@@ -966,21 +1123,47 @@ async function bulkRemoveGroupsFromSelection() {
           :key="bucketKey"
           class="connect-bucket-column w-full min-w-0 flex-shrink-0 xl:w-[min(100%,300px)]"
         >
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-default pb-2">
-            <h3 class="text-sm font-semibold text-highlighted">
-              {{ bucketColumnTitle(bucketKey) }}
-            </h3>
-            <UBadge
-              v-if="bucketKey !== NO_MAIN_BUCKET"
-              color="primary"
-              variant="subtle"
-              size="xs"
+          <div class="mb-2 space-y-2 border-b border-default pb-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-sm font-semibold text-highlighted min-w-0">
+                {{ bucketColumnTitle(bucketKey) }}
+              </h3>
+              <div class="flex flex-shrink-0 flex-wrap items-center gap-1.5">
+                <UBadge
+                  v-if="bucketKey !== NO_MAIN_BUCKET"
+                  color="primary"
+                  variant="subtle"
+                  size="xs"
+                >
+                  Главная
+                </UBadge>
+                <UBadge v-else color="warning" variant="subtle" size="xs">
+                  Нет главной
+                </UBadge>
+              </div>
+            </div>
+            <UFormField
+              v-if="!filtersActive"
+              label="Сортировка"
+              class="w-full"
             >
-              Главная
-            </UBadge>
-            <UBadge v-else color="warning" variant="subtle" size="xs">
-              Нет главной
-            </UBadge>
+              <USelectMenu
+                :model-value="getBucketConnectSortMode(bucketKey)"
+                :items="connectBucketSortMenuItems"
+                value-key="id"
+                label-key="label"
+                size="sm"
+                class="w-full"
+                placeholder="Как в панели"
+                @update:model-value="(v: unknown) => onConnectBucketSortPick(bucketKey, v)"
+              />
+            </UFormField>
+            <p
+              v-else
+              class="text-[0.7rem] leading-snug text-muted"
+            >
+              Сортировка колонки отключена при активных фильтрах
+            </p>
           </div>
           <div
             :ref="(el) => bindBucketListEl(bucketKey, el)"
