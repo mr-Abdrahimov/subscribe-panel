@@ -42,16 +42,16 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
     const p = job.data;
     const lines = [
       '📡 Новый HWID (первое успешное получение ленты)',
-      `Пользователь: ${p.panelUserName} (${p.panelUserCode})`,
-      `IP: ${p.clientIp ?? '—'}`,
-      `User-Agent: ${p.userAgent ?? '—'}`,
+      `Пользователь: *${p.panelUserName}*`,
+      `IP: https://ipinfo.io/${p.clientIp ?? '—'}`,
+      // `User-Agent: ${p.userAgent ?? '—'}`,
       `HWID: ${p.hwid ?? '—'}`,
       `Referer: ${p.referer ?? '—'}`,
     ];
-    if (p.queryParamsJson) {
-      lines.push(`Query: ${p.queryParamsJson}`);
-    }
-    lines.push(`Время: ${p.createdAtIso}`);
+    // if (p.queryParamsJson) {
+    //   lines.push(`Query: ${p.queryParamsJson}`);
+    // }
+    // lines.push(`Время: ${p.createdAtIso}`);
 
     let text = lines.join('\n');
     if (text.length > TG_MESSAGE_MAX) {
