@@ -62,9 +62,8 @@ const pendingClearLogsUserId = ref<string | null>(null);
 const rowSelection = ref<RowSelectionState>({});
 const bulkLoading = ref(false);
 const bulkAssignGroupName = ref<string>('');
-const bulkAddGroupName = ref<string>('');
-const bulkTransferFromGroup = ref<string>('');
-const bulkTransferToGroup = ref<string>('');
+/** Общий выбор группы для «добавить» / «убрать» у выбранных пользователей */
+const bulkModifyGroupName = ref<string>('');
 const bulkMaxUniqueHwidsInput = ref<string>('0');
 const isBulkClearLogsOpen = ref(false);
 const happCryptoCreatingUserId = ref<string | null>(null);
@@ -679,6 +678,7 @@ async function runBulkUpdate(body: Record<string, unknown>) {
     const hadDataPatch =
       body.groupName !== undefined ||
       body.addGroupName !== undefined ||
+      body.removeGroupName !== undefined ||
       body.enabled !== undefined ||
       body.allowAllUserAgents !== undefined ||
       body.maxUniqueHwids !== undefined ||
@@ -687,7 +687,7 @@ async function runBulkUpdate(body: Record<string, unknown>) {
     if (hadDataPatch && res.updated === 0 && !hadClear) {
       toast.add({
         title:
-          'Никто из выбранных не обновлён (проверьте фильтр «из группы» или состав выбора)',
+          'Никто из выбранных не обновлён (проверьте выбор группы или состав выбора)',
         color: 'warning',
       });
       await loadData();
@@ -735,9 +735,9 @@ async function bulkAssignGroup() {
 
 async function bulkAddGroup() {
   const name =
-    typeof bulkAddGroupName.value === 'string'
-      ? bulkAddGroupName.value.trim()
-      : String(bulkAddGroupName.value ?? '').trim();
+    typeof bulkModifyGroupName.value === 'string'
+      ? bulkModifyGroupName.value.trim()
+      : String(bulkModifyGroupName.value ?? '').trim();
   if (!name) {
     toast.add({ title: 'Выберите группу', color: 'warning' });
     return;
@@ -749,31 +749,20 @@ async function bulkAddGroup() {
   await runBulkUpdate({ addGroupName: name });
 }
 
-async function bulkTransferFromGroupAction() {
-  const from =
-    typeof bulkTransferFromGroup.value === 'string'
-      ? bulkTransferFromGroup.value.trim()
-      : String(bulkTransferFromGroup.value ?? '').trim();
-  const to =
-    typeof bulkTransferToGroup.value === 'string'
-      ? bulkTransferToGroup.value.trim()
-      : String(bulkTransferToGroup.value ?? '').trim();
-  if (!from || !to) {
-    toast.add({ title: 'Укажите группу «из» и «в»', color: 'warning' });
-    return;
-  }
-  if (from === to) {
-    toast.add({ title: 'Выберите разные группы', color: 'warning' });
+async function bulkRemoveGroup() {
+  const name =
+    typeof bulkModifyGroupName.value === 'string'
+      ? bulkModifyGroupName.value.trim()
+      : String(bulkModifyGroupName.value ?? '').trim();
+  if (!name) {
+    toast.add({ title: 'Выберите группу', color: 'warning' });
     return;
   }
   if (groups.value.length === 0) {
     toast.add({ title: 'Сначала создайте группу', color: 'error' });
     return;
   }
-  await runBulkUpdate({
-    groupName: to,
-    restrictToCurrentGroupName: from,
-  });
+  await runBulkUpdate({ removeGroupName: name });
 }
 
 async function bulkSetEnabled(enabled: boolean) {
@@ -865,58 +854,41 @@ async function confirmBulkClearLogs() {
               Назначить группу
             </UButton>
             <UFormField
-              label="Добавить группу всем"
-              description="К текущим группам; если группа уже есть — список не меняется."
+              label="Добавить или убрать группу"
+              description="Одна и та же группа: добавить ко всем выбранным или убрать у тех, у кого она есть. У каждого пользователя должна остаться хотя бы одна группа."
               class="pt-2 border-t border-default/60"
             >
               <USelectMenu
-                v-model="bulkAddGroupName"
+                v-model="bulkModifyGroupName"
                 :items="groupOptions"
-                placeholder="Группа для добавления"
+                placeholder="Выберите группу"
                 class="w-full"
               />
             </UFormField>
-            <UButton
-              size="sm"
-              color="neutral"
-              variant="soft"
-              class="w-full sm:w-auto"
-              :loading="bulkLoading"
-              :disabled="!bulkAddGroupName"
-              @click="bulkAddGroup"
-            >
-              Добавить группу
-            </UButton>
-            <UFormField
-              label="Перенести из группы"
-              description="Только выбранные, у кого сейчас эта группа"
-            >
-              <USelectMenu
-                v-model="bulkTransferFromGroup"
-                :items="groupOptions"
-                placeholder="Из группы"
-                class="w-full"
-              />
-            </UFormField>
-            <UFormField label="В группу">
-              <USelectMenu
-                v-model="bulkTransferToGroup"
-                :items="groupOptions"
-                placeholder="В группу"
-                class="w-full"
-              />
-            </UFormField>
-            <UButton
-              size="sm"
-              color="neutral"
-              variant="soft"
-              class="w-full sm:w-auto"
-              :loading="bulkLoading"
-              :disabled="!bulkTransferFromGroup || !bulkTransferToGroup"
-              @click="bulkTransferFromGroupAction"
-            >
-              Перенести (исключить из одной группы)
-            </UButton>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                class="w-full sm:w-auto"
+                :loading="bulkLoading"
+                :disabled="!bulkModifyGroupName"
+                @click="bulkAddGroup"
+              >
+                Добавить группу
+              </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                class="w-full sm:w-auto"
+                :loading="bulkLoading"
+                :disabled="!bulkModifyGroupName"
+                @click="bulkRemoveGroup"
+              >
+                Убрать группу
+              </UButton>
+            </div>
           </div>
 
           <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3">

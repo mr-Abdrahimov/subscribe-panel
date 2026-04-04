@@ -887,6 +887,7 @@ export class ManagementService implements OnModuleInit {
     groupName?: string;
     restrictToCurrentGroupName?: string;
     addGroupName?: string;
+    removeGroupName?: string;
     enabled?: boolean;
     allowAllUserAgents?: boolean;
     maxUniqueHwids?: number;
@@ -908,6 +909,7 @@ export class ManagementService implements OnModuleInit {
     const hasPatch =
       dto.groupName !== undefined ||
       dto.addGroupName !== undefined ||
+      dto.removeGroupName !== undefined ||
       dto.enabled !== undefined ||
       dto.allowAllUserAgents !== undefined ||
       dto.maxUniqueHwids !== undefined ||
@@ -930,9 +932,24 @@ export class ManagementService implements OnModuleInit {
         'Нельзя одновременно указывать groupName и addGroupName',
       );
     }
+    if (dto.removeGroupName !== undefined && dto.groupName !== undefined) {
+      throw new BadRequestException(
+        'Нельзя одновременно указывать groupName и removeGroupName',
+      );
+    }
+    if (dto.removeGroupName !== undefined && dto.addGroupName !== undefined) {
+      throw new BadRequestException(
+        'Нельзя одновременно указывать addGroupName и removeGroupName',
+      );
+    }
     if (dto.addGroupName !== undefined && restrict) {
       throw new BadRequestException(
         'Поле addGroupName несовместимо с restrictToCurrentGroupName',
+      );
+    }
+    if (dto.removeGroupName !== undefined && restrict) {
+      throw new BadRequestException(
+        'Поле removeGroupName несовместимо с restrictToCurrentGroupName',
       );
     }
 
@@ -951,6 +968,19 @@ export class ManagementService implements OnModuleInit {
 
     if (dto.addGroupName !== undefined) {
       const t = dto.addGroupName.trim();
+      if (!t) {
+        throw new BadRequestException('Группа не может быть пустой');
+      }
+      const group = await this.prisma.group.findUnique({
+        where: { name: t },
+      });
+      if (!group) {
+        throw new BadRequestException('Группа с таким названием не найдена');
+      }
+    }
+
+    if (dto.removeGroupName !== undefined) {
+      const t = dto.removeGroupName.trim();
       if (!t) {
         throw new BadRequestException('Группа не может быть пустой');
       }
@@ -1000,6 +1030,44 @@ export class ManagementService implements OnModuleInit {
         } = { ...baseData };
         if (!hadGroup) {
           data.groupNames = [...u.groupNames, addG];
+        }
+        if (Object.keys(data).length === 0) {
+          continue;
+        }
+        await this.prisma.panelUser.update({
+          where: { id: u.id },
+          data,
+        });
+        updated += 1;
+      }
+    } else if (dto.removeGroupName !== undefined) {
+      const remG = dto.removeGroupName.trim();
+      const users = await this.prisma.panelUser.findMany({
+        where: { id: { in: uniq } },
+        select: { id: true, groupNames: true },
+      });
+      for (const u of users) {
+        const hadGroup = u.groupNames.some((g) => g.trim() === remG);
+        if (hadGroup) {
+          const next = u.groupNames.filter((g) => g.trim() !== remG);
+          if (next.length === 0) {
+            throw new BadRequestException(
+              'Нельзя удалить группу: у одного или нескольких выбранных пользователей это единственная группа',
+            );
+          }
+        }
+      }
+      for (const u of users) {
+        const hadGroup = u.groupNames.some((g) => g.trim() === remG);
+        const data: {
+          groupNames?: string[];
+          enabled?: boolean;
+          allowAllUserAgents?: boolean;
+          maxUniqueHwids?: number;
+          cryptoOnlySubscription?: boolean;
+        } = { ...baseData };
+        if (hadGroup) {
+          data.groupNames = u.groupNames.filter((g) => g.trim() !== remG);
         }
         if (Object.keys(data).length === 0) {
           continue;
@@ -1553,13 +1621,62 @@ export class ManagementService implements OnModuleInit {
     await this.prisma.subscriptionAppLink.delete({ where: { id } });
   }
 
+  /** Заменить вхождение oldName на newName в массивах groupNames у коннектов и пользователей панели. */
+  private async renameGroupTagEverywhere(
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const connects = await this.prisma.connect.findMany({
+      where: { groupNames: { has: oldName } },
+      select: { id: true, groupNames: true },
+    });
+    for (const c of connects) {
+      const next = c.groupNames.map((g) => (g === oldName ? newName : g));
+      await this.prisma.connect.update({
+        where: { id: c.id },
+        data: { groupNames: next },
+      });
+    }
+    const users = await this.prisma.panelUser.findMany({
+      where: { groupNames: { has: oldName } },
+      select: { id: true, groupNames: true },
+    });
+    for (const u of users) {
+      const next = u.groupNames.map((g) => (g === oldName ? newName : g));
+      await this.prisma.panelUser.update({
+        where: { id: u.id },
+        data: { groupNames: next },
+      });
+    }
+  }
+
   async updateGroupSettings(id: string, dto: UpdateGroupSettingsDto) {
-    await this.ensureGroupById(id);
+    const group = await this.ensureGroupById(id);
+    const oldName = group.name;
+
     const data: {
+      name?: string;
       subscriptionDisplayName?: string | null;
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
     } = {};
+
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Имя группы не может быть пустым');
+      }
+      if (trimmed !== oldName) {
+        const taken = await this.prisma.group.findUnique({
+          where: { name: trimmed },
+        });
+        if (taken) {
+          throw new BadRequestException('Группа с таким названием уже существует');
+        }
+        await this.renameGroupTagEverywhere(oldName, trimmed);
+        data.name = trimmed;
+      }
+    }
 
     if (dto.subscriptionDisplayName !== undefined) {
       if (dto.subscriptionDisplayName === null) {

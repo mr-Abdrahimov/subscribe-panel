@@ -108,7 +108,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupNames (порядок в массиве), затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
+      'Частичное обновление. name — смена уникального имени группы (теги groupNames у коннектов и пользователей панели обновляются). subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupNames (порядок в массиве), затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -153,7 +153,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Массовое обновление пользователей панели',
     description:
-      'По списку ids: groupName без restrict — список групп пользователя заменяется одной группой; с restrictToCurrentGroupName — перенос; addGroupName — добавить группу к существующему списку (без удаления остальных). Также: enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription, очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
+      'По списку ids: groupName без restrict — список групп пользователя заменяется одной группой; с restrictToCurrentGroupName — перенос из группы в другую; addGroupName — добавить группу к списку; removeGroupName — убрать группу (у пользователя должна остаться хотя бы одна группа). Также: enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription, очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
   })
   @ApiResponse({
     status: 200,

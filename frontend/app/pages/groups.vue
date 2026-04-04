@@ -63,6 +63,7 @@ const createForm = ref({
 });
 
 const editForm = ref({
+  name: '',
   subscriptionDisplayName: '',
   subscriptionAnnounce: '',
   profileUpdateInterval: ''
@@ -180,6 +181,7 @@ function openCreate() {
 function openEdit(row: GroupItem) {
   editing.value = row;
   editForm.value = {
+    name: row.name,
     subscriptionDisplayName: row.subscriptionDisplayName ?? '',
     subscriptionAnnounce: row.subscriptionAnnounce ?? '',
     profileUpdateInterval:
@@ -264,6 +266,7 @@ async function saveEdit() {
     return;
   }
   try {
+    await groupNameSchema.validate(editForm.value.name);
     await titleFieldSchema.validate(editForm.value.subscriptionDisplayName);
     await announceSchema.validate(editForm.value.subscriptionAnnounce);
     let profileUpdateInterval: number | null = null;
@@ -288,11 +291,13 @@ async function saveEdit() {
     throw e;
   }
 
+  const newName = editForm.value.name.trim();
   const subTitle = editForm.value.subscriptionDisplayName.trim();
   const ann = editForm.value.subscriptionAnnounce.trim();
   const ir = editForm.value.profileUpdateInterval.trim();
 
   const body: Record<string, unknown> = {
+    name: newName,
     subscriptionDisplayName: subTitle === '' ? null : subTitle,
     subscriptionAnnounce: ann === '' ? null : ann,
     profileUpdateInterval: ir === '' ? null : Number.parseInt(ir, 10)
@@ -604,9 +609,18 @@ async function saveDefaultInterval() {
     >
       <template #body>
         <div v-if="editing" class="space-y-4">
-          <p class="text-sm text-muted">
-            Группа: <span class="font-medium text-highlighted">{{ editing.name }}</span>
-          </p>
+          <UFormField
+            label="Название группы"
+            required
+            description="Используется как тег у коннектов и в списке групп пользователей. При смене имя обновится везде автоматически."
+            class="w-full"
+          >
+            <UInput
+              v-model="editForm.name"
+              class="w-full"
+              placeholder="Уникальное имя"
+            />
+          </UFormField>
           <UFormField
             label="Название для публичной подписки"
             description="Пусто — сбросить"

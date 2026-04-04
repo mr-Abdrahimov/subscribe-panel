@@ -7,11 +7,24 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 import { HAPP_ANNOUNCE_MAX_CHARS } from '../../common/profile-title-header';
 
 export class UpdateGroupSettingsDto {
+  @ApiPropertyOptional({
+    description:
+      'Новое уникальное имя группы (как тег в коннектах и в groupNames пользователей панели). При смене имя обновится во всех связанных коннектах и пользователях.',
+    example: 'Офис',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  name?: string;
+
   @ApiPropertyOptional({
     description:
       'Название профиля подписки для группы: страница /sub/{code} и HTTP-заголовки profile-title* / profile-title при запросе base64-ленты (только из настроек; без подстановки имени пользователя панели). Имена в строках подписки (фрагмент #) — из поля name коннекта.',

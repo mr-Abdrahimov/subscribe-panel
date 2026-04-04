@@ -50,7 +50,7 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
-      'Добавить группу к каждому из выбранных: имя дописывается в groupNames, если его ещё нет (остальные группы не удаляются). Несовместимо с groupName и restrictToCurrentGroupName',
+      'Добавить группу к каждому из выбранных: имя дописывается в groupNames, если его ещё нет (остальные группы не удаляются). Несовместимо с groupName, removeGroupName и restrictToCurrentGroupName',
     example: 'VIP',
     maxLength: 200,
   })
@@ -58,6 +58,17 @@ export class BulkUpdatePanelUsersDto {
   @IsString()
   @MaxLength(200)
   addGroupName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Убрать группу у каждого из выбранных: имя удаляется из groupNames, если было. У пользователя должна остаться хотя бы одна группа (иначе 400). Несовместимо с groupName, addGroupName и restrictToCurrentGroupName',
+    example: 'VIP',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  removeGroupName?: string;
 
   @ApiPropertyOptional({
     description: 'Включить или отключить пользователей панели',
