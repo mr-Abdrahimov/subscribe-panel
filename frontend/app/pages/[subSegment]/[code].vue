@@ -1048,6 +1048,8 @@ async function copyCryptoLink() {
 .cp__group-check {
   flex-shrink: 0;
   margin-left: auto;
+  display: flex;
+  align-items: center;
 }
 
 @media (max-width: 420px) {
