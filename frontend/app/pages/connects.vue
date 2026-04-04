@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
 import type { RowSelectionState } from '@tanstack/table-core';
-import { useSortable, moveArrayElement } from '@vueuse/integrations/useSortable';
+import {
+  useSortable,
+  moveArrayElement,
+} from '@vueuse/integrations/useSortable';
 
 definePageMeta({
   layout: 'dashboard'
@@ -53,23 +56,100 @@ const rowSelection = ref<RowSelectionState>({});
 const bulkGroupNames = ref<string[]>([]);
 const bulkLoading = ref(false);
 
+/** null — все подписки */
+const filterSubscriptionId = ref<string | null>(null);
+const filterStatus = ref<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+/** null — любая группа (фильтр не задан) */
+const filterGroupName = ref<string | null>(null);
+
+const statusFilterItems = [
+  { label: 'Любой', id: 'ALL' as const },
+  { label: 'Включён', id: 'ACTIVE' as const },
+  { label: 'Отключён', id: 'INACTIVE' as const },
+];
+
+const subscriptionFilterItems = computed(() => {
+  const map = new Map<string, string>();
+  for (const c of connects.value) {
+    map.set(c.subscription.id, c.subscription.title);
+  }
+  const rest = [...map.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], 'ru'))
+    .map(([id, title]) => ({ label: title, id }));
+  return [{ label: 'Все подписки', id: null }, ...rest];
+});
+
+const groupFilterItems = computed(() => {
+  const rest = groups.value
+    .map((g) => ({ label: g.name, id: g.name }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+  return [{ label: 'Любая группа', id: null }, ...rest];
+});
+
+const filtersActive = computed(
+  () =>
+    filterSubscriptionId.value != null ||
+    filterStatus.value !== 'ALL' ||
+    filterGroupName.value != null
+);
+
+const filteredConnects = computed(() => {
+  let list = connects.value;
+  if (filterSubscriptionId.value != null) {
+    list = list.filter((c) => c.subscription.id === filterSubscriptionId.value);
+  }
+  if (filterStatus.value !== 'ALL') {
+    list = list.filter((c) => c.status === filterStatus.value);
+  }
+  if (filterGroupName.value != null) {
+    const g = filterGroupName.value;
+    list = list.filter((c) => c.groupNames.includes(g));
+  }
+  return list;
+});
+
+const tableEmptyText = computed(() => {
+  if (connects.value.length === 0) {
+    return 'Коннектов пока нет';
+  }
+  if (filteredConnects.value.length === 0) {
+    return 'Нет коннектов по выбранным фильтрам';
+  }
+  return 'Коннектов пока нет';
+});
+
 const selectedConnectsCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length
 );
 
-onMounted(() => {
-  loadConnects();
-  loadGroups();
-});
-
-useSortable('.connects-table-tbody', connects, {
+const sortableList = useSortable('.connects-table-tbody', connects, {
   handle: '.connect-drag-handle',
   animation: 150,
   onUpdate: async (e) => {
     moveArrayElement(connects, e.oldIndex!, e.newIndex!, e);
     await nextTick();
     await syncOrder();
+  },
+});
+
+function setSortableDisabled(active: boolean) {
+  try {
+    sortableList.option('disabled', active);
+  } catch {
+    /* sortable ещё не инициализирован */
   }
+}
+
+watch(filtersActive, (active) => {
+  nextTick(() => setSortableDisabled(active));
+});
+
+onMounted(() => {
+  loadConnects();
+  loadGroups();
+  nextTick(() => {
+    nextTick(() => setSortableDisabled(filtersActive.value));
+  });
 });
 
 async function loadConnects() {
@@ -389,6 +469,49 @@ const columns: TableColumn<ConnectRow>[] = [
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
+      <div class="space-y-3 border-b border-default p-4">
+        <p class="text-xs font-semibold text-highlighted">
+          Фильтры
+        </p>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <UFormField label="Подписка">
+            <USelectMenu
+              v-model="filterSubscriptionId"
+              :items="subscriptionFilterItems"
+              value-key="id"
+              label-key="label"
+              placeholder="Все подписки"
+              class="w-full"
+              clear
+            />
+          </UFormField>
+          <UFormField label="Статус">
+            <USelectMenu
+              v-model="filterStatus"
+              :items="statusFilterItems"
+              value-key="id"
+              label-key="label"
+              placeholder="Любой"
+              class="w-full"
+            />
+          </UFormField>
+          <UFormField label="Группа">
+            <USelectMenu
+              v-model="filterGroupName"
+              :items="groupFilterItems"
+              value-key="id"
+              label-key="label"
+              placeholder="Любая группа"
+              class="w-full"
+              clear
+            />
+          </UFormField>
+        </div>
+        <p v-if="filtersActive" class="text-xs text-muted">
+          Порядок коннектов перетаскиванием отключён, пока включены фильтры.
+        </p>
+      </div>
+
       <div
         v-if="selectedConnectsCount > 0"
         class="flex flex-col gap-3 border-b border-default p-4 sm:flex-row sm:flex-wrap sm:items-end"
@@ -438,16 +561,23 @@ const columns: TableColumn<ConnectRow>[] = [
 
       <UTable
         v-model:row-selection="rowSelection"
-        :data="connects"
+        :data="filteredConnects"
         :columns="columns"
         :loading="loading"
         :get-row-id="getConnectRowId"
-        empty="Коннектов пока нет"
+        :empty="tableEmptyText"
         :ui="{ tbody: 'connects-table-tbody' }"
         class="w-full"
       >
         <template #drag-cell>
-          <div class="connect-drag-handle inline-flex cursor-grab active:cursor-grabbing text-muted">
+          <div
+            class="connect-drag-handle inline-flex text-muted"
+            :class="
+              filtersActive
+                ? 'cursor-not-allowed opacity-40'
+                : 'cursor-grab active:cursor-grabbing'
+            "
+          >
             <UIcon name="i-lucide-grip-vertical" class="size-4" />
           </div>
         </template>
