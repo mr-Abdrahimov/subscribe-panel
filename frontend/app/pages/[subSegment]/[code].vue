@@ -44,6 +44,16 @@ type SubscriptionGroupPref = { name: string; include: boolean }
 const displayName = computed(() => data.value?.name ?? '')
 const groupLabels = computed(() => data.value?.groups ?? [])
 
+/** Активные коннекты с тегом группы (как в ленте Happ). */
+function activeConnectCountForGroup(groupName: string): number {
+  const m = data.value?.groupActiveConnectCountByName
+  if (!m || typeof m !== 'object') {
+    return 0
+  }
+  const n = m[groupName]
+  return typeof n === 'number' && Number.isFinite(n) ? n : 0
+}
+
 const membershipGroups = computed(
   () => data.value?.subscriptionGroups ?? ([] as SubscriptionGroupPref[]),
 )
@@ -394,7 +404,15 @@ async function copyCryptoLink() {
               >
                 <span class="cp__group-drag-icon" aria-hidden="true">⋮⋮</span>
               </button>
-              <span class="cp__group-name">{{ g.name }}</span>
+              <div class="cp__group-name-block">
+                <span class="cp__group-name">{{ g.name }}</span>
+                <span
+                  class="cp__group-connect-count"
+                  :aria-label="`${activeConnectCountForGroup(g.name)} доступных коннектов`"
+                >
+                  {{ activeConnectCountForGroup(g.name) }}
+                </span>
+              </div>
               <UCheckbox
                 :model-value="g.include"
                 class="cp__group-check"
@@ -414,7 +432,15 @@ async function copyCryptoLink() {
           </div>
 
           <ul v-else class="cp__tags">
-            <li v-for="tag in groupLabels" :key="tag" class="cp__tag">{{ tag }}</li>
+            <li v-for="tag in groupLabels" :key="tag" class="cp__tag">
+              <span class="cp__tag-label">{{ tag }}</span>
+              <span
+                class="cp__tag-count"
+                :aria-label="`${activeConnectCountForGroup(tag)} доступных коннектов`"
+              >
+                {{ activeConnectCountForGroup(tag) }}
+              </span>
+            </li>
           </ul>
         </section>
 
@@ -892,12 +918,30 @@ async function copyCryptoLink() {
 }
 
 .cp__tag {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
   font-size: 0.9rem;
   font-weight: 600;
   padding: 0.35rem 0.75rem;
   border: 1px solid rgba(0, 245, 255, 0.35);
   color: rgba(232, 244, 255, 0.9);
   background: rgba(0, 245, 255, 0.06);
+}
+
+.cp__tag-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.cp__tag-count {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(0, 245, 255, 0.75);
+  font-variant-numeric: tabular-nums;
 }
 
 .cp__section-desc--tight {
@@ -1037,12 +1081,32 @@ async function copyCryptoLink() {
   pointer-events: none;
 }
 
-.cp__group-name {
+.cp__group-name-block {
   flex: 1;
   min-width: 8rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+}
+
+.cp__group-name {
   font-weight: 600;
   font-size: 0.95rem;
   color: #fff;
+}
+
+.cp__group-connect-count {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(0, 245, 255, 0.78);
+  padding: 0.12rem 0.4rem;
+  border: 1px solid rgba(0, 245, 255, 0.28);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 .cp__group-check {

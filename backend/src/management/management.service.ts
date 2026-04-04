@@ -1815,6 +1815,18 @@ export class ManagementService implements OnModuleInit {
       user.cryptoOnlySubscription === true,
     );
 
+    const namesForConnectCounts = new Set<string>();
+    for (const e of subscriptionGroups) {
+      namesForConnectCounts.add(e.name);
+    }
+    for (const g of groups) {
+      namesForConnectCounts.add(g);
+    }
+    const groupActiveConnectCountByName =
+      await this.countActiveConnectsByGroupNames(
+        Array.from(namesForConnectCounts),
+      );
+
     return {
       ...publicUser,
       /** happ:// для блока ENDPOINT на публичной странице; null если не создана */
@@ -1828,9 +1840,48 @@ export class ManagementService implements OnModuleInit {
       groups,
       /** Порядок групп пользователя и включение в ленту (персональные настройки) */
       subscriptionGroups,
+      /**
+       * Число активных коннектов с тегом группы (как при сборке ленты /public/sub):
+       * status ACTIVE и массив groupNames содержит ключ.
+       */
+      groupActiveConnectCountByName,
       /** Название и готовая ссылка для блока «Приложения» на /sub */
       appLinks,
     };
+  }
+
+  /**
+   * Подсчёт коннектов по имени группы — те же критерии, что в buildPublicFeedForPanelUser
+   * (ACTIVE и groupNames has имя).
+   */
+  private async countActiveConnectsByGroupNames(
+    names: string[],
+  ): Promise<Record<string, number>> {
+    const uniq = [
+      ...new Set(names.map((n) => n.trim()).filter((n) => n.length > 0)),
+    ];
+    const counts = Object.fromEntries(uniq.map((n) => [n, 0])) as Record<
+      string,
+      number
+    >;
+    if (uniq.length === 0) {
+      return {};
+    }
+    const connects = await this.prisma.connect.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: uniq.map((n) => ({ groupNames: { has: n } })),
+      },
+      select: { groupNames: true },
+    });
+    for (const c of connects) {
+      for (const n of uniq) {
+        if (c.groupNames.includes(n)) {
+          counts[n] += 1;
+        }
+      }
+    }
+    return counts;
   }
 
   /**

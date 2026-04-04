@@ -342,7 +342,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — расширенный список тегов для справки. subscriptionGroups — порядок групп пользователя и флаг include (в ленту); сохранение через PATCH …/subscription-group-prefs (по коду страницы). happCryptoUrl — happ:// для импорта. Массив appLinks.',
+      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — расширенный список тегов для справки. subscriptionGroups — порядок групп пользователя и флаг include (в ленту); сохранение через PATCH …/subscription-group-prefs (по коду страницы). groupActiveConnectCountByName — объект «имя группы → число активных коннектов с этим тегом» (как при сборке ленты /public/sub: ACTIVE и groupNames содержит имя). happCryptoUrl — happ:// для импорта. Массив appLinks.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
