@@ -1,3 +1,4 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   Injectable,
@@ -11,6 +12,7 @@ import type { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-set
 import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import {
@@ -24,6 +26,10 @@ import {
   normalizeConnectGroupNamesForStorage,
 } from '../common/ungrouped-connect-group';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
+import {
+  SUBSCRIPTION_ACCESS_NOTIFY_JOB,
+  SUBSCRIPTION_ACCESS_NOTIFY_QUEUE,
+} from '../subscription-access-notify/subscription-access-notify.constants';
 
 @Injectable()
 export class ManagementService implements OnModuleInit {
@@ -34,6 +40,8 @@ export class ManagementService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly telegramService: TelegramService,
+    @InjectQueue(SUBSCRIPTION_ACCESS_NOTIFY_QUEUE)
+    private readonly subscriptionAccessNotifyQueue: Queue,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -1686,7 +1694,7 @@ export class ManagementService implements OnModuleInit {
   ): Promise<void> {
     const cap = (s: string | undefined, max: number) =>
       s && s.length > max ? `${s.slice(0, max)}…` : s;
-    await this.prisma.panelUserAccessLog.create({
+    const log = await this.prisma.panelUserAccessLog.create({
       data: {
         panelUserId,
         clientIp: cap(meta.clientIp, 256) ?? undefined,
@@ -1699,7 +1707,64 @@ export class ManagementService implements OnModuleInit {
         extraHeaders: meta.extraHeaders ?? undefined,
         success,
       },
+      select: {
+        createdAt: true,
+        clientIp: true,
+        userAgent: true,
+        hwid: true,
+        referer: true,
+        queryParams: true,
+        success: true,
+      },
     });
+
+    const notifyOn =
+      this.config.get<string>('TELEGRAM_NOTIFY_SUBSCRIPTION_ACCESS')?.toLowerCase() !==
+      'false';
+    if (!notifyOn) {
+      return;
+    }
+
+    try {
+      const user = await this.prisma.panelUser.findUnique({
+        where: { id: panelUserId },
+        select: { name: true, code: true },
+      });
+      if (!user) {
+        return;
+      }
+      let queryParamsJson: string | null = null;
+      if (log.queryParams != null) {
+        try {
+          const s = JSON.stringify(log.queryParams);
+          queryParamsJson = s.length > 600 ? `${s.slice(0, 599)}…` : s;
+        } catch {
+          queryParamsJson = null;
+        }
+      }
+      await this.subscriptionAccessNotifyQueue.add(
+        SUBSCRIPTION_ACCESS_NOTIFY_JOB,
+        {
+          panelUserName: user.name?.trim() || '—',
+          panelUserCode: user.code,
+          clientIp: log.clientIp,
+          userAgent: log.userAgent,
+          hwid: log.hwid,
+          referer: log.referer,
+          queryParamsJson,
+          success: log.success,
+          createdAtIso: log.createdAt.toISOString(),
+        },
+        {
+          attempts: 4,
+          backoff: { type: 'exponential', delay: 2000 },
+        },
+      );
+    } catch (e) {
+      this.logger.warn(
+        `Не удалось поставить в очередь Telegram-уведомление о доступе к подписке: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   /**

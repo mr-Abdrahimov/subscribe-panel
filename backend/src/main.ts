@@ -15,6 +15,7 @@ import type {
 } from 'express';
 import type { Queue } from 'bullmq';
 import { AppModule } from './app.module';
+import { SUBSCRIPTION_ACCESS_NOTIFY_QUEUE } from './subscription-access-notify/subscription-access-notify.constants';
 import { SUBSCRIPTION_FETCH_QUEUE } from './subscription-fetch/subscription-fetch.constants';
 
 const BULL_BOARD_COOKIE = 'sp_bull_board_token';
@@ -113,9 +114,15 @@ async function bootstrap() {
 
       const serverAdapter = new ExpressAdapter();
       serverAdapter.setBasePath(bullBoardPublicPath);
-      const queue = app.get<Queue>(getQueueToken(SUBSCRIPTION_FETCH_QUEUE));
+      const fetchQueue = app.get<Queue>(getQueueToken(SUBSCRIPTION_FETCH_QUEUE));
+      const accessNotifyQueue = app.get<Queue>(
+        getQueueToken(SUBSCRIPTION_ACCESS_NOTIFY_QUEUE),
+      );
       createBullBoard({
-        queues: [new BullMQAdapter(queue)],
+        queues: [
+          new BullMQAdapter(fetchQueue),
+          new BullMQAdapter(accessNotifyQueue),
+        ],
         serverAdapter,
       });
       const token = config.get<string>('BULL_BOARD_TOKEN')?.trim();

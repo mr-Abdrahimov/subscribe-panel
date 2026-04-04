@@ -10,6 +10,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ManagementModule } from './management/management.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { RedisModule } from './redis/redis.module';
+import { SubscriptionAccessNotifyModule } from './subscription-access-notify/subscription-access-notify.module';
 import { SubscriptionFetchModule } from './subscription-fetch/subscription-fetch.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { SubscriptionFetchModule } from './subscription-fetch/subscription-fetch
     AuthModule,
     SubscriptionsModule,
     SubscriptionFetchModule,
+    SubscriptionAccessNotifyModule,
     ConnectsModule,
     TelegramModule,
     ManagementModule,

@@ -14,11 +14,13 @@ export class TelegramService {
 
   /**
    * @param chatId — числовой id, либо строка вида "-100…" для супергрупп
+   * @param options.disableNotification — бесшумное уведомление (без звука на устройстве)
    */
   async sendMessage(
     botToken: string,
     chatId: string,
     text: string,
+    options?: { disableNotification?: boolean },
   ): Promise<TelegramSendResult> {
     const token = botToken.trim();
     const chat = chatId.trim();
@@ -30,6 +32,9 @@ export class TelegramService {
       const api = new Api(token);
       const msg = await api.sendMessage(chat, body, {
         link_preview_options: { is_disabled: true },
+        ...(options?.disableNotification === true
+          ? { disable_notification: true }
+          : {}),
       });
       return { ok: true, messageId: msg.message_id };
     } catch (e: unknown) {
