@@ -68,6 +68,8 @@ const deleteConnectId = ref<string | null>(null);
 const rowSelection = ref<RowSelectionState>({});
 const bulkGroupNames = ref<string[]>([]);
 const bulkLoading = ref(false);
+/** Снимок порядка по колонкам до начала перетаскивания (для переноса нескольких выбранных) */
+let preDragBucketOrder: Record<string, string[]> | null = null;
 
 /** null — все подписки */
 const filterSubscriptionId = ref<string | null>(null);
@@ -264,6 +266,12 @@ function initBucketSortables() {
       animation: 180,
       handle: '.connect-bucket-drag-handle',
       draggable: '[data-connect-row]',
+      onStart: () => {
+        preDragBucketOrder = JSON.parse(JSON.stringify(bucketOrder.value)) as Record<
+          string,
+          string[]
+        >;
+      },
       onEnd: (e) => {
         void onBucketSortEnd(e);
       },
@@ -284,7 +292,47 @@ function computeGroupNamesForBucket(connect: ConnectRow, targetKey: string): str
   return [...new Set([...nonMain, mainName])];
 }
 
+/** Порядок выбранных id по колонкам сверху вниз (как на экране до drag). */
+function orderedSelectedIdsFromPre(
+  pre: Record<string, string[]>,
+  selectedSet: Set<string>,
+): string[] {
+  const out: string[] = [];
+  for (const k of bucketKeysOrdered.value) {
+    for (const id of pre[k] ?? []) {
+      if (selectedSet.has(id)) {
+        out.push(id);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Несколько выбранных коннектов: Sortable двигает один DOM-элемент — восстанавливаем целевой порядок из снимка.
+ */
+function mergeMultiDragIntoBuckets(
+  pre: Record<string, string[]>,
+  selectedSet: Set<string>,
+  toKey: string,
+  insertAt: number,
+): Record<string, string[]> {
+  const keys = bucketKeysOrdered.value;
+  const block = orderedSelectedIdsFromPre(pre, selectedSet);
+  const work: Record<string, string[]> = {};
+  for (const k of keys) {
+    work[k] = (pre[k] ?? []).filter((id) => !selectedSet.has(id));
+  }
+  const L = work[toKey] ?? [];
+  const at = Math.max(0, Math.min(insertAt, L.length));
+  work[toKey] = [...L.slice(0, at), ...block, ...L.slice(at)];
+  return work;
+}
+
 async function onBucketSortEnd(evt: SortableEvent) {
+  const pre = preDragBucketOrder;
+  preDragBucketOrder = null;
+
   if (filtersActive.value) {
     return;
   }
@@ -298,11 +346,79 @@ async function onBucketSortEnd(evt: SortableEvent) {
     return;
   }
 
+  if (
+    fromKey === toKey &&
+    evt.oldIndex !== undefined &&
+    evt.newIndex !== undefined &&
+    evt.oldIndex === evt.newIndex
+  ) {
+    rebuildBucketOrder();
+    await nextTick();
+    initBucketSortables();
+    return;
+  }
+
   const keys = bucketKeysOrdered.value;
   const newBuckets: Record<string, string[]> = {};
   for (const key of keys) {
     const el = bucketListEls[key];
     newBuckets[key] = el ? readConnectIdsFromListEl(el) : [...(bucketOrder.value[key] ?? [])];
+  }
+
+  const selectedSet = new Set(getSelectedConnectIds());
+  const multi =
+    pre &&
+    selectedSet.size > 1 &&
+    selectedSet.has(movedId) &&
+    [...selectedSet].every((id) => filteredConnects.value.some((c) => c.id === id));
+
+  if (multi) {
+    const domTo = readConnectIdsFromListEl(evt.to as HTMLElement);
+    const insertAt =
+      evt.newIndex !== undefined && evt.newIndex >= 0
+        ? evt.newIndex
+        : domTo.indexOf(movedId);
+    if (insertAt < 0) {
+      rebuildBucketOrder();
+      await nextTick();
+      initBucketSortables();
+      return;
+    }
+    const merged = mergeMultiDragIntoBuckets(pre, selectedSet, toKey, insertAt);
+    try {
+      if (fromKey !== toKey) {
+        const block = orderedSelectedIdsFromPre(pre, selectedSet);
+        await Promise.all(
+          block.map(async (id) => {
+            const c = connects.value.find((x) => x.id === id);
+            if (!c) {
+              throw new Error('missing');
+            }
+            const nextNames = computeGroupNamesForBucket(c, toKey);
+            await $fetch(`${config.public.apiBaseUrl}/connects/${id}/groups`, {
+              method: 'PATCH',
+              body: { groupNames: nextNames },
+            });
+          }),
+        );
+        toast.add({
+          title: `Перенесено коннектов: ${selectedSet.size}`,
+          color: 'success',
+        });
+      }
+      bucketOrder.value = merged;
+      await persistGlobalOrderFromBuckets(fromKey === toKey);
+    } catch (err: unknown) {
+      toast.add({
+        title: fetchErrorMessage(err, 'Не удалось перенести коннект(ы)'),
+        color: 'error',
+      });
+      await loadConnects();
+      rebuildBucketOrder();
+      await nextTick();
+      initBucketSortables();
+    }
+    return;
   }
 
   if (fromKey !== toKey) {
@@ -781,7 +897,7 @@ async function bulkRemoveGroupsFromSelection() {
         <p v-else class="text-xs text-muted">
           Коннекты сгруппированы по главным группам. Без главной группы — колонка «Без группы». Тяните за
           <span class="font-mono">⋮⋮</span>
-          внутри колонки или переносите в другую колонку.
+          за любую выбранную карточку — все отмеченные чекбоксом перенесутся в колонку и позицию, куда отпустите.
         </p>
       </div>
 
@@ -887,7 +1003,10 @@ async function bulkRemoveGroupsFromSelection() {
                   >
                     <UIcon name="i-lucide-grip-vertical" class="size-4" />
                   </div>
-                  <div class="min-w-0 flex-1 space-y-2">
+                  <div
+                    class="connect-bucket-card-body min-w-0 flex-1 space-y-2"
+                    @pointerdown.stop
+                  >
                     <div class="flex items-start justify-between gap-2">
                       <UCheckbox
                         :model-value="!!rowSelection[cid]"
