@@ -88,8 +88,8 @@ const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
 const formUrl = ref('');
-/** Пустая строка — без автообновления (null в API) */
-const formFetchIntervalMinutes = ref('');
+/** Пустое — без автообновления (null в API). UInput type=number может отдавать number. */
+const formFetchIntervalMinutes = ref<string | number>('');
 const loading = ref(false);
 const subscriptions = ref<SubscriptionItem[]>([]);
 
@@ -175,8 +175,10 @@ async function submit() {
     return;
   }
 
+  const rawInterval = String(formFetchIntervalMinutes.value ?? '').trim();
+
   try {
-    await fetchIntervalInputSchema.validate(formFetchIntervalMinutes.value);
+    await fetchIntervalInputSchema.validate(rawInterval);
   } catch (e) {
     if (e instanceof yup.ValidationError) {
       toast.add({ title: e.message, color: 'error' });
@@ -185,7 +187,6 @@ async function submit() {
     throw e;
   }
 
-  const rawInterval = formFetchIntervalMinutes.value.trim();
   const fetchIntervalMinutes =
     rawInterval === '' ? null : parseInt(rawInterval, 10);
 
