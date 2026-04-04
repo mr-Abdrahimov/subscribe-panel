@@ -11,5 +11,7 @@ export type PublicUserResponse = {
   /** happ:// от crypto.happ.su для копирования на публичной странице; null если не создана */
   happCryptoUrl?: string | null
   groups: string[]
+  /** Группы пользователя: порядок и включение коннектов в ленту (PATCH …/subscription-group-prefs по коду) */
+  subscriptionGroups?: { name: string; include: boolean }[]
   appLinks: { name: string; url: string }[]
 }

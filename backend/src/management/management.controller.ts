@@ -32,6 +32,7 @@ import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { BulkUpdatePanelUsersDto } from './dto/bulk-update-panel-users.dto';
 import { CreatePanelUserDto } from './dto/create-panel-user.dto';
+import { PublicSubscriptionGroupPrefsDto } from './dto/public-subscription-group-prefs.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
 import { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
@@ -296,10 +297,29 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
     description:
-      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — для страницы подписки. happCryptoUrl — готовая happ:// ссылка для импорта в Happ (или null). cryptoOnlySubscription — подсказка UI. Массив appLinks: {link}, {crypto}.',
+      'Поле profileTitle — subscriptionDisplayName группы (заголовок ленты). Поле groups — расширенный список тегов для справки. subscriptionGroups — порядок групп пользователя и флаг include (в ленту); сохранение через PATCH …/subscription-group-prefs (по коду страницы). happCryptoUrl — happ:// для импорта. Массив appLinks.',
   })
   getPublicUser(@Param('code') code: string) {
     return this.managementService.getPublicUserByCode(code);
+  }
+
+  @Patch('public/users/:code/subscription-group-prefs')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Сохранить порядок групп и включение коннектов в ленту',
+    description:
+      'Публичный эндпоинт по коду персональной страницы пользователя. Тело: полный список групп пользователя в нужном порядке, у каждой — include (показывать коннекты группы в подписке).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Сохранено; в ответе актуальный массив subscriptionGroups',
+  })
+  @ApiResponse({ status: 400, description: 'Список групп не совпадает с groupNames пользователя' })
+  saveSubscriptionGroupPrefs(
+    @Param('code') code: string,
+    @Body() body: PublicSubscriptionGroupPrefsDto,
+  ) {
+    return this.managementService.savePublicSubscriptionGroupPrefs(code, body.groups);
   }
 
   @Get('public/sub/:code')

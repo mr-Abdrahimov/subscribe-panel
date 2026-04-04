@@ -149,6 +149,106 @@ export class ManagementService implements OnModuleInit {
     }
   }
 
+  private subscriptionPrefNormKey(s: string): string {
+    return s.trim().normalize('NFC').toLowerCase();
+  }
+
+  private parseStoredSubscriptionPrefs(raw: unknown): Array<{
+    name: string;
+    include: boolean;
+  }> | null {
+    if (!Array.isArray(raw)) {
+      return null;
+    }
+    const out: Array<{ name: string; include: boolean }> = [];
+    for (const row of raw) {
+      if (!row || typeof row !== 'object') {
+        continue;
+      }
+      const o = row as Record<string, unknown>;
+      if (typeof o.name !== 'string') {
+        continue;
+      }
+      const name = o.name.trim();
+      if (!name) {
+        continue;
+      }
+      out.push({
+        name,
+        include: o.include !== false,
+      });
+    }
+    return out.length > 0 ? out : null;
+  }
+
+  /**
+   * Порядок групп и флаги «в ленту»: из subscriptionGroupPrefs (только имена из membership),
+   * затем недостающие группы с include=true.
+   */
+  getEffectiveSubscriptionGroupEntries(user: {
+    groupNames: string[];
+    subscriptionGroupPrefs: unknown;
+  }): Array<{ name: string; include: boolean }> {
+    const membership = this.orderedUniquePanelUserGroupNames({
+      groupNames: user.groupNames,
+    });
+    const memSet = new Set(membership);
+    const parsed = this.parseStoredSubscriptionPrefs(user.subscriptionGroupPrefs);
+    if (!parsed) {
+      return membership.map((name) => ({ name, include: true }));
+    }
+    const seenKeys = new Set<string>();
+    const out: Array<{ name: string; include: boolean }> = [];
+    for (const p of parsed) {
+      if (!memSet.has(p.name)) {
+        continue;
+      }
+      const k = this.subscriptionPrefNormKey(p.name);
+      if (seenKeys.has(k)) {
+        continue;
+      }
+      seenKeys.add(k);
+      out.push({ name: p.name, include: p.include });
+    }
+    for (const name of membership) {
+      const k = this.subscriptionPrefNormKey(name);
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
+        out.push({ name, include: true });
+      }
+    }
+    return out;
+  }
+
+  private async syncSubscriptionPrefsAfterGroupRename(
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const users = await this.prisma.panelUser.findMany({
+      select: { id: true, subscriptionGroupPrefs: true },
+    });
+    for (const u of users) {
+      const prefs = this.parseStoredSubscriptionPrefs(u.subscriptionGroupPrefs);
+      if (!prefs) {
+        continue;
+      }
+      let changed = false;
+      const next = prefs.map((p) => {
+        if (p.name === oldName) {
+          changed = true;
+          return { name: newName, include: p.include };
+        }
+        return { name: p.name, include: p.include };
+      });
+      if (changed) {
+        await this.prisma.panelUser.update({
+          where: { id: u.id },
+          data: { subscriptionGroupPrefs: next },
+        });
+      }
+    }
+  }
+
   /** Не отдаём subscriptionAccessToken в API панели. */
   private omitSubscriptionAccessToken<T extends { subscriptionAccessToken?: string | null }>(
     row: T,
@@ -367,8 +467,45 @@ export class ManagementService implements OnModuleInit {
   }
 
   /**
-   * Мета для GET /public/sub: первая существующая группа из порядка
-   * (сначала группы из PanelUser.groupNames по порядку, затем остальные из ленты), поля группы с наследованием из глобальных настроек.
+   * Порядок имён для меты Happ: сначала включённые группы из персональных настроек,
+   * затем остальные из getOrderedPanelUserGroupNames (без дубликатов).
+   */
+  private async getOrderedNamesForPublicSubMeta(
+    user: PanelUser,
+  ): Promise<string[]> {
+    const included = this.getEffectiveSubscriptionGroupEntries(user)
+      .filter((e) => e.include)
+      .map((e) => e.name);
+    const seen = new Set<string>();
+    const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
+    const out: string[] = [];
+    for (const n of included) {
+      const t = n.trim();
+      if (!t) {
+        continue;
+      }
+      const k = normKey(t);
+      if (seen.has(k)) {
+        continue;
+      }
+      seen.add(k);
+      out.push(t);
+    }
+    const rest = await this.getOrderedPanelUserGroupNames(user);
+    for (const n of rest) {
+      const k = normKey(n);
+      if (seen.has(k)) {
+        continue;
+      }
+      seen.add(k);
+      out.push(n);
+    }
+    return out;
+  }
+
+  /**
+   * Мета для GET /public/sub: первая подходящая группа из порядка
+   * (включённые из персональных настроек, затем прочие из ленты), наследование из глобальных настроек.
    */
   async getSubscriptionMetaForPublicSub(user: PanelUser | null): Promise<{
     announceMetaLine: string | null;
@@ -386,7 +523,7 @@ export class ManagementService implements OnModuleInit {
       globalRow?.profileUpdateInterval;
 
     if (user) {
-      const ordered = await this.getOrderedPanelUserGroupNames(user);
+      const ordered = await this.getOrderedNamesForPublicSubMeta(user);
       for (const name of ordered) {
         const g = await this.findGroupRowByPanelGroupName(name);
         if (g) {
@@ -826,6 +963,7 @@ export class ManagementService implements OnModuleInit {
       enabled?: boolean;
       name?: string;
       groupNames?: string[];
+      subscriptionGroupPrefs?: null;
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
       requireNoHwid?: boolean;
@@ -846,6 +984,7 @@ export class ManagementService implements OnModuleInit {
       const cleaned = this.dedupeOrderedInputGroupNames(dto.groupNames);
       await this.assertPanelGroupNamesExist(cleaned);
       data.groupNames = cleaned;
+      data.subscriptionGroupPrefs = null;
     }
     if (dto.allowAllUserAgents !== undefined) {
       data.allowAllUserAgents = dto.allowAllUserAgents;
@@ -1116,6 +1255,17 @@ export class ManagementService implements OnModuleInit {
       updated = result.count;
     }
 
+    const touchedGroupMembership =
+      dto.groupName !== undefined ||
+      dto.addGroupName !== undefined ||
+      dto.removeGroupName !== undefined;
+    if (touchedGroupMembership) {
+      await this.prisma.panelUser.updateMany({
+        where: { id: { in: uniq } },
+        data: { subscriptionGroupPrefs: null },
+      });
+    }
+
     let deletedLogs = 0;
     if (dto.clearSubscriptionAccessLogs === true) {
       const del = await this.prisma.panelUserAccessLog.deleteMany({
@@ -1195,6 +1345,16 @@ export class ManagementService implements OnModuleInit {
   async resolveSubscriptionProfileTitleForPanelUser(
     user: PanelUser,
   ): Promise<string> {
+    const entries = this.getEffectiveSubscriptionGroupEntries(user);
+    const firstInc = entries.find((e) => e.include)?.name ?? '';
+    if (firstInc) {
+      const fromIncluded =
+        await this.resolveSubscriptionDisplayNameForUserGroup(firstInc);
+      const gi = (fromIncluded ?? '').trim();
+      if (gi) {
+        return gi;
+      }
+    }
     const primaries = this.orderedUniquePanelUserGroupNames(user);
     const fromGroup = await this.resolveSubscriptionDisplayNameForUserGroup(
       primaries[0] ?? '',
@@ -1233,30 +1393,34 @@ export class ManagementService implements OnModuleInit {
     panelUserId: string;
     subscriptionDelivered: true;
   }> {
-    const primaries = this.orderedUniquePanelUserGroupNames(user);
-    const groupTitle =
-      (await this.resolveSubscriptionDisplayNameForUserGroup(
-        primaries[0] ?? '',
-      )) ?? '';
-    const profileTitle = groupTitle.trim();
+    const entries = this.getEffectiveSubscriptionGroupEntries(user);
+    const includedNames = entries
+      .filter((e) => e.include)
+      .map((e) => e.name);
 
-    const connects =
-      primaries.length === 0
-        ? []
-        : await this.prisma.connect.findMany({
-            where: {
-              status: 'ACTIVE',
-              OR: primaries.map((g) => ({
-                groupNames: { has: g },
-              })),
-            },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-            select: { raw: true, name: true },
-          });
+    const profileTitle = (
+      await this.resolveSubscriptionProfileTitleForPanelUser(user)
+    ).trim();
 
-    const uriLines = connects.map((c) =>
-      this.applyCustomNameToUri(c.raw, c.name),
-    );
+    const seenConnectIds = new Set<string>();
+    const uriLines: string[] = [];
+    for (const gName of includedNames) {
+      const batch = await this.prisma.connect.findMany({
+        where: {
+          status: 'ACTIVE',
+          groupNames: { has: gName },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        select: { id: true, raw: true, name: true },
+      });
+      for (const c of batch) {
+        if (seenConnectIds.has(c.id)) {
+          continue;
+        }
+        seenConnectIds.add(c.id);
+        uriLines.push(this.applyCustomNameToUri(c.raw, c.name));
+      }
+    }
     /** Happ: скрыть настройки серверов (тело подписки), см. app-management */
     const metaLines: string[] = [];
     const titleTrimmed = profileTitle.trim();
@@ -1425,6 +1589,70 @@ export class ManagementService implements OnModuleInit {
     return { user, logs };
   }
 
+  /**
+   * Персональная страница /sub/:code — знание кода считается достаточным для изменения порядка групп
+   * и флагов включения в ленту (без query t=).
+   */
+  async savePublicSubscriptionGroupPrefs(
+    code: string,
+    groups: Array<{ name: string; include: boolean }>,
+  ): Promise<{ subscriptionGroups: Array<{ name: string; include: boolean }> }> {
+    const user = await this.findPanelUserByCode(code);
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    const membership = this.orderedUniquePanelUserGroupNames(user);
+    if (membership.length === 0) {
+      throw new BadRequestException('У пользователя нет групп');
+    }
+
+    const incoming = groups.map((g) => ({
+      name: g.name.trim(),
+      include: g.include !== false,
+    }));
+    if (incoming.length !== membership.length) {
+      throw new BadRequestException(
+        'Список групп должен содержать каждую группу пользователя ровно один раз',
+      );
+    }
+    const memSet = new Set(membership);
+    const seenIncoming = new Set<string>();
+    for (const g of incoming) {
+      if (!g.name) {
+        throw new BadRequestException('Пустое имя группы');
+      }
+      if (!memSet.has(g.name)) {
+        throw new BadRequestException(`Неизвестная группа: ${g.name}`);
+      }
+      const k = this.subscriptionPrefNormKey(g.name);
+      if (seenIncoming.has(k)) {
+        throw new BadRequestException('Дубликаты групп в списке');
+      }
+      seenIncoming.add(k);
+    }
+    for (const m of membership) {
+      if (!incoming.some((g) => g.name === m)) {
+        throw new BadRequestException(
+          `В списке отсутствует группа: ${m}`,
+        );
+      }
+    }
+
+    await this.prisma.panelUser.update({
+      where: { id: user.id },
+      data: { subscriptionGroupPrefs: incoming },
+    });
+
+    const fresh = await this.findPanelUserByCode(code);
+    if (!fresh) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    return {
+      subscriptionGroups: this.getEffectiveSubscriptionGroupEntries(fresh),
+    };
+  }
+
   async getPublicUserByCode(code: string) {
     const user = await this.prisma.panelUser.findUnique({
       where: { code },
@@ -1433,6 +1661,7 @@ export class ManagementService implements OnModuleInit {
         code: true,
         enabled: true,
         groupNames: true,
+        subscriptionGroupPrefs: true,
         happCryptoUrl: true,
         cryptoOnlySubscription: true,
       },
@@ -1441,7 +1670,11 @@ export class ManagementService implements OnModuleInit {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    const { happCryptoUrl: rawHappCrypto, ...publicUser } = user;
+    const {
+      happCryptoUrl: rawHappCrypto,
+      subscriptionGroupPrefs: _prefsOmit,
+      ...publicUser
+    } = user;
     const happCryptoUrl =
       typeof rawHappCrypto === 'string' && rawHappCrypto.trim().startsWith('happ://')
         ? rawHappCrypto.trim()
@@ -1449,10 +1682,16 @@ export class ManagementService implements OnModuleInit {
 
     const primaries = this.orderedUniquePanelUserGroupNames(user);
     const groups = await this.collectPublicDisplayGroupNames(primaries);
+    const subscriptionGroups = this.getEffectiveSubscriptionGroupEntries({
+      groupNames: user.groupNames,
+      subscriptionGroupPrefs: user.subscriptionGroupPrefs,
+    });
 
     const sub =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
-        primaries[0] ?? '',
+        subscriptionGroups.find((e) => e.include)?.name ??
+          primaries[0] ??
+          '',
       )) ?? '';
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
@@ -1474,6 +1713,8 @@ export class ManagementService implements OnModuleInit {
       cryptoOnlySubscription: user.cryptoOnlySubscription === true,
       /** Имена групп для блока «Группа» на /sub: привязка пользователя и группы коннектов ленты */
       groups,
+      /** Порядок групп пользователя и включение в ленту (персональные настройки) */
+      subscriptionGroups,
       /** Название и готовая ссылка для блока «Приложения» на /sub */
       appLinks,
     };
@@ -1674,6 +1915,7 @@ export class ManagementService implements OnModuleInit {
           throw new BadRequestException('Группа с таким названием уже существует');
         }
         await this.renameGroupTagEverywhere(oldName, trimmed);
+        await this.syncSubscriptionPrefsAfterGroupRename(oldName, trimmed);
         data.name = trimmed;
       }
     }

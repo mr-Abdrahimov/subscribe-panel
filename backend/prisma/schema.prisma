@@ -76,6 +76,8 @@ model PanelUser {
   code                 String                 @unique
   /// Группы ленты: коннекты из объединения групп; дубликаты строк в подписке не выдаются
   groupNames           String[]               @default([])
+  /// Порядок групп в ленте и включение: [{ "name": "…", "include": true }]; null — все groupNames по порядку, все включены
+  subscriptionGroupPrefs Json?
   enabled              Boolean                @default(true)
   /// Если true — base64-подписка отдаётся любому User-Agent; иначе только при UA, начинающемся с «Happ»
   allowAllUserAgents   Boolean                @default(false)

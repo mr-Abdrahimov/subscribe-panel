@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import type { PublicUserResponse } from '~/types/api'
+import { useDebounceFn } from '@vueuse/core'
+import {
+  useSortable,
+  moveArrayElement,
+} from '@vueuse/integrations/useSortable'
 
 definePageMeta({
   layout: 'sub',
@@ -34,8 +39,106 @@ const { data, pending, error } = await useFetch<PublicUserResponse>(publicUserUr
   watch: [code],
 })
 
+type SubscriptionGroupPref = { name: string; include: boolean }
+
 const displayName = computed(() => data.value?.name ?? '')
 const groupLabels = computed(() => data.value?.groups ?? [])
+
+const membershipGroups = computed(
+  () => data.value?.subscriptionGroups ?? ([] as SubscriptionGroupPref[]),
+)
+
+const localGroupPrefs = ref<SubscriptionGroupPref[]>([])
+const sortableGroupsEl = ref<HTMLElement | null>(null)
+const groupPrefsSaving = ref(false)
+const groupPrefsSaveError = ref<string | null>(null)
+
+watch(
+  () => [code.value, data.value?.subscriptionGroups] as const,
+  () => {
+    const list = data.value?.subscriptionGroups
+    if (list?.length) {
+      localGroupPrefs.value = list.map((g) => ({
+        name: g.name,
+        include: g.include !== false,
+      }))
+    } else {
+      localGroupPrefs.value = []
+    }
+  },
+  { immediate: true },
+)
+
+const sortableGroupList = useSortable(sortableGroupsEl, localGroupPrefs, {
+  handle: '.cp__group-drag',
+  animation: 160,
+  onUpdate: (e) => {
+    moveArrayElement(localGroupPrefs, e.oldIndex!, e.newIndex!, e)
+    void nextTick(() => schedulePersistGroupPrefs())
+  },
+})
+
+watch(
+  () => membershipGroups.value.length > 0,
+  (ok) => {
+    void nextTick(() => {
+      try {
+        sortableGroupList.option('disabled', !ok)
+      } catch {
+        /* список ещё не смонтирован */
+      }
+    })
+  },
+  { immediate: true },
+)
+
+const persistGroupPrefs = useDebounceFn(async () => {
+  if (!localGroupPrefs.value.length) {
+    return
+  }
+  const base = String(config.public.apiBaseUrl ?? '').replace(/\/$/, '')
+  const url = `${base}/public/users/${encodeURIComponent(code.value)}/subscription-group-prefs`
+  groupPrefsSaving.value = true
+  groupPrefsSaveError.value = null
+  try {
+    const res = await $fetch<{ subscriptionGroups: SubscriptionGroupPref[] }>(url, {
+      method: 'PATCH',
+      body: { groups: localGroupPrefs.value },
+    })
+    if (data.value && res.subscriptionGroups?.length) {
+      data.value.subscriptionGroups = res.subscriptionGroups.map((g) => ({
+        name: g.name,
+        include: g.include !== false,
+      }))
+    }
+  } catch (err: unknown) {
+    let msg = ''
+    if (err && typeof err === 'object') {
+      const d = (err as { data?: { message?: unknown } }).data?.message
+      if (Array.isArray(d)) {
+        msg = d.join(', ')
+      } else if (typeof d === 'string') {
+        msg = d
+      }
+    }
+    groupPrefsSaveError.value = msg || 'Не удалось сохранить настройки групп.'
+    useToast().add({
+      title: 'Ошибка сохранения групп',
+      description: groupPrefsSaveError.value,
+      color: 'error',
+    })
+  } finally {
+    groupPrefsSaving.value = false
+  }
+}, 500)
+
+function schedulePersistGroupPrefs() {
+  void persistGroupPrefs()
+}
+
+function onToggleGroupInclude() {
+  schedulePersistGroupPrefs()
+}
 const appLinks = computed(() => data.value?.appLinks ?? [])
 const cryptoOnlySubscription = computed(
   () => data.value?.cryptoOnlySubscription === true,
@@ -241,13 +344,65 @@ async function copyCryptoLink() {
           </div>
         </section>
 
-        <section v-if="groupLabels.length" class="cp__section">
-          <h2 class="cp__section-title">
+        <section
+          v-if="membershipGroups.length || groupLabels.length"
+          class="cp__section"
+          aria-labelledby="cp-groups-heading"
+        >
+          <h2 id="cp-groups-heading" class="cp__section-title">
             <span class="cp__section-marker" />
             ГРУППЫ
           </h2>
-          <ul class="cp__tags">
-            <li v-for="g in groupLabels" :key="g" class="cp__tag">{{ g }}</li>
+          <p v-if="membershipGroups.length" class="cp__section-desc cp__section-desc--tight">
+            Потяните за ручку слева, чтобы поменять порядок. «В подписке» — показывать коннекты группы в ленте;
+            если коннект в нескольких группах, он попадёт в первую включённую по списку.
+          </p>
+
+          <p v-if="groupPrefsSaving" class="cp__group-save-hint" aria-live="polite">
+            Сохранение…
+          </p>
+          <p v-if="groupPrefsSaveError && membershipGroups.length" class="cp__group-save-err">
+            {{ groupPrefsSaveError }}
+          </p>
+
+          <ul
+            v-if="membershipGroups.length"
+            ref="sortableGroupsEl"
+            class="cp__group-list"
+            aria-label="Группы, порядок и включение в подписку"
+          >
+            <li
+              v-for="g in localGroupPrefs"
+              :key="g.name"
+              class="cp__group-card"
+            >
+              <button
+                type="button"
+                class="cp__group-drag"
+                aria-label="Переместить группу"
+              >
+                <span class="cp__group-drag-icon" aria-hidden="true">⋮⋮</span>
+              </button>
+              <span class="cp__group-name">{{ g.name }}</span>
+              <UCheckbox
+                :model-value="g.include"
+                class="cp__group-check"
+                :ui="{ label: 'text-[0.7rem] uppercase tracking-wider text-white/80' }"
+                label="В подписке"
+                @update:model-value="
+                  (v) => {
+                    if (typeof v === 'boolean') {
+                      g.include = v
+                      onToggleGroupInclude()
+                    }
+                  }
+                "
+              />
+            </li>
+          </ul>
+
+          <ul v-else class="cp__tags">
+            <li v-for="tag in groupLabels" :key="tag" class="cp__tag">{{ tag }}</li>
           </ul>
         </section>
 
@@ -731,6 +886,104 @@ async function copyCryptoLink() {
   border: 1px solid rgba(0, 245, 255, 0.35);
   color: rgba(232, 244, 255, 0.9);
   background: rgba(0, 245, 255, 0.06);
+}
+
+.cp__section-desc--tight {
+  margin-bottom: 0.75rem;
+}
+
+.cp__section-desc--muted {
+  color: rgba(232, 244, 255, 0.48);
+}
+
+.cp__group-save-hint {
+  margin: 0 0 0.5rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: var(--cp-cyan);
+}
+
+.cp__group-save-err {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--cp-magenta);
+}
+
+.cp__group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.cp__group-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  background: rgba(0, 245, 255, 0.05);
+  touch-action: none;
+}
+
+.cp__group-drag {
+  flex-shrink: 0;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 245, 255, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--cp-cyan);
+  cursor: grab;
+  padding: 0;
+  line-height: 1;
+}
+
+.cp__group-drag:active {
+  cursor: grabbing;
+}
+
+.cp__group-drag-icon {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  letter-spacing: -0.12em;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.cp__group-name {
+  flex: 1;
+  min-width: 8rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.cp__group-check {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+@media (max-width: 420px) {
+  .cp__group-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cp__group-check {
+    margin-left: 0;
+  }
+
+  .cp__group-drag {
+    align-self: flex-start;
+  }
 }
 
 .cp__apps {
