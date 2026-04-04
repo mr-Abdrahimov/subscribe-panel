@@ -353,24 +353,35 @@ async function copyCryptoLink() {
             <span class="cp__section-marker" />
             ГРУППЫ
           </h2>
-          <p v-if="membershipGroups.length" class="cp__section-desc cp__section-desc--tight">
+          <p v-if="membershipGroups.length" class="cp__section-desc cp__section-desc--tight cp__section-desc--groups">
             Потяните за ручку слева, чтобы поменять порядок. «В подписке» — показывать коннекты группы в ленте;
             если коннект в нескольких группах, он попадёт в первую включённую по списку.
           </p>
 
-          <p v-if="groupPrefsSaving" class="cp__group-save-hint" aria-live="polite">
-            Сохранение…
-          </p>
           <p v-if="groupPrefsSaveError && membershipGroups.length" class="cp__group-save-err">
             {{ groupPrefsSaveError }}
           </p>
 
-          <ul
+          <div
             v-if="membershipGroups.length"
-            ref="sortableGroupsEl"
-            class="cp__group-list"
-            aria-label="Группы, порядок и включение в подписку"
+            class="cp__group-list-shell"
           >
+            <Transition name="cp-group-saving-chip">
+              <div
+                v-if="groupPrefsSaving"
+                class="cp__group-saving-chip"
+                role="status"
+                aria-live="polite"
+              >
+                <span class="cp__group-saving-dot" aria-hidden="true" />
+                Сохранение
+              </div>
+            </Transition>
+            <ul
+              ref="sortableGroupsEl"
+              class="cp__group-list"
+              aria-label="Группы, порядок и включение в подписку"
+            >
             <li
               v-for="g in localGroupPrefs"
               :key="g.name"
@@ -400,6 +411,7 @@ async function copyCryptoLink() {
               />
             </li>
           </ul>
+          </div>
 
           <ul v-else class="cp__tags">
             <li v-for="tag in groupLabels" :key="tag" class="cp__tag">{{ tag }}</li>
@@ -892,16 +904,12 @@ async function copyCryptoLink() {
   margin-bottom: 0.75rem;
 }
 
-.cp__section-desc--muted {
-  color: rgba(232, 244, 255, 0.48);
+.cp__section-desc--groups {
+  margin-bottom: 1rem;
 }
 
-.cp__group-save-hint {
-  margin: 0 0 0.5rem;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--cp-cyan);
+.cp__section-desc--muted {
+  color: rgba(232, 244, 255, 0.48);
 }
 
 .cp__group-save-err {
@@ -909,6 +917,77 @@ async function copyCryptoLink() {
   font-size: 0.82rem;
   line-height: 1.45;
   color: var(--cp-magenta);
+}
+
+.cp__group-list-shell {
+  position: relative;
+}
+
+.cp__group-saving-chip {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.55rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cp-cyan);
+  background: rgba(8, 12, 24, 0.94);
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  border-radius: 2px;
+  pointer-events: none;
+  box-shadow:
+    0 0 14px rgba(0, 245, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.cp__group-saving-dot {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--cp-cyan);
+  box-shadow: 0 0 10px var(--cp-cyan);
+  animation: cp-saving-dot-pulse 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cp__group-saving-dot {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+@keyframes cp-saving-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+}
+
+.cp-group-saving-chip-enter-active,
+.cp-group-saving-chip-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.cp-group-saving-chip-enter-from,
+.cp-group-saving-chip-leave-to {
+  opacity: 0;
+  transform: translateY(0.2rem);
 }
 
 .cp__group-list {
