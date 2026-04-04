@@ -17,6 +17,9 @@ import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 /** Совпадает с ManagementService.PANEL_GLOBAL_SETTINGS_ID */
 const PANEL_GLOBAL_SETTINGS_ID = 'global';
 
+/** Заголовок для поля hwid подписки при GET к url */
+const SUBSCRIPTION_FETCH_HWID_HEADER = 'X-HWID';
+
 const TELEGRAM_MESSAGE_MAX = 3900;
 
 @Injectable()
@@ -45,6 +48,8 @@ export class SubscriptionsService {
         title: dto.title,
         url: dto.url,
         fetchIntervalMinutes: dto.fetchIntervalMinutes ?? null,
+        userAgent: dto.userAgent?.trim() || null,
+        hwid: dto.hwid?.trim() || null,
       },
     });
   }
@@ -58,6 +63,13 @@ export class SubscriptionsService {
     };
     if (dto.fetchIntervalMinutes !== undefined) {
       data.fetchIntervalMinutes = dto.fetchIntervalMinutes;
+    }
+    if (dto.userAgent !== undefined) {
+      data.userAgent =
+        dto.userAgent === null ? null : dto.userAgent.trim() || null;
+    }
+    if (dto.hwid !== undefined) {
+      data.hwid = dto.hwid === null ? null : dto.hwid.trim() || null;
     }
 
     return this.prisma.subscription.update({
@@ -89,7 +101,17 @@ export class SubscriptionsService {
 
     await ensureUngroupedConnectGroupExists(this.prisma);
 
-    const response = await fetch(subscription.url);
+    const headers = new Headers();
+    const ua = subscription.userAgent?.trim();
+    if (ua) {
+      headers.set('User-Agent', ua);
+    }
+    const hw = subscription.hwid?.trim();
+    if (hw) {
+      headers.set(SUBSCRIPTION_FETCH_HWID_HEADER, hw);
+    }
+
+    const response = await fetch(subscription.url, { headers });
     const text = await response.text();
     const links = this.parseSubscriptionPayload(text);
     const existingConnects = await this.prisma.connect.findMany({

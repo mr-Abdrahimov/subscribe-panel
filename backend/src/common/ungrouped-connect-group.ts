@@ -7,6 +7,24 @@ export function isReservedUngroupedConnectGroupName(name: string): boolean {
   return name.trim().normalize('NFC') === UNGROUPED_CONNECT_GROUP_NAME;
 }
 
+/**
+ * Перед сохранением groupNames коннекта: пустой список → только «Без группы»;
+ * если указаны «Без группы» и хотя бы ещё одна группа — служебный тег убирается.
+ */
+export function normalizeConnectGroupNamesForStorage(input: string[]): string[] {
+  const uniq = Array.from(
+    new Set(input.map((n) => n.trim()).filter((n) => n.length > 0)),
+  );
+  if (uniq.length === 0) {
+    return [UNGROUPED_CONNECT_GROUP_NAME];
+  }
+  const hasUngrouped = uniq.some((n) => isReservedUngroupedConnectGroupName(n));
+  if (hasUngrouped && uniq.length > 1) {
+    return uniq.filter((n) => !isReservedUngroupedConnectGroupName(n));
+  }
+  return uniq;
+}
+
 export async function ensureUngroupedConnectGroupExists(
   prisma: PrismaService,
 ): Promise<void> {

@@ -6,6 +6,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  MaxLength,
   Min,
   MinLength,
   ValidateIf,
@@ -47,4 +48,46 @@ export class UpdateSubscriptionDto {
   @Min(5)
   @Max(10080)
   fetchIntervalMinutes?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Заголовок User-Agent для GET по url. Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
+    nullable: true,
+    maxLength: 2048,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | null | undefined => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    return typeof value === 'string' ? value : String(value);
+  })
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(2048)
+  userAgent?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Заголовок X-HWID для GET по url. Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
+    nullable: true,
+    maxLength: 512,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | null | undefined => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    return typeof value === 'string' ? value : String(value);
+  })
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(512)
+  hwid?: string | null;
 }

@@ -21,6 +21,7 @@ import {
 import {
   ensureUngroupedConnectGroupExists,
   isReservedUngroupedConnectGroupName,
+  normalizeConnectGroupNamesForStorage,
 } from '../common/ungrouped-connect-group';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 
@@ -1397,13 +1398,14 @@ export class ManagementService implements OnModuleInit {
 
   async setConnectGroups(id: string, groupNames: string[]) {
     await this.ensureConnect(id);
-    const uniq = Array.from(
-      new Set(groupNames.map((n) => n.trim()).filter(Boolean)),
+    await ensureUngroupedConnectGroupExists(this.prisma);
+    const normalized = normalizeConnectGroupNamesForStorage(
+      groupNames ?? [],
     );
-    await this.assertConnectHasAtMostOneMainGroup(uniq);
+    await this.assertConnectHasAtMostOneMainGroup(normalized);
     return this.prisma.connect.update({
       where: { id },
-      data: { groupNames: uniq },
+      data: { groupNames: normalized },
     });
   }
 

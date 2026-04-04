@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConnectStatus } from '@prisma/client';
+import {
+  ensureUngroupedConnectGroupExists,
+  UNGROUPED_CONNECT_GROUP_NAME,
+} from '../common/ungrouped-connect-group';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -143,6 +147,8 @@ export class ConnectsService {
       return;
     }
 
+    await ensureUngroupedConnectGroupExists(this.prisma);
+
     // Backfill old Connect documents that were created before
     // protocol/status/hidden/tags fields were introduced.
     await this.prisma.$runCommandRaw({
@@ -200,9 +206,13 @@ export class ConnectsService {
         },
         {
           q: {
-            $or: [{ groupNames: null }, { groupNames: { $exists: false } }],
+            $or: [
+              { groupNames: null },
+              { groupNames: { $exists: false } },
+              { groupNames: [] },
+            ],
           },
-          u: { $set: { groupNames: [] } },
+          u: { $set: { groupNames: [UNGROUPED_CONNECT_GROUP_NAME] } },
           multi: true,
         },
       ],

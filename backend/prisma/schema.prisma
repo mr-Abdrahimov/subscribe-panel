@@ -34,6 +34,10 @@ model Subscription {
   lastFetchedAt DateTime?
   /// Интервал автообновления коннектов (минуты), null — только вручную; минимум 5 на уровне API
   fetchIntervalMinutes Int?
+  /// Заголовок User-Agent при GET запросе к url (кнопка «Получить коннекты» и очередь)
+  userAgent    String?
+  /// Доп. заголовок X-HWID при GET к url, если задан
+  hwid         String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   connects     Connect[]

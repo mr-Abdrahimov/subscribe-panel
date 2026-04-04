@@ -6,6 +6,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  MaxLength,
   Min,
   MinLength,
   ValidateIf,
@@ -47,4 +48,48 @@ export class CreateSubscriptionDto {
   @Min(5)
   @Max(10080)
   fetchIntervalMinutes?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Необязательно. Заголовок User-Agent для HTTP GET по полю url при получении коннектов (вручную и через очередь).',
+    nullable: true,
+    maxLength: 2048,
+    example: 'Happ/1.0',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | null | undefined => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    return typeof value === 'string' ? value : String(value);
+  })
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(2048)
+  userAgent?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Необязательно. Заголовок X-HWID для HTTP GET по полю url при получении коннектов (вручную и через очередь).',
+    nullable: true,
+    maxLength: 512,
+    example: 'device-uuid-here',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | null | undefined => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    return typeof value === 'string' ? value : String(value);
+  })
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(512)
+  hwid?: string | null;
 }

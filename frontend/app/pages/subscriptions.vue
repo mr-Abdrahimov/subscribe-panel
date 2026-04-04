@@ -13,6 +13,8 @@ type SubscriptionItem = {
   createdAt: string;
   lastFetchedAt: string | null;
   fetchIntervalMinutes: number | null;
+  userAgent?: string | null;
+  hwid?: string | null;
 };
 
 const fetchIntervalInputSchema = yup.string().test(
@@ -27,6 +29,13 @@ const fetchIntervalInputSchema = yup.string().test(
     return Number.isInteger(n) && n >= 5 && n <= 10080;
   },
 );
+
+const subscriptionHeadersSchema = yup.object({
+  userAgent: yup
+    .string()
+    .max(2048, 'User-Agent не длиннее 2048 символов'),
+  hwid: yup.string().max(512, 'HWID не длиннее 512 символов'),
+});
 
 type FetchedConnect = {
   id: string;
@@ -90,6 +99,8 @@ const formTitle = ref('');
 const formUrl = ref('');
 /** Пустое — без автообновления (null в API). UInput type=number может отдавать number. */
 const formFetchIntervalMinutes = ref<string | number>('');
+const formUserAgent = ref('');
+const formHwid = ref('');
 const loading = ref(false);
 const subscriptions = ref<SubscriptionItem[]>([]);
 
@@ -135,20 +146,19 @@ function openCreate() {
   formTitle.value = '';
   formUrl.value = '';
   formFetchIntervalMinutes.value = '';
+  formUserAgent.value = '';
+  formHwid.value = '';
   isModalOpen.value = true;
 }
 
-function openEdit(
-  id: string,
-  title: string,
-  url: string,
-  fetchIntervalMinutes: number | null,
-) {
-  editId.value = id;
-  formTitle.value = title;
-  formUrl.value = url;
+function openEdit(row: SubscriptionItem) {
+  editId.value = row.id;
+  formTitle.value = row.title;
+  formUrl.value = row.url;
   formFetchIntervalMinutes.value =
-    fetchIntervalMinutes != null ? String(fetchIntervalMinutes) : '';
+    row.fetchIntervalMinutes != null ? String(row.fetchIntervalMinutes) : '';
+  formUserAgent.value = row.userAgent ?? '';
+  formHwid.value = row.hwid ?? '';
   isModalOpen.value = true;
 }
 
@@ -191,16 +201,34 @@ async function submit() {
     rawInterval === '' ? null : parseInt(rawInterval, 10);
 
   try {
+    await subscriptionHeadersSchema.validate({
+      userAgent: formUserAgent.value,
+      hwid: formHwid.value,
+    });
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+
+  const uaTrim = formUserAgent.value.trim();
+  const hwTrim = formHwid.value.trim();
+  const userAgent = uaTrim === '' ? null : uaTrim;
+  const hwid = hwTrim === '' ? null : hwTrim;
+
+  try {
     if (editId.value) {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions/${editId.value}`, {
         method: 'PATCH',
-        body: { title, url: value, fetchIntervalMinutes },
+        body: { title, url: value, fetchIntervalMinutes, userAgent, hwid },
       });
       toast.add({ title: 'Подписка обновлена', color: 'success' });
     } else {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions`, {
         method: 'POST',
-        body: { title, url: value, fetchIntervalMinutes },
+        body: { title, url: value, fetchIntervalMinutes, userAgent, hwid },
       });
       toast.add({ title: 'Подписка добавлена', color: 'success' });
     }
@@ -360,14 +388,7 @@ async function loadSubscriptions() {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-pencil"
-                @click="
-                  openEdit(
-                    row.original.id,
-                    row.original.title,
-                    row.original.url,
-                    row.original.fetchIntervalMinutes ?? null,
-                  )
-                "
+                @click="openEdit(row.original)"
               />
             </UTooltip>
             <UTooltip text="Удалить подписку">
@@ -405,6 +426,30 @@ async function loadSubscriptions() {
               :max="10080"
               class="w-full tabular-nums"
               placeholder="Пусто = только вручную"
+            />
+          </UFormField>
+          <UFormField
+            label="User-Agent"
+            description="Если указано, при запросе к ссылке подписки (кнопка «Получить коннекты» и автообновление в очереди) отправляется заголовок User-Agent."
+            class="w-full"
+          >
+            <UInput
+              v-model="formUserAgent"
+              class="w-full font-mono text-sm"
+              placeholder="Например: Happ/1.0"
+              autocomplete="off"
+            />
+          </UFormField>
+          <UFormField
+            label="HWID"
+            description="Если указано, к запросу добавляется заголовок X-HWID (то же поведение вручную и в очереди)."
+            class="w-full"
+          >
+            <UInput
+              v-model="formHwid"
+              class="w-full font-mono text-sm"
+              placeholder="Идентификатор устройства"
+              autocomplete="off"
             />
           </UFormField>
         </div>
