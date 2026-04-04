@@ -13,10 +13,8 @@ describe('normalizedConnectIdentity', () => {
   });
 
   it('сводит регистр UUID в userinfo', () => {
-    const a =
-      'vless://F2C0E35B-AFD5-4848-FA13-E407A35F528A@h.com:1?type=tcp';
-    const b =
-      'vless://f2c0e35b-afd5-4848-fa13-e407a35f528a@h.com:1?type=tcp';
+    const a = 'vless://F2C0E35B-AFD5-4848-FA13-E407A35F528A@h.com:1?type=tcp';
+    const b = 'vless://f2c0e35b-afd5-4848-fa13-e407a35f528a@h.com:1?type=tcp';
     expect(normalizedConnectIdentity(a)).toBe(normalizedConnectIdentity(b));
   });
 
@@ -43,8 +41,7 @@ describe('normalizedConnectIdentity', () => {
   it('убирает пустые параметры из ключа', () => {
     const a =
       'vless://f2c0e35b-afd5-4848-fa13-e407a35f528a@x.com:1?type=tcp&remark=';
-    const b =
-      'vless://f2c0e35b-afd5-4848-fa13-e407a35f528a@x.com:1?type=tcp';
+    const b = 'vless://f2c0e35b-afd5-4848-fa13-e407a35f528a@x.com:1?type=tcp';
     expect(normalizedConnectIdentity(a)).toBe(normalizedConnectIdentity(b));
   });
 
@@ -115,7 +112,9 @@ describe('vlessCoreIdentityForMatching', () => {
     const a =
       'vless://d3958b70-9432-4c84-9ced-8f72abbc8a00@maja.example.com:443?type=tcp&security=reality&flow=x&sni=h.com&pbk=AbCd_EfGhIjKlMnOpQrStUvWxYz0123456789&sid=aaaaaaaaaa';
     const b = a.replace('sid=aaaaaaaaaa', 'sid=bbbbbbbbbb');
-    expect(vlessCoreIdentityForMatching(a)).toBe(vlessCoreIdentityForMatching(b));
+    expect(vlessCoreIdentityForMatching(a)).toBe(
+      vlessCoreIdentityForMatching(b),
+    );
     expect(normalizedConnectIdentity(a)).toBe(normalizedConnectIdentity(b));
   });
 

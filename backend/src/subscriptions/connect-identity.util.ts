@@ -404,7 +404,10 @@ export function vlessCoreIdentityForMatching(raw: string): string | null {
       const eq = segment.indexOf('=');
       const kEnc = eq >= 0 ? segment.slice(0, eq) : segment;
       const vEnc = eq >= 0 ? segment.slice(eq + 1) : '';
-      const k = multiDecodeFormValue(kEnc).trim().toLowerCase().normalize('NFC');
+      const k = multiDecodeFormValue(kEnc)
+        .trim()
+        .toLowerCase()
+        .normalize('NFC');
       const v = multiDecodeFormValue(vEnc).normalize('NFC');
       if (!k || !VLESS_CORE_QUERY_KEYS.has(k)) {
         continue;

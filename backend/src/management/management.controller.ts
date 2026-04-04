@@ -62,7 +62,10 @@ export class ManagementController {
     description:
       'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить); telegramBotSecret и telegramGroupId (пустая строка — сбросить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
   })
-  @ApiResponse({ status: 200, description: 'Текущие настройки после сохранения' })
+  @ApiResponse({
+    status: 200,
+    description: 'Текущие настройки после сохранения',
+  })
   updatePanelGlobalSettings(@Body() body: UpdatePanelGlobalSettingsDto) {
     return this.managementService.updatePanelGlobalSettings(body);
   }
@@ -74,7 +77,10 @@ export class ManagementController {
     description:
       'Использует сохранённые в панели telegramBotSecret и telegramGroupId. Тело опционально: поле text — текст сообщения (иначе стандартная фраза).',
   })
-  @ApiResponse({ status: 200, description: 'Сообщение отправлено, в ответе messageId из Telegram' })
+  @ApiResponse({
+    status: 200,
+    description: 'Сообщение отправлено, в ответе messageId из Telegram',
+  })
   @ApiResponse({
     status: 400,
     description: 'Не заданы секрет/chat id или ошибка Telegram API',
@@ -181,7 +187,10 @@ export class ManagementController {
     description:
       'Объект { updated: число обновлённых записей PanelUser, deletedLogs: число удалённых логов }',
   })
-  @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
+  @ApiResponse({
+    status: 400,
+    description: 'Некорректные данные или группа не найдена',
+  })
   bulkUpdatePanelUsers(@Body() body: BulkUpdatePanelUsersDto) {
     return this.managementService.bulkUpdatePanelUsers(body);
   }
@@ -193,7 +202,10 @@ export class ManagementController {
       'Частичное обновление: enabled, name, groupNames (полная замена списка групп), allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (happCryptoUrl не сбрасывается). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
-  @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
+  @ApiResponse({
+    status: 400,
+    description: 'Некорректные данные или группа не найдена',
+  })
   @ApiResponse({ status: 404, description: 'Пользователь не найден' })
   updatePanelUser(@Param('id') id: string, @Body() body: UpdatePanelUserDto) {
     return this.managementService.updatePanelUser(id, body);
@@ -218,7 +230,8 @@ export class ManagementController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Не удалось получить ссылку (сервис crypto или настройки URL подписки)',
+    description:
+      'Не удалось получить ссылку (сервис crypto или настройки URL подписки)',
   })
   @ApiResponse({ status: 404, description: 'Пользователь не найден' })
   createPanelUserHappCrypto(@Param('id') id: string) {
@@ -245,7 +258,10 @@ export class ManagementController {
     const limit = Number.isNaN(parsed)
       ? 200
       : Math.min(500, Math.max(1, parsed));
-    return this.managementService.listPanelUserSubscriptionAccessLogs(id, limit);
+    return this.managementService.listPanelUserSubscriptionAccessLogs(
+      id,
+      limit,
+    );
   }
 
   @Delete('panel-users/:id/subscription-access-logs')
@@ -265,7 +281,10 @@ export class ManagementController {
 
   @Patch('connects/:id/groups')
   @ApiOperation({ summary: 'Назначить группы коннекту' })
-  setConnectGroups(@Param('id') id: string, @Body() body: { groupNames: string[] }) {
+  setConnectGroups(
+    @Param('id') id: string,
+    @Body() body: { groupNames: string[] },
+  ) {
     return this.managementService.setConnectGroups(id, body.groupNames ?? []);
   }
 
@@ -287,7 +306,10 @@ export class ManagementController {
       'В urlTemplate: {link} → полный URL подписки; {crypto} → happ://… пользователя (crypto.happ.su при создании пользователя). Без плейсхолдеров ссылка не меняется.',
   })
   @ApiResponse({ status: 201, description: 'Создано' })
-  @ApiResponse({ status: 400, description: 'Пустое название или пустая ссылка' })
+  @ApiResponse({
+    status: 400,
+    description: 'Пустое название или пустая ссылка',
+  })
   createSubscriptionAppLink(@Body() body: CreateSubscriptionAppLinkDto) {
     return this.managementService.createSubscriptionAppLink(body);
   }
@@ -312,7 +334,10 @@ export class ManagementController {
   }
 
   @Get('public/users/:code')
-  @Header('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0')
+  @Header(
+    'Cache-Control',
+    'private, no-store, no-cache, must-revalidate, max-age=0',
+  )
   @Header('Pragma', 'no-cache')
   @ApiOperation({
     summary: 'Получить публичную информацию пользователя по коду',
@@ -334,12 +359,18 @@ export class ManagementController {
     status: 200,
     description: 'Сохранено; в ответе актуальный массив subscriptionGroups',
   })
-  @ApiResponse({ status: 400, description: 'Список групп не совпадает с groupNames пользователя' })
+  @ApiResponse({
+    status: 400,
+    description: 'Список групп не совпадает с groupNames пользователя',
+  })
   saveSubscriptionGroupPrefs(
     @Param('code') code: string,
     @Body() body: PublicSubscriptionGroupPrefsDto,
   ) {
-    return this.managementService.savePublicSubscriptionGroupPrefs(code, body.groups);
+    return this.managementService.savePublicSubscriptionGroupPrefs(
+      code,
+      body.groups,
+    );
   }
 
   @Get('public/sub/:code')
@@ -541,4 +572,3 @@ export class ManagementController {
     res.send(payload.encoded);
   }
 }
-

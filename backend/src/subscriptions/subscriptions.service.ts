@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import {
   ensureUngroupedConnectGroupExists,
   UNGROUPED_CONNECT_GROUP_NAME,
@@ -32,6 +33,7 @@ export class SubscriptionsService {
       data: {
         title: dto.title,
         url: dto.url,
+        fetchIntervalMinutes: dto.fetchIntervalMinutes ?? null,
       },
     });
   }
@@ -39,12 +41,17 @@ export class SubscriptionsService {
   async update(id: string, dto: UpdateSubscriptionDto) {
     await this.ensureExists(id);
 
+    const data: Prisma.SubscriptionUpdateInput = {
+      title: dto.title,
+      url: dto.url,
+    };
+    if (dto.fetchIntervalMinutes !== undefined) {
+      data.fetchIntervalMinutes = dto.fetchIntervalMinutes;
+    }
+
     return this.prisma.subscription.update({
       where: { id },
-      data: {
-        title: dto.title,
-        url: dto.url,
-      },
+      data,
     });
   }
 
@@ -239,7 +246,10 @@ export class SubscriptionsService {
     const coreRow = vlessCoreIdentityForMatching(c.raw);
     const coreIn = vlessCoreIdentityForMatching(incomingRaw);
     return (
-      coreRow !== null && coreIn !== null && coreRow.length > 0 && coreRow === coreIn
+      coreRow !== null &&
+      coreIn !== null &&
+      coreRow.length > 0 &&
+      coreRow === coreIn
     );
   }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import * as yup from 'yup';
 
 definePageMeta({
   layout: 'dashboard'
@@ -11,7 +12,21 @@ type SubscriptionItem = {
   url: string;
   createdAt: string;
   lastFetchedAt: string | null;
+  fetchIntervalMinutes: number | null;
 };
+
+const fetchIntervalInputSchema = yup.string().test(
+  'fetch-interval',
+  'Целое число минут от 5 до 10080 или оставьте пустым (только ручное обновление)',
+  (val) => {
+    const t = (val ?? '').trim();
+    if (t === '') {
+      return true;
+    }
+    const n = parseInt(t, 10);
+    return Number.isInteger(n) && n >= 5 && n <= 10080;
+  },
+);
 
 type FetchedConnect = {
   id: string;
@@ -73,6 +88,8 @@ const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
 const formUrl = ref('');
+/** Пустая строка — без автообновления (null в API) */
+const formFetchIntervalMinutes = ref('');
 const loading = ref(false);
 const subscriptions = ref<SubscriptionItem[]>([]);
 
@@ -96,6 +113,10 @@ const columns: TableColumn<SubscriptionItem>[] = [
     header: 'Дата добавления'
   },
   {
+    id: 'fetchIntervalMinutes',
+    header: 'Автообновление'
+  },
+  {
     id: 'lastFetchedAt',
     header: 'Получено'
   },
@@ -113,13 +134,21 @@ function openCreate() {
   editId.value = null;
   formTitle.value = '';
   formUrl.value = '';
+  formFetchIntervalMinutes.value = '';
   isModalOpen.value = true;
 }
 
-function openEdit(id: string, title: string, url: string) {
+function openEdit(
+  id: string,
+  title: string,
+  url: string,
+  fetchIntervalMinutes: number | null,
+) {
   editId.value = id;
   formTitle.value = title;
   formUrl.value = url;
+  formFetchIntervalMinutes.value =
+    fetchIntervalMinutes != null ? String(fetchIntervalMinutes) : '';
   isModalOpen.value = true;
 }
 
@@ -147,16 +176,30 @@ async function submit() {
   }
 
   try {
+    await fetchIntervalInputSchema.validate(formFetchIntervalMinutes.value);
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+
+  const rawInterval = formFetchIntervalMinutes.value.trim();
+  const fetchIntervalMinutes =
+    rawInterval === '' ? null : parseInt(rawInterval, 10);
+
+  try {
     if (editId.value) {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions/${editId.value}`, {
         method: 'PATCH',
-        body: { title, url: value },
+        body: { title, url: value, fetchIntervalMinutes },
       });
       toast.add({ title: 'Подписка обновлена', color: 'success' });
     } else {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions`, {
         method: 'POST',
-        body: { title, url: value },
+        body: { title, url: value, fetchIntervalMinutes },
       });
       toast.add({ title: 'Подписка добавлена', color: 'success' });
     }
@@ -267,6 +310,16 @@ async function loadSubscriptions() {
           </span>
         </template>
 
+        <template #fetchIntervalMinutes-cell="{ row }">
+          <span
+            v-if="row.original.fetchIntervalMinutes != null"
+            class="whitespace-nowrap tabular-nums text-sm"
+          >
+            каждые {{ row.original.fetchIntervalMinutes }} мин
+          </span>
+          <span v-else class="text-muted text-sm">Только вручную</span>
+        </template>
+
         <template #lastFetchedAt-cell="{ row }">
           <span
             v-if="row.original.lastFetchedAt"
@@ -306,7 +359,14 @@ async function loadSubscriptions() {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-pencil"
-                @click="openEdit(row.original.id, row.original.title, row.original.url)"
+                @click="
+                  openEdit(
+                    row.original.id,
+                    row.original.title,
+                    row.original.url,
+                    row.original.fetchIntervalMinutes ?? null,
+                  )
+                "
               />
             </UTooltip>
             <UTooltip text="Удалить подписку">
@@ -331,6 +391,20 @@ async function loadSubscriptions() {
           </UFormField>
           <UFormField label="Ссылка на VPN подписку" required>
             <UInput v-model="formUrl" class="w-full" placeholder="https://sub.avtlk.ru/sub/..." />
+          </UFormField>
+          <UFormField
+            label="Автообновление коннектов"
+            description="Интервал в минутах (не реже одного раза в 5 минут). Оставьте пустым — обновление только кнопкой «Получить коннекты». На сервере используется очередь BullMQ с тем же алгоритмом синхронизации."
+            class="w-full"
+          >
+            <UInput
+              v-model="formFetchIntervalMinutes"
+              type="number"
+              :min="5"
+              :max="10080"
+              class="w-full tabular-nums"
+              placeholder="Пусто = только вручную"
+            />
           </UFormField>
         </div>
       </template>

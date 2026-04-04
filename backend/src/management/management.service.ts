@@ -103,8 +103,7 @@ export class ManagementService implements OnModuleInit {
   ): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
-    const normKey = (s: string) =>
-      s.trim().normalize('NFC').toLowerCase();
+    const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
     for (const g of user.groupNames ?? []) {
       const t = g.trim();
       if (!t) {
@@ -124,8 +123,7 @@ export class ManagementService implements OnModuleInit {
   private dedupeOrderedInputGroupNames(names: string[]): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
-    const normKey = (s: string) =>
-      s.trim().normalize('NFC').toLowerCase();
+    const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
     for (const g of names) {
       const t = g.trim();
       if (!t) {
@@ -200,7 +198,9 @@ export class ManagementService implements OnModuleInit {
       groupNames: user.groupNames,
     });
     const memSet = new Set(membership);
-    const parsed = this.parseStoredSubscriptionPrefs(user.subscriptionGroupPrefs);
+    const parsed = this.parseStoredSubscriptionPrefs(
+      user.subscriptionGroupPrefs,
+    );
     if (!parsed) {
       return membership.map((name) => ({ name, include: true }));
     }
@@ -257,9 +257,9 @@ export class ManagementService implements OnModuleInit {
   }
 
   /** Не отдаём subscriptionAccessToken в API панели. */
-  private omitSubscriptionAccessToken<T extends { subscriptionAccessToken?: string | null }>(
-    row: T,
-  ): Omit<T, 'subscriptionAccessToken'> {
+  private omitSubscriptionAccessToken<
+    T extends { subscriptionAccessToken?: string | null },
+  >(row: T): Omit<T, 'subscriptionAccessToken'> {
     const { subscriptionAccessToken: _omit, ...rest } = row;
     return rest;
   }
@@ -311,9 +311,7 @@ export class ManagementService implements OnModuleInit {
     const connectCount = new Map<string, number>(
       groups.map((g) => [g.name, 0]),
     );
-    const userCount = new Map<string, number>(
-      groups.map((g) => [g.name, 0]),
-    );
+    const userCount = new Map<string, number>(groups.map((g) => [g.name, 0]));
     for (const c of activeConnects) {
       for (const gn of c.groupNames) {
         if (nameSet.has(gn)) {
@@ -388,9 +386,7 @@ export class ManagementService implements OnModuleInit {
     };
   }
 
-  async updatePanelGlobalSettings(
-    dto: UpdatePanelGlobalSettingsDto,
-  ): Promise<{
+  async updatePanelGlobalSettings(dto: UpdatePanelGlobalSettingsDto): Promise<{
     subscriptionAnnounce: string | null;
     profileUpdateInterval: number | null;
     telegramBotSecret: string | null;
@@ -594,7 +590,9 @@ export class ManagementService implements OnModuleInit {
     user: PanelUser | null,
   ): string | null {
     const base = baseAnnounce?.trim() ?? '';
-    const suffix = user ? this.buildSubscriptionGroupAnnounceSuffix(user) : null;
+    const suffix = user
+      ? this.buildSubscriptionGroupAnnounceSuffix(user)
+      : null;
     if (!suffix && !base) {
       return null;
     }
@@ -638,9 +636,7 @@ export class ManagementService implements OnModuleInit {
               : globalRow?.subscriptionAnnounce;
           const gi = g.profileUpdateInterval;
           effectiveInterval =
-            typeof gi === 'number' &&
-            Number.isFinite(gi) &&
-            Math.floor(gi) >= 1
+            typeof gi === 'number' && Number.isFinite(gi) && Math.floor(gi) >= 1
               ? gi
               : globalRow?.profileUpdateInterval;
           break;
@@ -663,8 +659,7 @@ export class ManagementService implements OnModuleInit {
     user: PanelUser,
   ): Promise<string[]> {
     const primaries = this.orderedUniquePanelUserGroupNames(user);
-    const allDisplayed =
-      await this.collectPublicDisplayGroupNames(primaries);
+    const allDisplayed = await this.collectPublicDisplayGroupNames(primaries);
     const seen = new Set<string>();
     const out: string[] = [];
     const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
@@ -690,9 +685,7 @@ export class ManagementService implements OnModuleInit {
   }
 
   /** Запись Group по имени из панели (точное, NFC и регистронезависимое совпадение с Group.name). */
-  private async findGroupRowByPanelGroupName(
-    panelGroupName: string,
-  ): Promise<{
+  private async findGroupRowByPanelGroupName(panelGroupName: string): Promise<{
     subscriptionAnnounce: string | null;
     profileUpdateInterval: number | null;
   } | null> {
@@ -717,12 +710,9 @@ export class ManagementService implements OnModuleInit {
       },
     });
     const row =
+      groups.find((g) => g.name.trim().normalize('NFC') === normalizedTarget) ??
       groups.find(
-        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
-      ) ??
-      groups.find(
-        (g) =>
-          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+        (g) => g.name.trim().normalize('NFC').toLowerCase() === targetLower,
       );
     if (!row) {
       return null;
@@ -791,7 +781,9 @@ export class ManagementService implements OnModuleInit {
       throw new NotFoundException('Группа не найдена');
     }
     if (isReservedUngroupedConnectGroupName(group.name)) {
-      throw new BadRequestException('Служебную группу «Без группы» нельзя удалить');
+      throw new BadRequestException(
+        'Служебную группу «Без группы» нельзя удалить',
+      );
     }
 
     await this.prisma.group.delete({ where: { id } });
@@ -933,7 +925,9 @@ export class ManagementService implements OnModuleInit {
   /**
    * POST https://crypto.happ.su/api-v2.php — в ответе JSON с полем encrypted_link (happ://…).
    */
-  private async fetchHappCryptoLink(subscriptionPageUrl: string): Promise<string | null> {
+  private async fetchHappCryptoLink(
+    subscriptionPageUrl: string,
+  ): Promise<string | null> {
     const apiUrl = (
       this.config.get<string>('HAPP_CRYPTO_API_URL') ??
       'https://crypto.happ.su/api-v2.php'
@@ -967,7 +961,9 @@ export class ManagementService implements OnModuleInit {
       if (link.startsWith('happ://')) {
         return link;
       }
-      this.logger.warn('HAPP crypto API: в ответе нет валидного encrypted_link');
+      this.logger.warn(
+        'HAPP crypto API: в ответе нет валидного encrypted_link',
+      );
       return null;
     } catch (e) {
       this.logger.warn(
@@ -1158,7 +1154,9 @@ export class ManagementService implements OnModuleInit {
       where: { id: { in: uniq } },
     });
     if (found !== uniq.length) {
-      throw new BadRequestException('Один или несколько пользователей не найдены');
+      throw new BadRequestException(
+        'Один или несколько пользователей не найдены',
+      );
     }
 
     const hasPatch =
@@ -1343,9 +1341,7 @@ export class ManagementService implements OnModuleInit {
         select: { id: true, groupNames: true },
       });
       for (const u of users) {
-        const withoutOld = u.groupNames.filter(
-          (g) => g.trim() !== restrict,
-        );
+        const withoutOld = u.groupNames.filter((g) => g.trim() !== restrict);
         const merged = [...withoutOld];
         if (!merged.some((g) => g.trim() === newG)) {
           merged.push(newG);
@@ -1397,7 +1393,11 @@ export class ManagementService implements OnModuleInit {
     await this.ensureConnect(id);
     return this.prisma.connect.update({
       where: { id },
-      data: { groupNames: Array.from(new Set(groupNames.map((n) => n.trim()).filter(Boolean))) },
+      data: {
+        groupNames: Array.from(
+          new Set(groupNames.map((n) => n.trim()).filter(Boolean)),
+        ),
+      },
     });
   }
 
@@ -1510,9 +1510,7 @@ export class ManagementService implements OnModuleInit {
     subscriptionDelivered: true;
   }> {
     const entries = this.getEffectiveSubscriptionGroupEntries(user);
-    const includedNames = entries
-      .filter((e) => e.include)
-      .map((e) => e.name);
+    const includedNames = entries.filter((e) => e.include).map((e) => e.name);
 
     const profileTitle = (
       await this.resolveSubscriptionProfileTitleForPanelUser(user)
@@ -1712,7 +1710,9 @@ export class ManagementService implements OnModuleInit {
   async savePublicSubscriptionGroupPrefs(
     code: string,
     groups: Array<{ name: string; include: boolean }>,
-  ): Promise<{ subscriptionGroups: Array<{ name: string; include: boolean }> }> {
+  ): Promise<{
+    subscriptionGroups: Array<{ name: string; include: boolean }>;
+  }> {
     const user = await this.findPanelUserByCode(code);
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
@@ -1749,9 +1749,7 @@ export class ManagementService implements OnModuleInit {
     }
     for (const m of membership) {
       if (!incoming.some((g) => g.name === m)) {
-        throw new BadRequestException(
-          `В списке отсутствует группа: ${m}`,
-        );
+        throw new BadRequestException(`В списке отсутствует группа: ${m}`);
       }
     }
 
@@ -1792,7 +1790,8 @@ export class ManagementService implements OnModuleInit {
       ...publicUser
     } = user;
     const happCryptoUrl =
-      typeof rawHappCrypto === 'string' && rawHappCrypto.trim().startsWith('happ://')
+      typeof rawHappCrypto === 'string' &&
+      rawHappCrypto.trim().startsWith('happ://')
         ? rawHappCrypto.trim()
         : null;
 
@@ -1805,9 +1804,7 @@ export class ManagementService implements OnModuleInit {
 
     const sub =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
-        subscriptionGroups.find((e) => e.include)?.name ??
-          primaries[0] ??
-          '',
+        subscriptionGroups.find((e) => e.include)?.name ?? primaries[0] ?? '',
       )) ?? '';
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
@@ -1891,8 +1888,7 @@ export class ManagementService implements OnModuleInit {
           (g) => g.name.trim().normalize('NFC') === normalizedTarget,
         ) ??
         groups.find(
-          (g) =>
-            g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+          (g) => g.name.trim().normalize('NFC').toLowerCase() === targetLower,
         );
       const display = (row?.name ?? trimmed).trim();
       const dedupeKey = display.normalize('NFC').toLowerCase();
@@ -2038,7 +2034,9 @@ export class ManagementService implements OnModuleInit {
           where: { name: trimmed },
         });
         if (taken) {
-          throw new BadRequestException('Группа с таким названием уже существует');
+          throw new BadRequestException(
+            'Группа с таким названием уже существует',
+          );
         }
         await this.renameGroupTagEverywhere(oldName, trimmed);
         await this.syncSubscriptionPrefsAfterGroupRename(oldName, trimmed);
@@ -2119,7 +2117,9 @@ export class ManagementService implements OnModuleInit {
    * иначе FRONTEND_ORIGIN (чтобы всегда получать https://домен/sub/CODE при наличии env).
    */
   private subscriptionPublicOrigin(): string {
-    const primary = (this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? '')
+    const primary = (
+      this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? ''
+    )
       .trim()
       .replace(/\/$/, '');
     if (primary) {
@@ -2209,12 +2209,9 @@ export class ManagementService implements OnModuleInit {
       select: { name: true, subscriptionDisplayName: true },
     });
     const row =
+      groups.find((g) => g.name.trim().normalize('NFC') === normalizedTarget) ??
       groups.find(
-        (g) => g.name.trim().normalize('NFC') === normalizedTarget,
-      ) ??
-      groups.find(
-        (g) =>
-          g.name.trim().normalize('NFC').toLowerCase() === targetLower,
+        (g) => g.name.trim().normalize('NFC').toLowerCase() === targetLower,
       );
     const sub = row?.subscriptionDisplayName?.trim();
     return sub || null;
@@ -2242,4 +2239,3 @@ export class ManagementService implements OnModuleInit {
     return this.applyCustomNameToUri(raw, displayName);
   }
 }
-

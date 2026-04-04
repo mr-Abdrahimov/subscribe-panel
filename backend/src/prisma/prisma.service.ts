@@ -13,9 +13,7 @@ const MONGO_ENV_KEYS = [
   'DATABASE_URL',
 ] as const;
 
-function mergeMongoEnv(
-  config: ConfigService,
-): NodeJS.ProcessEnv {
+function mergeMongoEnv(config: ConfigService): NodeJS.ProcessEnv {
   const env = { ...process.env } as NodeJS.ProcessEnv;
   for (const k of MONGO_ENV_KEYS) {
     const v = config.get<string>(k);

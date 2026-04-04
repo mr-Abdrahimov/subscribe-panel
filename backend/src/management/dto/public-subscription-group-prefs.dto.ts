@@ -10,7 +10,10 @@ import {
 } from 'class-validator';
 
 export class PublicSubscriptionGroupPrefItemDto {
-  @ApiProperty({ description: 'Имя группы (как в PanelUser.groupNames)', example: 'Офис' })
+  @ApiProperty({
+    description: 'Имя группы (как в PanelUser.groupNames)',
+    example: 'Офис',
+  })
   @IsString()
   @MaxLength(200)
   name!: string;

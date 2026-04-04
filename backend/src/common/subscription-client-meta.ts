@@ -34,7 +34,13 @@ const HWID_HEADER_KEYS = [
   'hwid',
 ];
 
-const HWID_QUERY_KEYS = ['hwid', 'device_id', 'deviceid', 'deviceId', 'client_hwid'];
+const HWID_QUERY_KEYS = [
+  'hwid',
+  'device_id',
+  'deviceid',
+  'deviceId',
+  'client_hwid',
+];
 
 function headerString(
   headers: Request['headers'],
@@ -135,7 +141,9 @@ function collectExtraHeaders(req: Request): Record<string, string> {
 }
 
 /** Метаданные клиента при GET подписки (Happ и др.): IP, HWID, UA, query, X-* заголовки */
-export function extractSubscriptionAccessMeta(req: Request): SubscriptionAccessMeta {
+export function extractSubscriptionAccessMeta(
+  req: Request,
+): SubscriptionAccessMeta {
   const queryParams = normalizeQuery(req.query);
   const fromHeaders = pickHwidFromHeaders(req.headers);
   const fromQuery = pickHwidFromQuery(queryParams);

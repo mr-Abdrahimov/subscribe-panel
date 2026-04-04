@@ -12,7 +12,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { SubscriptionsService } from './subscriptions.service';
 
-@ApiTags('subscriptions')
+@ApiTags('Подписки')
 @Controller('subscriptions')
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
@@ -49,7 +49,11 @@ export class SubscriptionsController {
   }
 
   @Post(':id/fetch')
-  @ApiOperation({ summary: 'Получить и сохранить коннекты из подписки' })
+  @ApiOperation({
+    summary: 'Получить и сохранить коннекты из подписки (вручную)',
+    description:
+      'Скачивает подписку по URL, парсит строки коннектов и синхронизирует таблицу Connect по тем же правилам, что и фоновые задачи BullMQ (см. поле fetchIntervalMinutes).',
+  })
   @ApiResponse({
     status: 200,
     description: 'Коннекты успешно получены, сохранены и привязаны к подписке',

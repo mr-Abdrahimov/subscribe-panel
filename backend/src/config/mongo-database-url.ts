@@ -2,9 +2,7 @@
  * Строка подключения Prisma к MongoDB из MONGO_HOST / MONGO_PORT / MONGO_DATABASE.
  * Если MONGO_HOST не задан — используется DATABASE_URL (обратная совместимость).
  */
-export function buildMongoDatabaseUrl(
-  env: NodeJS.ProcessEnv,
-): string {
+export function buildMongoDatabaseUrl(env: NodeJS.ProcessEnv): string {
   const host = env.MONGO_HOST?.trim();
   if (host) {
     const port = (env.MONGO_PORT ?? '27017').trim();

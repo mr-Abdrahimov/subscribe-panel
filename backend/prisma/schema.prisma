@@ -32,6 +32,8 @@ model Subscription {
   title        String
   url          String
   lastFetchedAt DateTime?
+  /// Интервал автообновления коннектов (минуты), null — только вручную; минимум 5 на уровне API
+  fetchIntervalMinutes Int?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   connects     Connect[]

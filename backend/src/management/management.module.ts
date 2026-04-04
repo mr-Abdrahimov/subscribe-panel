@@ -7,4 +7,3 @@ import { ManagementService } from './management.service';
   providers: [ManagementService],
 })
 export class ManagementModule {}
-
