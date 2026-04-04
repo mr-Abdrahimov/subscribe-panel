@@ -8,12 +8,6 @@ definePageMeta({
 
 const settingsAccordionItems: AccordionItem[] = [
   {
-    label: 'Название',
-    icon: 'i-lucide-tags',
-    value: 'group-titles',
-    slot: 'group-titles',
-  },
-  {
     label: 'Приложения',
     icon: 'i-lucide-app-window',
     value: 'app-links',
@@ -26,15 +20,6 @@ const settingsAccordionItems: AccordionItem[] = [
     slot: 'telegram',
   },
 ];
-
-type GroupItem = {
-  id: string;
-  name: string;
-  createdAt: string;
-  subscriptionDisplayName: string | null;
-};
-
-const titleFieldSchema = yup.string().max(200, 'Не более 200 символов');
 
 const appLinkFormSchema = yup.object({
   name: yup.string().trim().required('Укажите название').max(120, 'Не более 120 символов'),
@@ -65,11 +50,6 @@ type AppLinkItem = {
 
 const config = useRuntimeConfig();
 const toast = useToast();
-const groups = ref<GroupItem[]>([]);
-const loading = ref(false);
-const draftTitles = ref<Record<string, string>>({});
-const savingId = ref<string | null>(null);
-
 const appLinks = ref<AppLinkItem[]>([]);
 const appLinksLoading = ref(false);
 const appLinkSavingId = ref<string | null>(null);
@@ -83,7 +63,6 @@ const telegramSaving = ref(false);
 const telegramTestLoading = ref(false);
 
 onMounted(() => {
-  loadGroups();
   loadAppLinks();
   loadTelegramSettings();
 });
@@ -157,30 +136,6 @@ async function sendTelegramTest() {
   } finally {
     telegramTestLoading.value = false;
   }
-}
-
-async function loadGroups() {
-  loading.value = true;
-  try {
-    const data = await $fetch<GroupItem[]>(`${config.public.apiBaseUrl}/groups`);
-    groups.value = data;
-    const next: Record<string, string> = {};
-    for (const g of data) {
-      next[g.id] = g.subscriptionDisplayName ?? '';
-    }
-    draftTitles.value = next;
-  } catch {
-    toast.add({ title: 'Не удалось загрузить группы', color: 'error' });
-  } finally {
-    loading.value = false;
-  }
-}
-
-function resetDraft(group: GroupItem) {
-  draftTitles.value = {
-    ...draftTitles.value,
-    [group.id]: group.subscriptionDisplayName ?? ''
-  };
 }
 
 async function loadAppLinks() {
@@ -271,34 +226,6 @@ async function createAppLink() {
   }
 }
 
-async function saveGroupTitle(groupId: string) {
-  const raw = draftTitles.value[groupId] ?? '';
-  try {
-    await titleFieldSchema.validate(raw);
-  } catch (e) {
-    if (e instanceof yup.ValidationError) {
-      toast.add({ title: e.message, color: 'error' });
-      return;
-    }
-    throw e;
-  }
-  const trimmed = raw.trim();
-  const toSend = trimmed === '' ? null : trimmed;
-
-  savingId.value = groupId;
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/groups/${groupId}`, {
-      method: 'PATCH',
-      body: { subscriptionDisplayName: toSend }
-    });
-    toast.add({ title: 'Настройки группы сохранены', color: 'success' });
-    await loadGroups();
-  } catch {
-    toast.add({ title: 'Не удалось сохранить настройки', color: 'error' });
-  } finally {
-    savingId.value = null;
-  }
-}
 </script>
 
 <template>
@@ -324,79 +251,6 @@ async function saveGroupTitle(groupId: string) {
         body: 'px-4 pb-4 pt-0 sm:px-5 border-t border-default/60',
       }"
     >
-      <template #group-titles-body>
-        <div class="space-y-4 pt-4">
-          <p class="text-sm text-muted">
-            Для пользователей панели по группе (<code class="text-xs font-mono text-highlighted">groupNames</code>): заголовок
-            <code class="text-xs font-mono text-highlighted">/sub/…</code>,
-            <code class="text-xs font-mono text-highlighted">profile-title</code>
-            и
-            <code class="text-xs font-mono text-highlighted">#profile-title</code>
-            в ленте Happ — из этого поля (до 25 символов). Имена серверов в URI — из коннектов.
-            Объявление Happ и интервал обновления настраиваются на странице «Группы».
-          </p>
-          <div v-if="loading" class="space-y-3">
-            <USkeleton class="h-24 w-full rounded-lg" />
-            <USkeleton class="h-24 w-full rounded-lg" />
-          </div>
-          <div v-else-if="groups.length === 0" class="text-sm text-muted">
-            Сначала создайте группы на странице «Группы».
-          </div>
-          <div v-else class="space-y-4">
-            <UCard
-              v-for="group in groups"
-              :key="group.id"
-            >
-              <template #header>
-                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p class="text-xs text-muted">
-                      Группа
-                    </p>
-                    <p class="font-medium">
-                      {{ group.name }}
-                    </p>
-                  </div>
-                </div>
-              </template>
-
-              <UFormField
-                label="Название для публичной подписки"
-                description="Профиль подписки: /sub и profile-title; имена в строках ленты — из коннектов"
-                class="w-full"
-              >
-                <UInput
-                  v-model="draftTitles[group.id]"
-                  class="w-full"
-                  placeholder="Например: Рабочий VPN"
-                />
-              </UFormField>
-
-              <template #footer>
-                <div class="flex flex-wrap gap-2 justify-end w-full">
-                  <UButton
-                    color="neutral"
-                    variant="ghost"
-                    size="sm"
-                    :disabled="savingId === group.id"
-                    @click="resetDraft(group)"
-                  >
-                    Сбросить
-                  </UButton>
-                  <UButton
-                    size="sm"
-                    :loading="savingId === group.id"
-                    @click="saveGroupTitle(group.id)"
-                  >
-                    Сохранить
-                  </UButton>
-                </div>
-              </template>
-            </UCard>
-          </div>
-        </div>
-      </template>
-
       <template #app-links-body>
         <div class="space-y-4 pt-4">
           <p class="text-sm text-muted">
