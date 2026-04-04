@@ -565,15 +565,30 @@ export class ManagementService implements OnModuleInit {
 
   /**
    * Суффикс объявления Happ: «Отображаются: …»; «Не отображаются: …» — только если есть скрытые группы.
+   * У каждой группы в скобках — число активных коннектов с этим тегом (как в ленте /public/sub).
    */
-  private buildSubscriptionGroupAnnounceSuffix(user: {
-    groupNames: string[];
-    subscriptionGroupPrefs: unknown;
-  }): string | null {
+  private async buildSubscriptionGroupAnnounceSuffixAsync(
+    user: PanelUser,
+  ): Promise<string | null> {
     const entries = this.getEffectiveSubscriptionGroupEntries(user);
     if (entries.length === 0) {
       return null;
     }
+    const namesForCount = [
+      ...new Set(
+        entries
+          .map((e) => e.name.trim())
+          .filter((n) => n.length > 0),
+      ),
+    ];
+    const counts: Record<string, number> =
+      namesForCount.length > 0
+        ? await this.countActiveConnectsByGroupNames(namesForCount)
+        : {};
+    const withCount = (n: string) => {
+      const c = counts[n] ?? 0;
+      return `${n} (${c})`;
+    };
     const shown = entries
       .filter((e) => e.include)
       .map((e) => e.name.trim())
@@ -582,20 +597,22 @@ export class ManagementService implements OnModuleInit {
       .filter((e) => !e.include)
       .map((e) => e.name.trim())
       .filter((n) => n.length > 0);
-    const shownLine = `Отображаются: ${shown.length > 0 ? shown.join(', ') : '—'}`;
+    const shownLine = `Отображаются: ${
+      shown.length > 0 ? shown.map(withCount).join(', ') : '—'
+    }`;
     if (hidden.length === 0) {
       return shownLine;
     }
-    return `${shownLine}\nНе отображаются: ${hidden.join(', ')}`;
+    return `${shownLine}\nНе отображаются: ${hidden.map(withCount).join(', ')}`;
   }
 
-  private mergeSubscriptionAnnounceWithGroupLists(
+  private async mergeSubscriptionAnnounceWithGroupLists(
     baseAnnounce: string | null | undefined,
     user: PanelUser | null,
-  ): string | null {
+  ): Promise<string | null> {
     const base = baseAnnounce?.trim() ?? '';
     const suffix = user
-      ? this.buildSubscriptionGroupAnnounceSuffix(user)
+      ? await this.buildSubscriptionGroupAnnounceSuffixAsync(user)
       : null;
     if (!suffix && !base) {
       return null;
@@ -648,7 +665,7 @@ export class ManagementService implements OnModuleInit {
       }
     }
 
-    const announcePlain = this.mergeSubscriptionAnnounceWithGroupLists(
+    const announcePlain = await this.mergeSubscriptionAnnounceWithGroupLists(
       effectiveAnnounce,
       user,
     );
