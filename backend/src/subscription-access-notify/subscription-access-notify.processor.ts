@@ -76,7 +76,7 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
 
     const r = await this.telegramService.sendMessage(token, chatId, text, {
       disableNotification: true,
-      parseMode: 'MarkdownV2',
+      markdownV2: true,
     });
     if (!r.ok) {
       this.log.warn(`Telegram (subscription access): ${r.error}`);
