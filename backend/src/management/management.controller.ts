@@ -359,7 +359,7 @@ export class ManagementController {
           ? String(uaHeader[0]).trim()
           : '';
 
-    let subscriptionProfileTitle = 'Нет подключений';
+    let subscriptionProfileTitle = '❌ Ошибка: Нет подключений';
     if (user) {
       subscriptionProfileTitle =
         await this.managementService.resolveSubscriptionProfileTitleForPanelUser(
@@ -401,7 +401,7 @@ export class ManagementController {
         user.id,
         user.code,
         subscriptionProfileTitle,
-        'Только Cripto',
+        '❌ Ошибка: Режим Только Cripto',
         announceMetaLine,
         profileUpdateIntervalMetaLine,
       );
@@ -422,7 +422,7 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
-          'Отключите HWID',
+          '❌ Ошибка: Отключите HWID',
           announceMetaLine,
           profileUpdateIntervalMetaLine,
         );
@@ -448,7 +448,7 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
-          'Превышен лимит HWID',
+          '❌ Ошибка: Превышен лимит HWID',
           announceMetaLine,
           profileUpdateIntervalMetaLine,
         );

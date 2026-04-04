@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizedConnectIdentity } from './connect-identity.util';
+import {
+  normalizedConnectIdentity,
+  prepareConnectUriForParse,
+  vlessCoreIdentityForMatching,
+} from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
@@ -73,10 +77,15 @@ export class SubscriptionsService {
         originalName: true,
         sortOrder: true,
         protocol: true,
+        identityKey: true,
+        createdAt: true,
       },
     });
 
-    /** Последняя строка в подписке для каждого нормализованного ключа (одинаковые по сути URI не дублируем). */
+    /**
+     * Одна запись на identity: дубликаты строк в подписке схлопываем (последняя строка побеждает).
+     * Порядок строк в файле подписки не влияет на «удалить/создать»: только на то, какое raw оставить.
+     */
     const incomingByIdentity = new Map<
       string,
       {
@@ -94,68 +103,19 @@ export class SubscriptionsService {
       });
     }
 
-    const incomingIdentities = new Set(incomingByIdentity.keys());
-
-    const existingByIdentity = new Map<
-      string,
-      (typeof existingConnects)[number][]
-    >();
-    for (const c of existingConnects) {
-      const identity = normalizedConnectIdentity(c.raw);
-      const arr = existingByIdentity.get(identity);
-      if (arr) {
-        arr.push(c);
-      } else {
-        existingByIdentity.set(identity, [c]);
+    /**
+     * Явное сопоставление: коннект из подписки ищем в БД по текущему normalize(raw) ИЛИ по сохранённому identityKey.
+     * Раньше «лишние» определялись только по normalize(raw) — при расхождении с identityKey строка удалялась
+     * и создавалась заново с новым sortOrder (визуально «в конец»).
+     */
+    const matchedIds = new Set<string>();
+    const poolSorted = [...existingConnects].sort((a, b) => {
+      const byOrder = a.sortOrder - b.sortOrder;
+      if (byOrder !== 0) {
+        return byOrder;
       }
-    }
-
-    const toDeleteIds: string[] = [];
-    for (const [identityKey, group] of existingByIdentity) {
-      const sorted = [...group].sort((a, b) => a.sortOrder - b.sortOrder);
-      if (!incomingIdentities.has(identityKey)) {
-        toDeleteIds.push(...sorted.map((c) => c.id));
-        continue;
-      }
-      for (let i = 1; i < sorted.length; i += 1) {
-        toDeleteIds.push(sorted[i]!.id);
-      }
-    }
-
-    if (toDeleteIds.length > 0) {
-      await this.prisma.connect.deleteMany({
-        where: {
-          id: {
-            in: toDeleteIds,
-          },
-        },
-      });
-    }
-
-    /** После удаления устаревших и дублей по identity. */
-    const remainingConnects = await this.prisma.connect.findMany({
-      where: { subscriptionId: id },
-      select: {
-        id: true,
-        raw: true,
-        originalName: true,
-        sortOrder: true,
-        protocol: true,
-      },
+      return a.createdAt.getTime() - b.createdAt.getTime();
     });
-    const existingOneByIdentity = new Map<
-      string,
-      (typeof remainingConnects)[number]
-    >();
-    const remainingSorted = [...remainingConnects].sort(
-      (a, b) => a.sortOrder - b.sortOrder,
-    );
-    for (const c of remainingSorted) {
-      const identity = normalizedConnectIdentity(c.raw);
-      if (!existingOneByIdentity.has(identity)) {
-        existingOneByIdentity.set(identity, c);
-      }
-    }
 
     /**
      * Порядок на /connects — глобальный по sortOrder (все подписки в одной таблице).
@@ -168,7 +128,12 @@ export class SubscriptionsService {
     let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
 
     for (const [identity, incoming] of incomingByIdentity) {
-      const existing = existingOneByIdentity.get(identity);
+      const existing = poolSorted.find(
+        (c) =>
+          !matchedIds.has(c.id) &&
+          this.connectMatchesIdentity(c, identity, incoming.raw),
+      );
+
       if (!existing) {
         nextSortOrder += 1;
 
@@ -177,6 +142,7 @@ export class SubscriptionsService {
             originalName: incoming.originalName,
             name: incoming.originalName,
             raw: incoming.raw,
+            identityKey: identity,
             protocol: incoming.protocol,
             status: 'ACTIVE',
             hidden: false,
@@ -188,10 +154,13 @@ export class SubscriptionsService {
         continue;
       }
 
+      matchedIds.add(existing.id);
+
       const data: {
         raw?: string;
         originalName?: string;
         protocol?: string;
+        identityKey?: string;
       } = {};
       if (existing.raw !== incoming.raw) {
         data.raw = incoming.raw;
@@ -202,12 +171,24 @@ export class SubscriptionsService {
       if (existing.protocol !== incoming.protocol) {
         data.protocol = incoming.protocol;
       }
+      if ((existing.identityKey ?? '') !== identity) {
+        data.identityKey = identity;
+      }
       if (Object.keys(data).length > 0) {
         await this.prisma.connect.update({
           where: { id: existing.id },
           data,
         });
       }
+    }
+
+    const staleIds = existingConnects
+      .filter((c) => !matchedIds.has(c.id))
+      .map((c) => c.id);
+    if (staleIds.length > 0) {
+      await this.prisma.connect.deleteMany({
+        where: { id: { in: staleIds } },
+      });
     }
 
     const updatedSubscription = await this.prisma.subscription.update({
@@ -230,6 +211,29 @@ export class SubscriptionsService {
       total: connects.length,
       connects,
     };
+  }
+
+  /**
+   * Совпадение: полный ключ (normalize raw), сохранённый identityKey, либо ядро VLESS
+   * (uuid+хост+порт+reality/tls без «шумовых» query) — чтобы не пересоздавать запись и не сбрасывать groupNames.
+   */
+  private connectMatchesIdentity(
+    c: { raw: string; identityKey: string | null },
+    incomingIdentity: string,
+    incomingRaw: string,
+  ): boolean {
+    if (normalizedConnectIdentity(c.raw) === incomingIdentity) {
+      return true;
+    }
+    const stored = c.identityKey?.trim();
+    if (!!stored && stored === incomingIdentity) {
+      return true;
+    }
+    const coreRow = vlessCoreIdentityForMatching(c.raw);
+    const coreIn = vlessCoreIdentityForMatching(incomingRaw);
+    return (
+      coreRow !== null && coreIn !== null && coreRow.length > 0 && coreRow === coreIn
+    );
   }
 
   private async ensureExists(id: string) {
@@ -268,8 +272,9 @@ export class SubscriptionsService {
   }
 
   private extractConnectName(raw: string) {
+    const prepared = prepareConnectUriForParse(raw);
     try {
-      const hash = raw.split('#')[1];
+      const hash = prepared.split('#')[1];
       if (hash) {
         const decoded = decodeURIComponent(hash).trim();
         if (decoded.length > 0) {
@@ -277,7 +282,10 @@ export class SubscriptionsService {
         }
       }
 
-      const url = new URL(raw);
+      const baseOnly = prepared.includes('#')
+        ? prepared.slice(0, prepared.indexOf('#'))
+        : prepared;
+      const url = new URL(baseOnly);
       return url.hostname || 'Без названия';
     } catch {
       return 'Без названия';

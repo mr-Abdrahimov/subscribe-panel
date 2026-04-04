@@ -36,6 +36,8 @@ const subscriptions = ref<SubscriptionItem[]>([]);
 
 const isConnectsModalOpen = ref(false);
 const fetchedConnects = ref<FetchedConnect[]>([]);
+/** id подписки, для которой сейчас идёт POST /fetch */
+const fetchingSubscriptionId = ref<string | null>(null);
 const isDeleteConfirmOpen = ref(false);
 const deleteSubscriptionId = ref<string | null>(null);
 const columns: TableColumn<SubscriptionItem>[] = [
@@ -150,6 +152,7 @@ async function confirmRemoveItem() {
 }
 
 async function fetchConnects(id: string) {
+  fetchingSubscriptionId.value = id;
   try {
     const response = await $fetch<FetchConnectsResponse>(
       `${config.public.apiBaseUrl}/subscriptions/${id}/fetch`,
@@ -166,6 +169,8 @@ async function fetchConnects(id: string) {
     await loadSubscriptions();
   } catch {
     toast.add({ title: 'Не удалось получить коннекты', color: 'error' });
+  } finally {
+    fetchingSubscriptionId.value = null;
   }
 }
 
@@ -229,12 +234,23 @@ async function loadSubscriptions() {
 
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
-            <UTooltip text="Получить коннекты">
+            <UTooltip
+              :text="
+                fetchingSubscriptionId === row.original.id
+                  ? 'Загрузка коннектов…'
+                  : 'Получить коннекты'
+              "
+            >
               <UButton
                 size="xs"
                 color="primary"
                 variant="ghost"
                 icon="i-lucide-download"
+                :loading="fetchingSubscriptionId === row.original.id"
+                :disabled="
+                  fetchingSubscriptionId !== null &&
+                  fetchingSubscriptionId !== row.original.id
+                "
                 @click="fetchConnects(row.original.id)"
               />
             </UTooltip>

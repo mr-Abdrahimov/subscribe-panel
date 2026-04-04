@@ -43,6 +43,8 @@ model Connect {
   name           String
   groupNames     String[]     @default([])
   raw            String
+  /// Ключ normalizedConnectIdentity(raw) на момент последней синхронизации из подписки (устаревшие записи без поля сопоставляются только по normalize(raw))
+  identityKey    String?
   protocol       String
   status         ConnectStatus @default(ACTIVE)
   hidden         Boolean      @default(false)
