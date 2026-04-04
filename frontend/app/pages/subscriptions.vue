@@ -507,7 +507,7 @@ async function loadSubscriptions() {
           </UFormField>
           <UFormField
             label="HWID"
-            description="Если указано, к запросу добавляется заголовок X-HWID (то же поведение вручную и в очереди)."
+            description="Если указано, к запросу к саб ссылке добавляется заголовок X-HWID (то же поведение вручную и в очереди)."
             class="w-full"
           >
             <UInput

@@ -76,7 +76,7 @@ export class UpdateSubscriptionDto {
 
   @ApiPropertyOptional({
     description:
-      'Заголовок User-Agent для GET по url. Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
+      'Заголовок User-Agent для GET по саб ссылке (url). Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
     nullable: true,
     maxLength: 2048,
   })
@@ -97,7 +97,7 @@ export class UpdateSubscriptionDto {
 
   @ApiPropertyOptional({
     description:
-      'Заголовок X-HWID для GET по url. Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
+      'Заголовок X-HWID для GET по саб ссылке (url). Передайте null — сбросить. Не передавайте поле — оставить как в БД.',
     nullable: true,
     maxLength: 512,
   })

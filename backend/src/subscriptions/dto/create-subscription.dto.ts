@@ -77,7 +77,7 @@ export class CreateSubscriptionDto {
 
   @ApiPropertyOptional({
     description:
-      'Необязательно. Заголовок User-Agent для HTTP GET по полю url при получении коннектов (вручную и через очередь).',
+      'Необязательно. Заголовок User-Agent для HTTP GET по саб ссылке (поле url) при получении коннектов (вручную и через очередь).',
     nullable: true,
     maxLength: 2048,
     example: 'Happ/1.0',
@@ -99,7 +99,7 @@ export class CreateSubscriptionDto {
 
   @ApiPropertyOptional({
     description:
-      'Необязательно. Заголовок X-HWID для HTTP GET по полю url при получении коннектов (вручную и через очередь).',
+      'Необязательно. Заголовок X-HWID для HTTP GET по саб ссылке (поле url) при получении коннектов (вручную и через очередь).',
     nullable: true,
     maxLength: 512,
     example: 'device-uuid-here',
