@@ -19,6 +19,45 @@ export function sliceAnnounceForHappSubscription(t: string): string {
 }
 
 /**
+ * Обрезка объявления до лимита Happ, стараясь сохранить хвост, начинающийся с «Отображаются:»
+ * (списки групп в подписке после основного текста).
+ */
+export function sliceAnnounceForHappPreservingGroupLines(t: string): string {
+  const max = HAPP_ANNOUNCE_MAX_CHARS;
+  const full = t.trim();
+  if (!full) {
+    return '';
+  }
+  const cp = [...full];
+  if (cp.length <= max) {
+    return full;
+  }
+  const marker = '\nОтображаются:';
+  const idx = full.indexOf(marker);
+  if (idx === -1) {
+    if (full.startsWith('Отображаются:')) {
+      return [...full].slice(0, max).join('');
+    }
+    return sliceAnnounceForHappSubscription(full);
+  }
+  const suffix = full.slice(idx + 1);
+  const suffixCp = [...suffix];
+  if (suffixCp.length >= max) {
+    return suffixCp.slice(0, max).join('');
+  }
+  const roomForBase = max - suffixCp.length - 1;
+  if (roomForBase <= 0) {
+    return [...suffix].slice(0, max).join('');
+  }
+  const basePart = full.slice(0, idx).trimEnd();
+  if (!basePart) {
+    return [...suffix].slice(0, max).join('');
+  }
+  const baseTrimmed = [...basePart].slice(0, roomForBase).join('');
+  return `${baseTrimmed}\n${suffix}`;
+}
+
+/**
  * Значение для HTTP-заголовка profile-title: plain ASCII или base64:… для UTF-8 (Happ).
  */
 export function formatHappProfileTitleHeaderValue(short: string): string {

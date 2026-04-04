@@ -13,6 +13,7 @@ import type { PanelUser } from '@prisma/client';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  sliceAnnounceForHappPreservingGroupLines,
   sliceAnnounceForHappSubscription,
   sliceProfileTitleForHappSubscription,
 } from '../common/profile-title-header';
@@ -424,7 +425,7 @@ export class ManagementService implements OnModuleInit {
     let announceMetaLine: string | null = null;
     const rawAnn = subscriptionAnnounceRaw?.trim();
     if (rawAnn) {
-      const text = sliceAnnounceForHappSubscription(rawAnn);
+      const text = sliceAnnounceForHappPreservingGroupLines(rawAnn);
       if (text) {
         const b64 = Buffer.from(text, 'utf-8').toString('base64');
         announceMetaLine = `#announce: base64:${b64}`;
@@ -504,6 +505,48 @@ export class ManagementService implements OnModuleInit {
   }
 
   /**
+   * Две строки в объявлении Happ: группы, коннекты которых в ленте, и отключённые.
+   */
+  private buildSubscriptionGroupAnnounceSuffix(user: {
+    groupNames: string[];
+    subscriptionGroupPrefs: unknown;
+  }): string | null {
+    const entries = this.getEffectiveSubscriptionGroupEntries(user);
+    if (entries.length === 0) {
+      return null;
+    }
+    const shown = entries
+      .filter((e) => e.include)
+      .map((e) => e.name.trim())
+      .filter((n) => n.length > 0);
+    const hidden = entries
+      .filter((e) => !e.include)
+      .map((e) => e.name.trim())
+      .filter((n) => n.length > 0);
+    const shownLine = `Отображаются: ${shown.length > 0 ? shown.join(', ') : '—'}`;
+    const hiddenLine = `Не отображаются: ${hidden.length > 0 ? hidden.join(', ') : '—'}`;
+    return `${shownLine}\n${hiddenLine}`;
+  }
+
+  private mergeSubscriptionAnnounceWithGroupLists(
+    baseAnnounce: string | null | undefined,
+    user: PanelUser | null,
+  ): string | null {
+    const base = baseAnnounce?.trim() ?? '';
+    const suffix = user ? this.buildSubscriptionGroupAnnounceSuffix(user) : null;
+    if (!suffix && !base) {
+      return null;
+    }
+    if (!suffix) {
+      return base;
+    }
+    if (!base) {
+      return suffix;
+    }
+    return `${base}\n${suffix}`;
+  }
+
+  /**
    * Мета для GET /public/sub: первая подходящая группа из порядка
    * (включённые из персональных настроек, затем прочие из ленты), наследование из глобальных настроек.
    */
@@ -544,7 +587,11 @@ export class ManagementService implements OnModuleInit {
       }
     }
 
-    return this.buildSubscriptionMetaLines(effectiveAnnounce, effectiveInterval);
+    const announcePlain = this.mergeSubscriptionAnnounceWithGroupLists(
+      effectiveAnnounce,
+      user,
+    );
+    return this.buildSubscriptionMetaLines(announcePlain, effectiveInterval);
   }
 
   /**
