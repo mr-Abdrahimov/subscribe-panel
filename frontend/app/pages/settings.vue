@@ -19,6 +19,12 @@ const settingsAccordionItems: AccordionItem[] = [
     value: 'app-links',
     slot: 'app-links',
   },
+  {
+    label: 'Телеграм',
+    icon: 'i-lucide-send',
+    value: 'telegram',
+    slot: 'telegram',
+  },
 ];
 
 type GroupItem = {
@@ -38,6 +44,16 @@ const appLinkFormSchema = yup.object({
     .required('Укажите ссылку')
     .max(2000, 'Не более 2000 символов'),
 });
+
+const telegramSecretSchema = yup.string().max(256, 'Не более 256 символов');
+const telegramGroupIdSchema = yup.string().max(64, 'Не более 64 символов');
+
+type PanelGlobalSettingsTelegram = {
+  subscriptionAnnounce: string | null;
+  profileUpdateInterval: number | null;
+  telegramBotSecret: string | null;
+  telegramGroupId: string | null;
+};
 
 type AppLinkItem = {
   id: string;
@@ -61,10 +77,87 @@ const appLinkDeletingId = ref<string | null>(null);
 const newAppLink = ref({ name: '', urlTemplate: '' });
 const newAppLinkSaving = ref(false);
 
+const telegramDraft = ref({ secret: '', groupId: '' });
+const telegramLoading = ref(false);
+const telegramSaving = ref(false);
+const telegramTestLoading = ref(false);
+
 onMounted(() => {
   loadGroups();
   loadAppLinks();
+  loadTelegramSettings();
 });
+
+async function loadTelegramSettings() {
+  telegramLoading.value = true;
+  try {
+    const data = await $fetch<PanelGlobalSettingsTelegram>(
+      `${config.public.apiBaseUrl}/panel-global-settings`,
+    );
+    telegramDraft.value = {
+      secret: data.telegramBotSecret ?? '',
+      groupId: data.telegramGroupId ?? '',
+    };
+  } catch {
+    toast.add({ title: 'Не удалось загрузить настройки Telegram', color: 'error' });
+  } finally {
+    telegramLoading.value = false;
+  }
+}
+
+async function saveTelegramSettings() {
+  try {
+    await telegramSecretSchema.validate(telegramDraft.value.secret);
+    await telegramGroupIdSchema.validate(telegramDraft.value.groupId);
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+  telegramSaving.value = true;
+  try {
+    await $fetch<PanelGlobalSettingsTelegram>(
+      `${config.public.apiBaseUrl}/panel-global-settings`,
+      {
+        method: 'PATCH',
+        body: {
+          telegramBotSecret: telegramDraft.value.secret.trim(),
+          telegramGroupId: telegramDraft.value.groupId.trim(),
+        },
+      },
+    );
+    toast.add({ title: 'Настройки Telegram сохранены', color: 'success' });
+    await loadTelegramSettings();
+  } catch {
+    toast.add({ title: 'Не удалось сохранить', color: 'error' });
+  } finally {
+    telegramSaving.value = false;
+  }
+}
+
+async function sendTelegramTest() {
+  telegramTestLoading.value = true;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-global-settings/telegram-test`, {
+      method: 'POST',
+      body: {},
+    });
+    toast.add({ title: 'Тестовое сообщение отправлено в Telegram', color: 'success' });
+  } catch (err: unknown) {
+    let msg = 'Проверьте токен, ID группы и что бот добавлен в чат';
+    if (err && typeof err === 'object' && 'data' in err) {
+      const d = (err as { data?: { message?: unknown } }).data?.message;
+      if (typeof d === 'string') {
+        msg = d;
+      }
+    }
+    toast.add({ title: 'Ошибка отправки', description: msg, color: 'error' });
+  } finally {
+    telegramTestLoading.value = false;
+  }
+}
 
 async function loadGroups() {
   loading.value = true;
@@ -408,6 +501,87 @@ async function saveGroupTitle(groupId: string) {
               </template>
             </UCard>
           </div>
+        </div>
+      </template>
+
+      <template #telegram-body>
+        <div class="space-y-4 pt-4">
+          <p class="text-sm text-muted">
+            Токен бота выдаётся в
+            <a
+              href="https://t.me/BotFather"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary underline underline-offset-2"
+            >@BotFather</a>.
+            ID группы (часто вида
+            <code class="text-xs font-mono text-highlighted">-100…</code>) можно узнать через ботов вроде
+            @userinfobot / @getidsbot, либо из ответов Bot API. Бот должен быть участником группы и иметь право писать сообщения.
+          </p>
+          <div v-if="telegramLoading" class="space-y-3">
+            <USkeleton class="h-14 w-full rounded-lg" />
+            <USkeleton class="h-14 w-full rounded-lg" />
+          </div>
+          <UCard v-else>
+            <div class="space-y-3">
+              <UFormField
+                label="TG Secret"
+                description="Секретный токен Telegram-бота (не публикуйте в открытый доступ)"
+                class="w-full"
+              >
+                <UInput
+                  v-model="telegramDraft.secret"
+                  type="password"
+                  class="w-full font-mono text-sm"
+                  autocomplete="off"
+                  placeholder="123456789:AAH…"
+                />
+              </UFormField>
+              <UFormField
+                label="TG group ID"
+                description="Чат или группа, куда бот будет отправлять сообщения"
+                class="w-full"
+              >
+                <UInput
+                  v-model="telegramDraft.groupId"
+                  class="w-full font-mono text-sm"
+                  autocomplete="off"
+                  placeholder="-1001234567890"
+                />
+              </UFormField>
+            </div>
+            <template #footer>
+              <div class="flex flex-wrap items-center gap-2 justify-end w-full">
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="telegramSaving || telegramTestLoading"
+                  @click="loadTelegramSettings"
+                >
+                  Сбросить из сервера
+                </UButton>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  :loading="telegramTestLoading"
+                  :disabled="telegramSaving || telegramLoading"
+                  @click="sendTelegramTest"
+                >
+                  Отправить тест
+                </UButton>
+                <UButton
+                  size="sm"
+                  :loading="telegramSaving"
+                  :disabled="telegramTestLoading || telegramLoading"
+                  @click="saveTelegramSettings"
+                >
+                  Сохранить
+                </UButton>
+              </div>
+            </template>
+          </UCard>
         </div>
       </template>
     </UAccordion>

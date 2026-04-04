@@ -7,6 +7,7 @@ import { ConnectsModule } from './connects/connects.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ManagementModule } from './management/management.module';
+import { TelegramModule } from './telegram/telegram.module';
 import { RedisModule } from './redis/redis.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { RedisModule } from './redis/redis.module';
     AuthModule,
     SubscriptionsModule,
     ConnectsModule,
+    TelegramModule,
     ManagementModule,
   ],
   controllers: [AppController],

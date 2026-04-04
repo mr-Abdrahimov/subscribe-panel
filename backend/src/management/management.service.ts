@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import type { PanelUser } from '@prisma/client';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../telegram/telegram.service';
 import {
   sliceAnnounceForHappPreservingGroupLines,
   sliceAnnounceForHappSubscription,
@@ -31,6 +32,7 @@ export class ManagementService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly telegramService: TelegramService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -357,14 +359,21 @@ export class ManagementService implements OnModuleInit {
     return { success: true };
   }
 
-  /** Настройки панели для подписки Happ */
+  /** Настройки панели для подписки Happ и уведомлений Telegram */
   async getPanelGlobalSettings(): Promise<{
     subscriptionAnnounce: string | null;
     profileUpdateInterval: number | null;
+    telegramBotSecret: string | null;
+    telegramGroupId: string | null;
   }> {
     const row = await this.prisma.panelGlobalSettings.findUnique({
       where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
-      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+      select: {
+        subscriptionAnnounce: true,
+        profileUpdateInterval: true,
+        telegramBotSecret: true,
+        telegramGroupId: true,
+      },
     });
     const h = row?.profileUpdateInterval;
     const intervalOk =
@@ -374,6 +383,8 @@ export class ManagementService implements OnModuleInit {
     return {
       subscriptionAnnounce: row?.subscriptionAnnounce?.trim() || null,
       profileUpdateInterval: intervalOk,
+      telegramBotSecret: row?.telegramBotSecret?.trim() || null,
+      telegramGroupId: row?.telegramGroupId?.trim() || null,
     };
   }
 
@@ -382,10 +393,14 @@ export class ManagementService implements OnModuleInit {
   ): Promise<{
     subscriptionAnnounce: string | null;
     profileUpdateInterval: number | null;
+    telegramBotSecret: string | null;
+    telegramGroupId: string | null;
   }> {
     const patch: {
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
+      telegramBotSecret?: string | null;
+      telegramGroupId?: string | null;
     } = {};
 
     if (dto.subscriptionAnnounce !== undefined) {
@@ -399,6 +414,14 @@ export class ManagementService implements OnModuleInit {
           ? null
           : Math.min(8760, Math.max(1, Math.floor(dto.profileUpdateInterval)));
     }
+    if (dto.telegramBotSecret !== undefined) {
+      const t = dto.telegramBotSecret.trim();
+      patch.telegramBotSecret = t === '' ? null : t;
+    }
+    if (dto.telegramGroupId !== undefined) {
+      const t = dto.telegramGroupId.trim();
+      patch.telegramGroupId = t === '' ? null : t;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.getPanelGlobalSettings();
@@ -410,10 +433,43 @@ export class ManagementService implements OnModuleInit {
         id: ManagementService.PANEL_GLOBAL_SETTINGS_ID,
         subscriptionAnnounce: patch.subscriptionAnnounce ?? null,
         profileUpdateInterval: patch.profileUpdateInterval ?? null,
+        telegramBotSecret: patch.telegramBotSecret ?? null,
+        telegramGroupId: patch.telegramGroupId ?? null,
       },
       update: patch,
     });
     return this.getPanelGlobalSettings();
+  }
+
+  /**
+   * Проверка Telegram: отправить тестовое сообщение в сохранённый chat id.
+   */
+  async sendTelegramTestMessage(text?: string): Promise<{
+    ok: true;
+    messageId: number;
+  }> {
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
+      select: { telegramBotSecret: true, telegramGroupId: true },
+    });
+    const token = row?.telegramBotSecret?.trim() ?? '';
+    const chatId = row?.telegramGroupId?.trim() ?? '';
+    if (!token || !chatId) {
+      throw new BadRequestException(
+        'Сохраните TG Secret и TG group ID в настройках панели',
+      );
+    }
+    const body =
+      typeof text === 'string' && text.trim().length > 0
+        ? text.trim()
+        : 'Subscribe Panel — тест: бот настроен.';
+    const r = await this.telegramService.sendMessage(token, chatId, body);
+    if (!r.ok) {
+      throw new BadRequestException(
+        `Не удалось отправить в Telegram: ${r.error}`,
+      );
+    }
+    return { ok: true, messageId: r.messageId };
   }
 
   /**

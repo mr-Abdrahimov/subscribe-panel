@@ -31,11 +31,11 @@ function onNavigate() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-[100dvh] flex-col p-3 sm:p-4 lg:p-5">
+  <div class="flex h-full min-h-0 max-h-[100dvh] flex-col p-3 sm:p-4 lg:p-5">
     <div
-      class="flex min-h-0 flex-1 flex-col rounded-2xl border border-[var(--cosmic-border)] bg-[var(--cosmic-glass)] p-4 shadow-none backdrop-blur-xl"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--cosmic-border)] bg-[var(--cosmic-glass)] p-4 shadow-none backdrop-blur-xl"
     >
-      <div class="mb-4 space-y-4">
+      <div class="mb-4 shrink-0 space-y-4">
         <div class="flex items-start justify-between gap-3">
           <div class="flex min-w-0 items-center gap-3">
             <div
@@ -61,7 +61,9 @@ function onNavigate() {
         <div class="h-px w-full bg-[var(--cosmic-border)] opacity-80" />
       </div>
 
-      <nav class="flex min-h-0 flex-1 flex-col gap-1.5">
+      <nav
+        class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
+      >
         <UButton
           v-for="item in menuItems"
           :key="item.to"
@@ -77,7 +79,9 @@ function onNavigate() {
         </UButton>
       </nav>
 
-      <div class="mt-4 space-y-1.5 border-t border-[var(--cosmic-border)] pt-4">
+      <div
+        class="mt-4 shrink-0 space-y-1.5 border-t border-[var(--cosmic-border)] pt-4"
+      >
         <UButton
           block
           color="primary"

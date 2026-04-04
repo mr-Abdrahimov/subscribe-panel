@@ -35,6 +35,7 @@ import { CreatePanelUserDto } from './dto/create-panel-user.dto';
 import { PublicSubscriptionGroupPrefsDto } from './dto/public-subscription-group-prefs.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
+import { TelegramTestMessageDto } from './dto/telegram-test-message.dto';
 import { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
 import { ManagementService } from './management.service';
 
@@ -49,7 +50,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить глобальные настройки панели',
     description:
-      'Значения по умолчанию для объявления и интервала автообновления Happ: используются в GET /public/sub/:code, если у соответствующей группы пользователя поля не заданы (наследование). Пер-групповые значения настраиваются в PATCH /groups/:id.',
+      'Значения по умолчанию для объявления и интервала автообновления Happ: используются в GET /public/sub/:code, если у соответствующей группы пользователя поля не заданы (наследование). Пер-групповые значения настраиваются в PATCH /groups/:id. Также настройки Telegram (токен бота и id группы для уведомлений).',
   })
   getPanelGlobalSettings() {
     return this.managementService.getPanelGlobalSettings();
@@ -59,11 +60,27 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить глобальные настройки панели',
     description:
-      'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
+      'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить); telegramBotSecret и telegramGroupId (пустая строка — сбросить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
   })
   @ApiResponse({ status: 200, description: 'Текущие настройки после сохранения' })
   updatePanelGlobalSettings(@Body() body: UpdatePanelGlobalSettingsDto) {
     return this.managementService.updatePanelGlobalSettings(body);
+  }
+
+  @Post('panel-global-settings/telegram-test')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Отправить тестовое сообщение в Telegram',
+    description:
+      'Использует сохранённые в панели telegramBotSecret и telegramGroupId. Тело опционально: поле text — текст сообщения (иначе стандартная фраза).',
+  })
+  @ApiResponse({ status: 200, description: 'Сообщение отправлено, в ответе messageId из Telegram' })
+  @ApiResponse({
+    status: 400,
+    description: 'Не заданы секрет/chat id или ошибка Telegram API',
+  })
+  sendTelegramTest(@Body() body: TelegramTestMessageDto) {
+    return this.managementService.sendTelegramTestMessage(body.text);
   }
 
   @Get('groups')

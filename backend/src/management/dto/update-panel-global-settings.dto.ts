@@ -35,4 +35,24 @@ export class UpdatePanelGlobalSettingsDto {
   @Min(1)
   @Max(8760)
   profileUpdateInterval?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Токен Telegram-бота от @BotFather. Пустая строка — сбросить (не отправлять уведомления).',
+    maxLength: 256,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  telegramBotSecret?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'ID чата или группы для сообщений бота (число или строка, для супергрупп часто -100…). Пустая строка — сбросить.',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  telegramGroupId?: string;
 }

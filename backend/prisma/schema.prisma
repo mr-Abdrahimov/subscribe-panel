@@ -129,6 +129,10 @@ model PanelGlobalSettings {
   subscriptionAnnounce String?
   /// Интервал автообновления подписки в Happ (часы, целое ≥ 1): #profile-update-interval и заголовок profile-update-interval
   profileUpdateInterval Int?
+  /// Токен Telegram-бота (@BotFather); для отправки уведомлений в группу
+  telegramBotSecret    String?
+  /// ID чата или группы (например -100…), куда бот шлёт сообщения
+  telegramGroupId      String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
