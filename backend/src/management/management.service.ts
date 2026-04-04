@@ -17,6 +17,10 @@ import {
   sliceAnnounceForHappSubscription,
   sliceProfileTitleForHappSubscription,
 } from '../common/profile-title-header';
+import {
+  ensureUngroupedConnectGroupExists,
+  isReservedUngroupedConnectGroupName,
+} from '../common/ungrouped-connect-group';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 
 @Injectable()
@@ -288,6 +292,7 @@ export class ManagementService implements OnModuleInit {
 
   async listGroups() {
     await this.ensureGroupSortOrderBackfill();
+    await ensureUngroupedConnectGroupExists(this.prisma);
     const groups = await this.prisma.group.findMany({
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
@@ -677,6 +682,11 @@ export class ManagementService implements OnModuleInit {
     if (!name) {
       throw new BadRequestException('Имя группы не может быть пустым');
     }
+    if (isReservedUngroupedConnectGroupName(name)) {
+      throw new BadRequestException(
+        'Группа «Без группы» создаётся автоматически для коннектов без тегов и не добавляется вручную',
+      );
+    }
     const agg = await this.prisma.group.aggregate({
       _max: { sortOrder: true },
     });
@@ -723,6 +733,9 @@ export class ManagementService implements OnModuleInit {
     const group = await this.prisma.group.findUnique({ where: { id } });
     if (!group) {
       throw new NotFoundException('Группа не найдена');
+    }
+    if (isReservedUngroupedConnectGroupName(group.name)) {
+      throw new BadRequestException('Служебную группу «Без группы» нельзя удалить');
     }
 
     await this.prisma.group.delete({ where: { id } });
@@ -1955,6 +1968,16 @@ export class ManagementService implements OnModuleInit {
         throw new BadRequestException('Имя группы не может быть пустым');
       }
       if (trimmed !== oldName) {
+        if (isReservedUngroupedConnectGroupName(oldName)) {
+          throw new BadRequestException(
+            'Служебную группу «Без группы» нельзя переименовать',
+          );
+        }
+        if (isReservedUngroupedConnectGroupName(trimmed)) {
+          throw new BadRequestException(
+            'Имя «Без группы» зарезервировано системой',
+          );
+        }
         const taken = await this.prisma.group.findUnique({
           where: { name: trimmed },
         });

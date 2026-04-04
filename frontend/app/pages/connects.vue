@@ -10,6 +10,13 @@ definePageMeta({
   layout: 'dashboard'
 });
 
+/** Как на бэкенде: служебная группа для коннектов без явных тегов */
+const UNGROUPED_CONNECT_GROUP_NAME = 'Без группы';
+
+function isUngroupedGroupLabel(name: string): boolean {
+  return name === UNGROUPED_CONNECT_GROUP_NAME;
+}
+
 type ConnectRow = {
   id: string;
   originalName: string;
@@ -633,13 +640,18 @@ const columns: TableColumn<ConnectRow>[] = [
         </template>
 
         <template #groups-cell="{ row }">
-          <div class="flex flex-wrap gap-1">
+          <div class="flex flex-wrap gap-1.5 items-center">
             <UBadge
               v-for="group in getConnectGroups(row.original.id)"
               :key="`${row.original.id}-${group}`"
-              color="neutral"
-              variant="subtle"
+              :color="isUngroupedGroupLabel(group) ? 'warning' : 'neutral'"
+              :variant="isUngroupedGroupLabel(group) ? 'solid' : 'subtle'"
               size="sm"
+              :class="
+                isUngroupedGroupLabel(group)
+                  ? 'connects-ungrouped-badge font-semibold tracking-wide'
+                  : ''
+              "
             >
               {{ group }}
             </UBadge>
@@ -746,3 +758,32 @@ const columns: TableColumn<ConnectRow>[] = [
     </UModal>
   </div>
 </template>
+
+<style scoped>
+/* «Без группы» — явный акцент в таблице коннектов */
+.connects-ungrouped-badge {
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.65),
+    0 0 18px rgba(245, 158, 11, 0.45);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .connects-ungrouped-badge {
+    animation: connects-ungrouped-glow 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes connects-ungrouped-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(251, 191, 36, 0.55),
+      0 0 14px rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(253, 224, 71, 0.85),
+      0 0 22px rgba(251, 191, 36, 0.55);
+  }
+}
+</style>

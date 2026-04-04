@@ -10,6 +10,9 @@ definePageMeta({
   layout: 'dashboard'
 });
 
+/** Совпадает с backend: служебная группа для коннектов из подписки без тегов */
+const UNGROUPED_CONNECT_GROUP_NAME = 'Без группы';
+
 type GroupItem = {
   id: string;
   name: string;
@@ -41,7 +44,11 @@ const groupNameSchema = yup
   .string()
   .trim()
   .required('Укажите название')
-  .max(200, 'Не более 200 символов');
+  .max(200, 'Не более 200 символов')
+  .notOneOf(
+    [UNGROUPED_CONNECT_GROUP_NAME],
+    'Имя «Без группы» зарезервировано — группа создаётся автоматически',
+  );
 
 const titleFieldSchema = yup.string().max(200, 'Не более 200 символов');
 
@@ -261,12 +268,18 @@ async function addGroup() {
   }
 }
 
+function isSystemUngroupedGroup(row: Pick<GroupItem, 'name'>): boolean {
+  return row.name === UNGROUPED_CONNECT_GROUP_NAME;
+}
+
 async function saveEdit() {
   if (!editing.value) {
     return;
   }
   try {
-    await groupNameSchema.validate(editForm.value.name);
+    if (!isSystemUngroupedGroup(editing.value)) {
+      await groupNameSchema.validate(editForm.value.name);
+    }
     await titleFieldSchema.validate(editForm.value.subscriptionDisplayName);
     await announceSchema.validate(editForm.value.subscriptionAnnounce);
     let profileUpdateInterval: number | null = null;
@@ -482,7 +495,10 @@ async function saveDefaultInterval() {
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
       <p class="border-b border-default px-4 py-3 text-xs text-muted">
-        Порядок строк можно менять перетаскиванием за иконку слева (как на странице «Коннекты»).
+        Порядок строк можно менять перетаскиванием за иконку слева (как на странице «Коннекты»). Группа
+        «{{ UNGROUPED_CONNECT_GROUP_NAME }}» создаётся системой: в неё попадают новые коннекты после
+        «Получить коннекты» на странице «Подписки», если у строки в подписке ещё нет групп.
+        Переименовать или удалить её нельзя.
       </p>
       <UTable
         :data="groups"
@@ -497,6 +513,20 @@ async function saveDefaultInterval() {
             class="group-drag-handle inline-flex cursor-grab text-muted active:cursor-grabbing"
           >
             <UIcon name="i-lucide-grip-vertical" class="size-4" />
+          </div>
+        </template>
+
+        <template #name-cell="{ row }">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span class="font-medium truncate">{{ row.original.name }}</span>
+            <UBadge
+              v-if="isSystemUngroupedGroup(row.original)"
+              color="neutral"
+              variant="subtle"
+              size="xs"
+            >
+              Системная
+            </UBadge>
           </div>
         </template>
 
@@ -516,7 +546,13 @@ async function saveDefaultInterval() {
 
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-0.5">
-            <UTooltip text="Редактировать">
+            <UTooltip
+              :text="
+                isSystemUngroupedGroup(row.original)
+                  ? 'Настройки подписки (имя группы нельзя менять)'
+                  : 'Редактировать'
+              "
+            >
               <UButton
                 color="neutral"
                 variant="ghost"
@@ -527,7 +563,10 @@ async function saveDefaultInterval() {
                 @click="openEdit(row.original)"
               />
             </UTooltip>
-            <UTooltip text="Удалить">
+            <UTooltip
+              v-if="!isSystemUngroupedGroup(row.original)"
+              text="Удалить"
+            >
               <UButton
                 color="error"
                 variant="ghost"
@@ -612,13 +651,18 @@ async function saveDefaultInterval() {
           <UFormField
             label="Название группы"
             required
-            description="Используется как тег у коннектов и в списке групп пользователей. При смене имя обновится везде автоматически."
+            :description="
+              isSystemUngroupedGroup(editing)
+                ? 'Служебное имя; переименование через API запрещено.'
+                : 'Используется как тег у коннектов и в списке групп пользователей. При смене имя обновится везде автоматически.'
+            "
             class="w-full"
           >
             <UInput
               v-model="editForm.name"
               class="w-full"
               placeholder="Уникальное имя"
+              :readonly="isSystemUngroupedGroup(editing)"
             />
           </UFormField>
           <UFormField

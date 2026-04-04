@@ -1,4 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ensureUngroupedConnectGroupExists,
+  UNGROUPED_CONNECT_GROUP_NAME,
+} from '../common/ungrouped-connect-group';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   normalizedConnectIdentity,
@@ -64,6 +68,8 @@ export class SubscriptionsService {
     if (!subscription) {
       throw new NotFoundException('Подписка не найдена');
     }
+
+    await ensureUngroupedConnectGroupExists(this.prisma);
 
     const response = await fetch(subscription.url);
     const text = await response.text();
@@ -147,6 +153,7 @@ export class SubscriptionsService {
             status: 'ACTIVE',
             hidden: false,
             tags: [],
+            groupNames: [UNGROUPED_CONNECT_GROUP_NAME],
             sortOrder: nextSortOrder,
             subscriptionId: id,
           },

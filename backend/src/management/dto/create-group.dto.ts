@@ -14,7 +14,7 @@ import { HAPP_ANNOUNCE_MAX_CHARS } from '../../common/profile-title-header';
 export class CreateGroupDto {
   @ApiProperty({
     description:
-      'Уникальное имя группы (совпадает с элементами PanelUser.groupNames и тегами коннектов).',
+      'Уникальное имя группы (совпадает с элементами PanelUser.groupNames и тегами коннектов). Имя «Без группы» зарезервировано: служебная группа создаётся автоматически.',
     example: 'Основная',
     maxLength: 200,
   })

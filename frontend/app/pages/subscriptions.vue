@@ -27,6 +27,48 @@ type FetchConnectsResponse = {
 const config = useRuntimeConfig();
 const toast = useToast();
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** До 24 ч включительно — «N ч M мин назад»; старше — дата и время. */
+function formatLastFetchedLabel(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return iso;
+  }
+  const diff = Date.now() - then;
+  if (diff < 0) {
+    return new Date(iso).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (diff > MS_PER_DAY) {
+    return new Date(iso).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  const totalMin = Math.floor(diff / 60_000);
+  if (totalMin < 1) {
+    return 'только что';
+  }
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) {
+    return `${m} мин назад`;
+  }
+  if (m === 0) {
+    return `${h} ч назад`;
+  }
+  return `${h} ч ${m} мин назад`;
+}
+
 const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
@@ -226,8 +268,12 @@ async function loadSubscriptions() {
         </template>
 
         <template #lastFetchedAt-cell="{ row }">
-          <span v-if="row.original.lastFetchedAt" class="whitespace-nowrap">
-            {{ new Date(row.original.lastFetchedAt).toLocaleString('ru-RU') }}
+          <span
+            v-if="row.original.lastFetchedAt"
+            class="whitespace-nowrap tabular-nums"
+            :title="new Date(row.original.lastFetchedAt).toLocaleString('ru-RU')"
+          >
+            {{ formatLastFetchedLabel(row.original.lastFetchedAt) }}
           </span>
           <span v-else class="text-error">Не получили</span>
         </template>
