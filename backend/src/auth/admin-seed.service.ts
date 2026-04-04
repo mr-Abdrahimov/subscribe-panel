@@ -1,8 +1,36 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+
+async function withMongoWriteRetry<T>(
+  logger: Logger,
+  fn: () => Promise<T>,
+  attempts = 5,
+): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2034'
+      ) {
+        const delayMs = 40 * 2 ** i;
+        logger.warn(
+          `Конфликт записи MongoDB (P2034), повтор ${i + 1}/${attempts} через ${delayMs} мс`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw last;
+}
 
 @Injectable()
 export class AdminSeedService implements OnModuleInit {
@@ -30,30 +58,22 @@ export class AdminSeedService implements OnModuleInit {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
-
-    if (existingUser) {
-      await this.prisma.user.update({
+    await withMongoWriteRetry(this.logger, () =>
+      this.prisma.user.upsert({
         where: { email },
-        data: {
-          name,
-          password: passwordHash,
-          role: Role.ADMIN,
-        },
-      });
-    } else {
-      await this.prisma.user.create({
-        data: {
+        create: {
           email,
           name,
           password: passwordHash,
           role: Role.ADMIN,
         },
-      });
-    }
+        update: {
+          name,
+          password: passwordHash,
+          role: Role.ADMIN,
+        },
+      }),
+    );
 
     this.logger.log(`Admin user ensured: ${email}`);
   }

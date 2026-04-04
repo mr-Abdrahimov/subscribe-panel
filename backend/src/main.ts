@@ -17,6 +17,51 @@ import type { Queue } from 'bullmq';
 import { AppModule } from './app.module';
 import { SUBSCRIPTION_FETCH_QUEUE } from './subscription-fetch/subscription-fetch.constants';
 
+const BULL_BOARD_COOKIE = 'sp_bull_board_token';
+
+function readBullBoardTokenFromCookie(req: Request): string | undefined {
+  const raw = req.headers.cookie;
+  if (!raw) {
+    return undefined;
+  }
+  const prefix = `${BULL_BOARD_COOKIE}=`;
+  for (const part of raw.split(';')) {
+    const s = part.trim();
+    if (s.startsWith(prefix)) {
+      try {
+        return decodeURIComponent(s.slice(prefix.length));
+      } catch {
+        return s.slice(prefix.length);
+      }
+    }
+  }
+  return undefined;
+}
+
+function isBullBoardAuthOk(
+  req: Request,
+  res: Response,
+  expected: string,
+): boolean {
+  const q = req.query['token'];
+  const qs = typeof q === 'string' ? q : '';
+  const h = req.headers['x-bull-board-token'];
+  const ht = typeof h === 'string' ? h : Array.isArray(h) ? h[0] : '';
+  const fromCookie = readBullBoardTokenFromCookie(req);
+
+  if (qs === expected || ht === expected || fromCookie === expected) {
+    if (qs === expected || ht === expected) {
+      const v = encodeURIComponent(expected);
+      res.append(
+        'Set-Cookie',
+        `${BULL_BOARD_COOKIE}=${v}; Path=/admin/queues; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 3600}`,
+      );
+    }
+    return true;
+  }
+  return false;
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
@@ -65,11 +110,7 @@ async function bootstrap() {
         http.use(
           '/admin/queues',
           (req: Request, res: Response, next: NextFunction) => {
-            const q = req.query['token'];
-            const qs = typeof q === 'string' ? q : '';
-            const h = req.headers['x-bull-board-token'];
-            const ht = typeof h === 'string' ? h : Array.isArray(h) ? h[0] : '';
-            if (qs === token || ht === token) {
+            if (isBullBoardAuthOk(req, res, token)) {
               return next();
             }
             res.status(403).send('Forbidden');
@@ -94,7 +135,7 @@ async function bootstrap() {
     console.log(`📊 Bull Board:        ${appUrl}/admin/queues/`);
     if (config.get<string>('BULL_BOARD_TOKEN')?.trim()) {
       console.log(
-        '   Доступ: query ?token=… или заголовок x-bull-board-token (см. BULL_BOARD_TOKEN)',
+        '   Доступ: один раз откройте с ?token=… (ставится cookie для /admin/queues) или заголовок x-bull-board-token',
       );
     }
   }
