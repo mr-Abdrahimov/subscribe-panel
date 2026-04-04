@@ -54,6 +54,17 @@ const toast = useToast();
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+const LINK_TABLE_DISPLAY_MAX = 20;
+
+/** Короткая подпись ссылки в таблице; полный URL в href и title. */
+function truncateLinkLabel(s: string, max = LINK_TABLE_DISPLAY_MAX): string {
+  const t = s.trim();
+  if (t.length <= max) {
+    return t;
+  }
+  return `${t.slice(0, max)}…`;
+}
+
 /** До 24 ч включительно — «N ч M мин назад»; старше — дата и время. */
 function formatLastFetchedLabel(iso: string): string {
   const then = new Date(iso).getTime();
@@ -361,11 +372,12 @@ async function loadSubscriptions() {
         <template #url-cell="{ row }">
           <a
             :href="row.original.url"
+            :title="row.original.url"
             target="_blank"
             rel="noreferrer"
-            class="text-primary hover:underline break-all"
+            class="text-primary hover:underline font-mono text-xs"
           >
-            {{ row.original.url }}
+            {{ truncateLinkLabel(row.original.url) }}
           </a>
         </template>
 
@@ -373,11 +385,12 @@ async function loadSubscriptions() {
           <a
             v-if="row.original.sourceUrl"
             :href="row.original.sourceUrl"
+            :title="row.original.sourceUrl"
             target="_blank"
             rel="noreferrer"
-            class="text-primary hover:underline break-all text-sm"
+            class="text-primary hover:underline font-mono text-xs"
           >
-            {{ row.original.sourceUrl }}
+            {{ truncateLinkLabel(row.original.sourceUrl) }}
           </a>
           <span v-else class="text-muted text-sm">—</span>
         </template>
