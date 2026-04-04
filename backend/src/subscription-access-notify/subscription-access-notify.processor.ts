@@ -42,11 +42,11 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
     const p = job.data;
     const lines = [
       '📡 Новый HWID (первое успешное получение ленты)',
-      `Пользователь: *${p.panelUserName}*`,
+      `Пользователь: ${p.panelUserName}`,
       `IP: https://ipinfo.io/${p.clientIp ?? '—'}`,
       // `User-Agent: ${p.userAgent ?? '—'}`,
       `HWID: ${p.hwid ?? '—'}`,
-      `Referer: ${p.referer ?? '—'}`,
+      // `Referer: ${p.referer ?? '—'}`,
     ];
     // if (p.queryParamsJson) {
     //   lines.push(`Query: ${p.queryParamsJson}`);
