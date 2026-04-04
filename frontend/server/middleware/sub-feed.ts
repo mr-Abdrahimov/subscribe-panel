@@ -144,28 +144,6 @@ function buildPublicSubNestUrl(
   return `${apiRoot}/public/sub/${encodeURIComponent(code)}${forwardQuery ? `?${forwardQuery}` : ''}`;
 }
 
-/**
- * Браузер открывает /sub/… с Accept: text/html — ответ отдаёт Nuxt, Nest GET /public/sub не вызывается,
- * PanelUserAccessLog и очередь TG не срабатывают. Дублируем запрос в фоне с Accept: text/plain.
- */
-function fireBackgroundNestPublicSubForAccessLog(
-  apiRoot: string,
-  code: string,
-  event: H3Event,
-  url: URL,
-  isCryptoProxyPath: boolean,
-) {
-  const headers = buildPublicSubProxyHeaders(event);
-  headers.accept = 'text/plain, */*;q=0.1';
-  const endpoint = buildPublicSubNestUrl(apiRoot, code, url, isCryptoProxyPath);
-  void $fetch.raw(endpoint, { headers }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(
-      `[sub-feed] фоновый GET public/sub для лога/TG не удался: ${endpoint} — ${msg}`,
-    );
-  });
-}
-
 export default defineEventHandler(async (event) => {
   const url = getRequestURL(event);
   const runtime = useRuntimeConfig(event);
@@ -201,13 +179,7 @@ export default defineEventHandler(async (event) => {
 
   if (isHtmlRequest) {
     await attachProfileTitleHeadersForHtml(event, apiRoot, code);
-    fireBackgroundNestPublicSubForAccessLog(
-      apiRoot,
-      code,
-      event,
-      url,
-      isCryptoProxyPath,
-    );
+    /** Только HTML-страница: Nest GET /public/sub не вызываем — логи подписки и TG только при реальном запросе ленты (Happ, text/plain и т.д.). */
     return;
   }
   const proxyHeaders = buildPublicSubProxyHeaders(event);
