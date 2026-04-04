@@ -10,6 +10,7 @@ type SubscriptionItem = {
   id: string;
   title: string;
   url: string;
+  sourceUrl: string | null;
   createdAt: string;
   lastFetchedAt: string | null;
   fetchIntervalMinutes: number | null;
@@ -97,6 +98,7 @@ const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
 const formUrl = ref('');
+const formSourceUrl = ref('');
 /** Пустое — без автообновления (null в API). UInput type=number может отдавать number. */
 const formFetchIntervalMinutes = ref<string | number>('');
 const formUserAgent = ref('');
@@ -117,6 +119,10 @@ const columns: TableColumn<SubscriptionItem>[] = [
   },
   {
     accessorKey: 'url',
+    header: 'Саб ссылка'
+  },
+  {
+    accessorKey: 'sourceUrl',
     header: 'Ссылка'
   },
   {
@@ -145,6 +151,7 @@ function openCreate() {
   editId.value = null;
   formTitle.value = '';
   formUrl.value = '';
+  formSourceUrl.value = '';
   formFetchIntervalMinutes.value = '';
   formUserAgent.value = '';
   formHwid.value = '';
@@ -155,6 +162,7 @@ function openEdit(row: SubscriptionItem) {
   editId.value = row.id;
   formTitle.value = row.title;
   formUrl.value = row.url;
+  formSourceUrl.value = row.sourceUrl ?? '';
   formFetchIntervalMinutes.value =
     row.fetchIntervalMinutes != null ? String(row.fetchIntervalMinutes) : '';
   formUserAgent.value = row.userAgent ?? '';
@@ -171,7 +179,7 @@ async function submit() {
   }
 
   if (!value) {
-    toast.add({ title: 'Введите ссылку', color: 'error' });
+    toast.add({ title: 'Введите саб ссылку', color: 'error' });
     return;
   }
 
@@ -181,9 +189,23 @@ async function submit() {
       throw new Error('invalid');
     }
   } catch {
-    toast.add({ title: 'Некорректный формат ссылки', color: 'error' });
+    toast.add({ title: 'Некорректный формат саб ссылки', color: 'error' });
     return;
   }
+
+  const sourceTrim = formSourceUrl.value.trim();
+  if (sourceTrim !== '') {
+    try {
+      const sp = new URL(sourceTrim);
+      if (!(sp.protocol === 'http:' || sp.protocol === 'https:')) {
+        throw new Error('invalid');
+      }
+    } catch {
+      toast.add({ title: 'Некорректный формат ссылки-источника', color: 'error' });
+      return;
+    }
+  }
+  const sourceUrl = sourceTrim === '' ? null : sourceTrim;
 
   const rawInterval = String(formFetchIntervalMinutes.value ?? '').trim();
 
@@ -222,13 +244,27 @@ async function submit() {
     if (editId.value) {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions/${editId.value}`, {
         method: 'PATCH',
-        body: { title, url: value, fetchIntervalMinutes, userAgent, hwid },
+        body: {
+          title,
+          url: value,
+          sourceUrl,
+          fetchIntervalMinutes,
+          userAgent,
+          hwid,
+        },
       });
       toast.add({ title: 'Подписка обновлена', color: 'success' });
     } else {
       await $fetch(`${config.public.apiBaseUrl}/subscriptions`, {
         method: 'POST',
-        body: { title, url: value, fetchIntervalMinutes, userAgent, hwid },
+        body: {
+          title,
+          url: value,
+          sourceUrl,
+          fetchIntervalMinutes,
+          userAgent,
+          hwid,
+        },
       });
       toast.add({ title: 'Подписка добавлена', color: 'success' });
     }
@@ -333,6 +369,19 @@ async function loadSubscriptions() {
           </a>
         </template>
 
+        <template #sourceUrl-cell="{ row }">
+          <a
+            v-if="row.original.sourceUrl"
+            :href="row.original.sourceUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="text-primary hover:underline break-all text-sm"
+          >
+            {{ row.original.sourceUrl }}
+          </a>
+          <span v-else class="text-muted text-sm">—</span>
+        </template>
+
         <template #createdAt-cell="{ row }">
           <span class="whitespace-nowrap">
             {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}
@@ -411,8 +460,24 @@ async function loadSubscriptions() {
           <UFormField label="Название" required>
             <UInput v-model="formTitle" class="w-full" placeholder="Например: Основная VPN подписка" />
           </UFormField>
-          <UFormField label="Ссылка на VPN подписку" required>
+          <UFormField
+            label="Саб ссылка"
+            description="URL ленты подписки, по которому получаем коннекты"
+            required
+          >
             <UInput v-model="formUrl" class="w-full" placeholder="https://sub.avtlk.ru/sub/..." />
+          </UFormField>
+          <UFormField
+            label="Ссылка"
+            description="Откуда получена саб ссылка (чат, сайт, панель провайдера и т.д.)"
+            class="w-full"
+          >
+            <UInput
+              v-model="formSourceUrl"
+              class="w-full"
+              placeholder="https://…"
+              autocomplete="off"
+            />
           </UFormField>
           <UFormField
             label="Автообновление коннектов"
@@ -430,7 +495,7 @@ async function loadSubscriptions() {
           </UFormField>
           <UFormField
             label="User-Agent"
-            description="Если указано, при запросе к ссылке подписки (кнопка «Получить коннекты» и автообновление в очереди) отправляется заголовок User-Agent."
+            description="Если указано, при запросе к саб ссылке (кнопка «Получить коннекты» и автообновление в очереди) отправляется заголовок User-Agent."
             class="w-full"
           >
             <UInput

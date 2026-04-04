@@ -30,7 +30,10 @@ model User {
 model Subscription {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
   title        String
+  /// Саб ссылка: URL ленты, по которому получают коннекты
   url          String
+  /// Ссылка на источник (откуда получена саб ссылка), необязательно
+  sourceUrl    String?
   lastFetchedAt DateTime?
   /// Интервал автообновления коннектов (минуты), null — только вручную; минимум 5 на уровне API
   fetchIntervalMinutes Int?

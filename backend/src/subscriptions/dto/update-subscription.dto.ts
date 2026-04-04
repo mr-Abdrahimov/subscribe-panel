@@ -19,11 +19,36 @@ export class UpdateSubscriptionDto {
   title: string;
 
   @ApiProperty({
-    description: 'Ссылка на VPN подписку',
+    description: 'Саб ссылка: URL подписки для получения ленты (коннектов)',
     example: 'https://sub.avtlk.ru/sub/MuzMPA84wkb6NYhKnrxNcRKun',
   })
   @IsUrl({ require_protocol: true })
   url: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ссылка на источник (откуда получена саб ссылка). Передайте null — очистить. Не передавайте поле — оставить как в БД.',
+    nullable: true,
+    maxLength: 2048,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | null | undefined => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    const s = typeof value === 'string' ? value.trim() : String(value).trim();
+    if (s === '') {
+      return null;
+    }
+    return s;
+  })
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
+  sourceUrl?: string | null;
 
   @ApiPropertyOptional({
     description:

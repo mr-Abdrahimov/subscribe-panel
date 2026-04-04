@@ -52,7 +52,7 @@ export class SubscriptionsController {
   @ApiOperation({
     summary: 'Получить и сохранить коннекты из подписки (вручную)',
     description:
-      'Скачивает подписку по URL, парсит строки коннектов и синхронизирует таблицу Connect по тем же правилам, что и фоновые задачи BullMQ (см. поле fetchIntervalMinutes). Если у подписки заданы поля userAgent и/или hwid, к запросу добавляются заголовки User-Agent и X-HWID соответственно.',
+      'Скачивает подписку по саб ссылке (поле url), парсит строки коннектов и синхронизирует таблицу Connect по тем же правилам, что и фоновые задачи BullMQ (см. поле fetchIntervalMinutes). Если у подписки заданы поля userAgent и/или hwid, к запросу добавляются заголовки User-Agent и X-HWID соответственно.',
   })
   @ApiResponse({
     status: 200,

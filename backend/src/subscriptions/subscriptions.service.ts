@@ -47,6 +47,7 @@ export class SubscriptionsService {
       data: {
         title: dto.title,
         url: dto.url,
+        sourceUrl: dto.sourceUrl?.trim() || null,
         fetchIntervalMinutes: dto.fetchIntervalMinutes ?? null,
         userAgent: dto.userAgent?.trim() || null,
         hwid: dto.hwid?.trim() || null,
@@ -70,6 +71,10 @@ export class SubscriptionsService {
     }
     if (dto.hwid !== undefined) {
       data.hwid = dto.hwid === null ? null : dto.hwid.trim() || null;
+    }
+    if (dto.sourceUrl !== undefined) {
+      data.sourceUrl =
+        dto.sourceUrl === null ? null : dto.sourceUrl.trim() || null;
     }
 
     return this.prisma.subscription.update({
