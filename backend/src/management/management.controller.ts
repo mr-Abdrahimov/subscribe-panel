@@ -14,7 +14,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
   setHappHideSettingsHeader,
@@ -242,17 +242,18 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Логи обращений к подписке пользователя панели',
     description:
-      'Записи PanelUserAccessLog при GET /public/sub/:code: IP, User-Agent, HWID (если передан), query, success (полная лента или заглушка-отказ) и доп. заголовки. Сортировка по убыванию времени. Параметр limit — от 1 до 500, по умолчанию 200.',
+      'Записи PanelUserAccessLog при GET /public/sub/:code: IP, User-Agent, HWID (если передан), query, success (полная лента или заглушка-отказ) и доп. заголовки. Сортировка по убыванию времени. Параметр limit — от 1 до 500, по умолчанию 200. Параметр hwid (опционально) — отфильтровать записи с точным совпадением HWID. В ответе поле hwids — список уникальных непустых HWID по всем логам пользователя.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Объект: user (name, code) и logs — массив записей с полями id, clientIp, userAgent, hwid, accept, acceptLanguage, referer, queryParams, extraHeaders, createdAt.',
+      'Объект: user (name, code), hwids — массив строк HWID, logs — массив записей.',
   })
   @ApiResponse({ status: 404, description: 'Пользователь не найден' })
   listSubscriptionAccessLogs(
     @Param('id') id: string,
     @Query('limit') limitRaw?: string,
+    @Query('hwid') hwid?: string,
   ) {
     const parsed = parseInt(limitRaw ?? '', 10);
     const limit = Number.isNaN(parsed)
@@ -261,6 +262,7 @@ export class ManagementController {
     return this.managementService.listPanelUserSubscriptionAccessLogs(
       id,
       limit,
+      hwid,
     );
   }
 
@@ -268,14 +270,25 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Очистить логи обращений к подписке',
     description:
-      'Удаляет все записи PanelUserAccessLog пользователя. Счётчики уникальных HWID и последней активности в списке пользователей обновятся после перезагрузки списка.',
+      'Без query-параметра hwid — удаляет все записи PanelUserAccessLog пользователя. С параметром hwid — только записи с точным совпадением HWID (строка как в БД). Счётчики уникальных HWID и последней активности обновятся после перезагрузки списка пользователей.',
   })
   @ApiResponse({
     status: 200,
     description: 'Объект { deleted: число удалённых записей }',
   })
+  @ApiResponse({ status: 400, description: 'Передан пустой hwid' })
   @ApiResponse({ status: 404, description: 'Пользователь не найден' })
-  clearSubscriptionAccessLogs(@Param('id') id: string) {
+  clearSubscriptionAccessLogs(
+    @Param('id') id: string,
+    @Query('hwid') hwid?: string,
+  ) {
+    const t = hwid?.trim();
+    if (t) {
+      return this.managementService.deletePanelUserSubscriptionAccessLogsByHwid(
+        id,
+        t,
+      );
+    }
     return this.managementService.deleteAllPanelUserSubscriptionAccessLogs(id);
   }
 
@@ -381,7 +394,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала группы из PanelUser.groupNames по порядку, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для известного пользователя к тексту объявления с новой строки добавляется «Отображаются: …» (группы по персональным настройкам подписки; у каждой группы в скобках — число активных коннектов с этим тегом, как в ленте); строка «Не отображаются: …» с тем же форматом имён и чисел добавляется только если есть хотя бы одна группа, скрытая из ленты; усечение до лимита Happ (200 символов); для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты. При включённом TELEGRAM_NOTIFY_SUBSCRIPTION_ACCESS (по умолчанию) и настроенных в панели Telegram — та же информация ставится в очередь subscription-access-notify и отправляется в чат бесшумно (disable_notification).',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала группы из PanelUser.groupNames по порядку, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для известного пользователя к тексту объявления с новой строки добавляется «Отображаются: …» (группы по персональным настройкам подписки; у каждой группы в скобках — число активных коннектов с этим тегом, как в ленте); строка «Не отображаются: …» с тем же форматом имён и чисел добавляется только если есть хотя бы одна группа, скрытая из ленты; усечение до лимита Happ (200 символов); для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты. При включённом TELEGRAM_NOTIFY_SUBSCRIPTION_ACCESS (по умолчанию) и настроенных в панели Telegram — в очередь subscription-access-notify ставится задача только при первом успешном получении ленты с новым непустым HWID для данного пользователя панели (как при подсчёте уникальных HWID); сообщение в чат бесшумно (disable_notification).',
   })
   @ApiResponse({
     status: 200,

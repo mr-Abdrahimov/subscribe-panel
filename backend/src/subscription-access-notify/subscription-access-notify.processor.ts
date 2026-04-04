@@ -41,9 +41,8 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
 
     const p = job.data;
     const lines = [
-      '📡 Обращение к подписке (лог)',
+      '📡 Новый HWID (первое успешное получение ленты)',
       `Пользователь: ${p.panelUserName} (${p.panelUserCode})`,
-      `Результат: ${p.success ? 'полная лента' : 'заглушка / отказ'}`,
       `IP: ${p.clientIp ?? '—'}`,
       `User-Agent: ${p.userAgent ?? '—'}`,
       `HWID: ${p.hwid ?? '—'}`,

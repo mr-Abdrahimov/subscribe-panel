@@ -22,6 +22,7 @@ type AccessLogRow = {
 
 type LogsResponse = {
   user: { name: string; code: string };
+  hwids: string[];
   logs: AccessLogRow[];
 };
 
@@ -31,8 +32,21 @@ const toast = useToast();
 
 const panelUserId = computed(() => String(route.params.id ?? ''));
 
+/** null — все HWID */
+const filterHwid = ref<string | null>(null);
+
+const hwidFilterItems = computed(() => {
+  const rest = (payload.value?.hwids ?? []).map((h) => ({
+    label: h.length > 72 ? `${h.slice(0, 72)}…` : h,
+    id: h,
+  }));
+  return [{ label: 'Все HWID', id: null as string | null }, ...rest];
+});
+
 const loading = ref(true);
 const payload = ref<LogsResponse | null>(null);
+const deleteByHwidLoading = ref(false);
+const confirmDeleteHwidOpen = ref(false);
 const detailLog = ref<AccessLogRow | null>(null);
 const isDetailOpen = computed({
   get: () => detailLog.value !== null,
@@ -84,6 +98,19 @@ const columns: TableColumn<AccessLogRow>[] = [
   },
 ];
 
+function fetchErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const d = (err as { data?: { message?: unknown } }).data?.message;
+    if (typeof d === 'string') {
+      return d;
+    }
+    if (Array.isArray(d)) {
+      return d.join(', ');
+    }
+  }
+  return fallback;
+}
+
 async function load() {
   const id = panelUserId.value;
   if (!id) {
@@ -92,8 +119,13 @@ async function load() {
   loading.value = true;
   payload.value = null;
   try {
+    const q = new URLSearchParams({ limit: '300' });
+    const h = filterHwid.value?.trim();
+    if (h) {
+      q.set('hwid', h);
+    }
     payload.value = await $fetch<LogsResponse>(
-      `${config.public.apiBaseUrl}/panel-users/${encodeURIComponent(id)}/subscription-access-logs?limit=300`,
+      `${config.public.apiBaseUrl}/panel-users/${encodeURIComponent(id)}/subscription-access-logs?${q.toString()}`,
     );
   } catch {
     toast.add({ title: 'Не удалось загрузить логи', color: 'error' });
@@ -102,13 +134,50 @@ async function load() {
   }
 }
 
-onMounted(() => {
-  void load();
+watch(panelUserId, (_id, prev) => {
+  if (prev !== undefined) {
+    filterHwid.value = null;
+  }
 });
 
-watch(panelUserId, () => {
-  void load();
-});
+watch(
+  [panelUserId, filterHwid],
+  () => {
+    void load();
+  },
+  { immediate: true },
+);
+
+async function deleteLogsBySelectedHwid() {
+  const id = panelUserId.value;
+  const h = filterHwid.value?.trim();
+  if (!id || !h) {
+    return;
+  }
+  deleteByHwidLoading.value = true;
+  try {
+    const q = new URLSearchParams({ hwid: h });
+    const res = await $fetch<{ deleted: number }>(
+      `${config.public.apiBaseUrl}/panel-users/${encodeURIComponent(id)}/subscription-access-logs?${q.toString()}`,
+      { method: 'DELETE' },
+    );
+    toast.add({
+      title: 'Логи удалены',
+      description: `Удалено записей: ${res.deleted}`,
+      color: 'success',
+    });
+    confirmDeleteHwidOpen.value = false;
+    filterHwid.value = null;
+  } catch (e) {
+    toast.add({
+      title: 'Не удалось удалить логи',
+      description: fetchErrorMessage(e, ''),
+      color: 'error',
+    });
+  } finally {
+    deleteByHwidLoading.value = false;
+  }
+}
 
 function formatDt(iso: string) {
   try {
@@ -206,6 +275,35 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
     </div>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
+      <div
+        class="flex flex-col gap-3 border-b border-default p-4 sm:flex-row sm:flex-wrap sm:items-end"
+      >
+        <UFormField
+          label="HWID"
+          description="Показать только обращения с выбранным идентификатором устройства"
+          class="w-full min-w-0 sm:max-w-xl sm:flex-1"
+        >
+          <USelectMenu
+            v-model="filterHwid"
+            :items="hwidFilterItems"
+            value-key="id"
+            label-key="label"
+            placeholder="Все HWID"
+            class="w-full"
+            clear
+          />
+        </UFormField>
+        <UButton
+          color="error"
+          variant="soft"
+          icon="i-lucide-trash-2"
+          class="w-full shrink-0 sm:w-auto"
+          :disabled="!filterHwid || loading"
+          @click="confirmDeleteHwidOpen = true"
+        >
+          Удалить логи с этим HWID
+        </UButton>
+      </div>
       <UTable
         :data="payload?.logs ?? []"
         :columns="columns"
@@ -389,6 +487,47 @@ function logOutcomeLabel(success: boolean | undefined): { label: string; color: 
             </p>
             <pre class="text-xs font-mono bg-elevated p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all">{{ jsonPretty(detailLog.extraHeaders) }}</pre>
           </div>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="confirmDeleteHwidOpen"
+      title="Удалить логи по HWID?"
+      :description="
+        filterHwid
+          ? `Будут удалены все записи лога с этим HWID для пользователя. Действие необратимо.`
+          : undefined
+      "
+    >
+      <template #body>
+        <p
+          v-if="filterHwid"
+          class="text-sm font-mono break-all bg-elevated rounded-lg p-3"
+        >
+          {{ filterHwid }}
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            class="w-full sm:w-auto"
+            :disabled="deleteByHwidLoading"
+            @click="confirmDeleteHwidOpen = false"
+          >
+            Отмена
+          </UButton>
+          <UButton
+            color="error"
+            class="w-full sm:w-auto"
+            :loading="deleteByHwidLoading"
+            :disabled="!filterHwid"
+            @click="deleteLogsBySelectedHwid"
+          >
+            Удалить
+          </UButton>
         </div>
       </template>
     </UModal>

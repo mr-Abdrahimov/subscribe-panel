@@ -1503,6 +1503,22 @@ export class ManagementService implements OnModuleInit {
     return { deleted: result.count };
   }
 
+  /** Удалить логи с указанным HWID (точное совпадение строки в БД) */
+  async deletePanelUserSubscriptionAccessLogsByHwid(
+    panelUserId: string,
+    hwid: string,
+  ): Promise<{ deleted: number }> {
+    const h = hwid.trim();
+    if (!h) {
+      throw new BadRequestException('Укажите HWID');
+    }
+    await this.ensureUser(panelUserId);
+    const result = await this.prisma.panelUserAccessLog.deleteMany({
+      where: { panelUserId, hwid: h },
+    });
+    return { deleted: result.count };
+  }
+
   /** Пользователь панели по коду подписки (в т.ч. отключённый — для решения, что отдавать в /public/sub) */
   async findPanelUserByCode(code: string): Promise<PanelUser | null> {
     return this.prisma.panelUser.findUnique({
@@ -1708,6 +1724,7 @@ export class ManagementService implements OnModuleInit {
         success,
       },
       select: {
+        id: true,
         createdAt: true,
         clientIp: true,
         userAgent: true,
@@ -1725,7 +1742,24 @@ export class ManagementService implements OnModuleInit {
       return;
     }
 
+    const hwStored = log.hwid;
+    if (!hwStored?.trim() || !log.success) {
+      return;
+    }
+
     try {
+      const priorSameHwid = await this.prisma.panelUserAccessLog.count({
+        where: {
+          panelUserId,
+          hwid: hwStored,
+          success: true,
+          id: { not: log.id },
+        },
+      });
+      if (priorSameHwid > 0) {
+        return;
+      }
+
       const user = await this.prisma.panelUser.findUnique({
         where: { id: panelUserId },
         select: { name: true, code: true },
@@ -1761,7 +1795,7 @@ export class ManagementService implements OnModuleInit {
         },
       );
       this.logger.log(
-        `subscription-access-notify: задача ${job.id} поставлена (пользователь ${user.code})`,
+        `subscription-access-notify: задача ${job.id} — новый HWID у пользователя ${user.code}`,
       );
     } catch (e) {
       this.logger.warn(
@@ -1772,12 +1806,16 @@ export class ManagementService implements OnModuleInit {
 
   /**
    * Логи обращений клиентов к подписке (GET /public/sub/:code) для пользователя панели.
+   * @param hwidFilter — если задан, только записи с точным совпадением hwid
    */
   async listPanelUserSubscriptionAccessLogs(
     panelUserId: string,
     limit: number,
+    hwidFilter?: string | null,
   ): Promise<{
     user: { name: string; code: string };
+    /** Уникальные непустые HWID по всем логам пользователя (для фильтра в UI) */
+    hwids: string[];
     logs: Array<{
       id: string;
       clientIp: string | null;
@@ -1797,8 +1835,21 @@ export class ManagementService implements OnModuleInit {
       where: { id: panelUserId },
       select: { name: true, code: true },
     });
+    const hwidGroups = await this.prisma.panelUserAccessLog.groupBy({
+      by: ['hwid'],
+      where: { panelUserId, hwid: { not: null } },
+    });
+    const hwids = hwidGroups
+      .map((g) => g.hwid)
+      .filter((x): x is string => Boolean(x?.trim()))
+      .sort((a, b) => a.localeCompare(b, 'ru'));
+
+    const hf = hwidFilter?.trim();
     const logs = await this.prisma.panelUserAccessLog.findMany({
-      where: { panelUserId },
+      where: {
+        panelUserId,
+        ...(hf ? { hwid: hf } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: {
@@ -1815,7 +1866,7 @@ export class ManagementService implements OnModuleInit {
         createdAt: true,
       },
     });
-    return { user, logs };
+    return { user, hwids, logs };
   }
 
   /**

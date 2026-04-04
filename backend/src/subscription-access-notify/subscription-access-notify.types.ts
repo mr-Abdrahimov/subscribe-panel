@@ -1,4 +1,4 @@
-/** Полезная нагрузка задачи — те же поля, что попадают в лог GET /public/sub */
+/** Данные для Telegram при первом успешном доступе с новым HWID */
 export type SubscriptionAccessNotifyJobPayload = {
   panelUserName: string;
   panelUserCode: string;
@@ -7,6 +7,7 @@ export type SubscriptionAccessNotifyJobPayload = {
   hwid: string | null;
   referer: string | null;
   queryParamsJson: string | null;
+  /** Всегда true (уведомление не ставится при success=false) */
   success: boolean;
   createdAtIso: string;
 };
