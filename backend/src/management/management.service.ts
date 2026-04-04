@@ -328,6 +328,7 @@ export class ManagementService implements OnModuleInit {
     }
     return groups.map((g) => ({
       ...g,
+      isMainGroup: g.isMainGroup === true,
       activeConnectCount: connectCount.get(g.name) ?? 0,
       panelUserCount: userCount.get(g.name) ?? 0,
     }));
@@ -741,10 +742,15 @@ export class ManagementService implements OnModuleInit {
     const data: {
       name: string;
       sortOrder: number;
+      isMainGroup: boolean;
       subscriptionDisplayName?: string | null;
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
-    } = { name, sortOrder: nextSortOrder };
+    } = {
+      name,
+      sortOrder: nextSortOrder,
+      isMainGroup: dto.isMainGroup === true,
+    };
 
     if (dto.subscriptionDisplayName !== undefined) {
       const t = (dto.subscriptionDisplayName ?? '').trim();
@@ -1391,14 +1397,34 @@ export class ManagementService implements OnModuleInit {
 
   async setConnectGroups(id: string, groupNames: string[]) {
     await this.ensureConnect(id);
+    const uniq = Array.from(
+      new Set(groupNames.map((n) => n.trim()).filter(Boolean)),
+    );
+    await this.assertConnectHasAtMostOneMainGroup(uniq);
     return this.prisma.connect.update({
       where: { id },
-      data: {
-        groupNames: Array.from(
-          new Set(groupNames.map((n) => n.trim()).filter(Boolean)),
-        ),
-      },
+      data: { groupNames: uniq },
     });
+  }
+
+  /**
+   * У коннекта не может быть двух групп с флагом isMainGroup одновременно.
+   */
+  private async assertConnectHasAtMostOneMainGroup(
+    groupNames: string[],
+  ): Promise<void> {
+    if (groupNames.length < 2) {
+      return;
+    }
+    const mains = await this.prisma.group.findMany({
+      where: { name: { in: groupNames }, isMainGroup: true },
+      select: { name: true },
+    });
+    if (mains.length > 1) {
+      throw new BadRequestException(
+        `У коннекта может быть не больше одной главной группы. Сейчас выбраны: ${mains.map((m) => m.name).join(', ')}`,
+      );
+    }
   }
 
   /**
@@ -2060,6 +2086,7 @@ export class ManagementService implements OnModuleInit {
 
     const data: {
       name?: string;
+      isMainGroup?: boolean;
       subscriptionDisplayName?: string | null;
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
@@ -2119,6 +2146,15 @@ export class ManagementService implements OnModuleInit {
         dto.profileUpdateInterval === null
           ? null
           : Math.min(8760, Math.max(1, Math.floor(dto.profileUpdateInterval)));
+    }
+
+    if (dto.isMainGroup !== undefined) {
+      if (dto.isMainGroup === true && isReservedUngroupedConnectGroupName(group.name)) {
+        throw new BadRequestException(
+          'Служебную группу «Без группы» нельзя отметить как главную',
+        );
+      }
+      data.isMainGroup = dto.isMainGroup;
     }
 
     if (Object.keys(data).length === 0) {

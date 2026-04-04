@@ -93,7 +93,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить список групп',
     description:
-      'Группы отсортированы по полю sortOrder (порядок в панели). В каждом элементе: activeConnectCount — число активных коннектов с этой группой в groupNames; panelUserCount — число пользователей панели, у которых группа входит в groupNames. Служебная группа «Без группы» при отсутствии в БД создаётся автоматически; новые коннекты из «Подписки» без тегов получают эту группу.',
+      'Группы отсортированы по полю sortOrder (порядок в панели). Поле isMainGroup — «главная» группа: у одного коннекта не может быть двух таких групп одновременно (PATCH connects/:id/groups). В каждом элементе: activeConnectCount — число активных коннектов с этой группой в groupNames; panelUserCount — число пользователей панели, у которых группа входит в groupNames. Служебная группа «Без группы» при отсутствии в БД создаётся автоматически; новые коннекты из «Подписки» без тегов получают эту группу.',
   })
   listGroups() {
     return this.managementService.listGroups();
@@ -103,7 +103,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Создать группу',
     description:
-      'Имя группы обязательно; имя «Без группы» недопустимо (зарезервировано). Опционально: subscriptionDisplayName, subscriptionAnnounce, profileUpdateInterval (часы). Пустые/null для объявления и интервала — наследование из глобальных настроек панели.',
+      'Имя группы обязательно; имя «Без группы» недопустимо (зарезервировано). Опционально: isMainGroup (главная — не более одной на коннект), subscriptionDisplayName, subscriptionAnnounce, profileUpdateInterval (часы). Пустые/null для объявления и интервала — наследование из глобальных настроек панели.',
   })
   createGroup(@Body() body: CreateGroupDto) {
     return this.managementService.createGroup(body);
@@ -135,7 +135,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. name — смена уникального имени группы (теги groupNames у коннектов и пользователей панели обновляются); группу «Без группы» переименовать нельзя, на это имя переименовать другую группу тоже нельзя. subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupNames (порядок в массиве), затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
+      'Частичное обновление. name — смена уникального имени группы (теги groupNames у коннектов и пользователей панели обновляются); группу «Без группы» переименовать нельзя, на это имя переименовать другую группу тоже нельзя. isMainGroup — флаг главной группы для коннектов (нельзя включить для «Без группы»; у коннекта не более одной главной группы). subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupNames (порядок в массиве), затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -280,7 +280,11 @@ export class ManagementController {
   }
 
   @Patch('connects/:id/groups')
-  @ApiOperation({ summary: 'Назначить группы коннекту' })
+  @ApiOperation({
+    summary: 'Назначить группы коннекту',
+    description:
+      'Полный список groupNames. Не допускается больше одной группы с флагом isMainGroup (главная) одновременно — иначе 400.',
+  })
   setConnectGroups(
     @Param('id') id: string,
     @Body() body: { groupNames: string[] },

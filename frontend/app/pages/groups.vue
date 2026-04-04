@@ -18,6 +18,8 @@ type GroupItem = {
   name: string;
   sortOrder: number;
   createdAt: string;
+  /** Главная: у коннекта не более одной такой группы */
+  isMainGroup?: boolean;
   subscriptionDisplayName?: string | null;
   subscriptionAnnounce?: string | null;
   profileUpdateInterval?: number | null;
@@ -64,6 +66,7 @@ const editing = ref<GroupItem | null>(null);
 
 const createForm = ref({
   name: '',
+  isMainGroup: false,
   subscriptionDisplayName: '',
   subscriptionAnnounce: '',
   profileUpdateInterval: ''
@@ -71,6 +74,7 @@ const createForm = ref({
 
 const editForm = ref({
   name: '',
+  isMainGroup: false,
   subscriptionDisplayName: '',
   subscriptionAnnounce: '',
   profileUpdateInterval: ''
@@ -78,6 +82,7 @@ const editForm = ref({
 
 const createSaving = ref(false);
 const editSaving = ref(false);
+const togglingMainGroupId = ref<string | null>(null);
 
 const defaultAnnounceDraft = ref('');
 const defaultIntervalDraft = ref('');
@@ -97,6 +102,16 @@ const columns: TableColumn<GroupItem>[] = [
     }
   },
   { accessorKey: 'name', header: 'Название' },
+  {
+    id: 'isMainGroup',
+    header: 'Главная',
+    meta: {
+      class: {
+        th: 'text-center w-28',
+        td: 'text-center'
+      }
+    }
+  },
   {
     id: 'activeConnectCount',
     header: 'Коннекты',
@@ -178,6 +193,7 @@ async function loadDefaults() {
 function openCreate() {
   createForm.value = {
     name: '',
+    isMainGroup: false,
     subscriptionDisplayName: '',
     subscriptionAnnounce: '',
     profileUpdateInterval: ''
@@ -189,6 +205,7 @@ function openEdit(row: GroupItem) {
   editing.value = row;
   editForm.value = {
     name: row.name,
+    isMainGroup: row.isMainGroup === true,
     subscriptionDisplayName: row.subscriptionDisplayName ?? '',
     subscriptionAnnounce: row.subscriptionAnnounce ?? '',
     profileUpdateInterval:
@@ -240,7 +257,10 @@ async function addGroup() {
   const subTitle = createForm.value.subscriptionDisplayName.trim();
   const ann = createForm.value.subscriptionAnnounce.trim();
 
-  const body: Record<string, unknown> = { name };
+  const body: Record<string, unknown> = {
+    name,
+    isMainGroup: createForm.value.isMainGroup === true
+  };
   if (subTitle !== '') {
     body.subscriptionDisplayName = subTitle;
   }
@@ -311,6 +331,7 @@ async function saveEdit() {
 
   const body: Record<string, unknown> = {
     name: newName,
+    isMainGroup: editForm.value.isMainGroup === true,
     subscriptionDisplayName: subTitle === '' ? null : subTitle,
     subscriptionAnnounce: ann === '' ? null : ann,
     profileUpdateInterval: ir === '' ? null : Number.parseInt(ir, 10)
@@ -330,6 +351,28 @@ async function saveEdit() {
     toast.add({ title: 'Не удалось сохранить', color: 'error' });
   } finally {
     editSaving.value = false;
+  }
+}
+
+async function toggleGroupMain(row: GroupItem, value: boolean) {
+  if (isSystemUngroupedGroup(row)) {
+    return;
+  }
+  togglingMainGroupId.value = row.id;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/groups/${row.id}`, {
+      method: 'PATCH',
+      body: { isMainGroup: value }
+    });
+    toast.add({
+      title: value ? 'Группа отмечена как главная' : 'Флаг «Главная» снят',
+      color: 'success'
+    });
+    await loadGroups();
+  } catch {
+    toast.add({ title: 'Не удалось обновить флаг', color: 'error' });
+  } finally {
+    togglingMainGroupId.value = null;
   }
 }
 
@@ -498,7 +541,8 @@ async function saveDefaultInterval() {
         Порядок строк можно менять перетаскиванием за иконку слева (как на странице «Коннекты»). Группа
         «{{ UNGROUPED_CONNECT_GROUP_NAME }}» создаётся системой: в неё попадают новые коннекты после
         «Получить коннекты» на странице «Подписки», если у строки в подписке ещё нет групп.
-        Переименовать или удалить её нельзя.
+        Переименовать или удалить её нельзя. Галочка «Главная» у группы означает: у одного коннекта на странице
+        «Коннекты» не может быть двух главных групп одновременно.
       </p>
       <UTable
         :data="groups"
@@ -527,7 +571,40 @@ async function saveDefaultInterval() {
             >
               Системная
             </UBadge>
+            <UBadge
+              v-else-if="row.original.isMainGroup === true"
+              color="primary"
+              variant="subtle"
+              size="xs"
+            >
+              Главная
+            </UBadge>
           </div>
+        </template>
+
+        <template #isMainGroup-cell="{ row }">
+          <UTooltip
+            :text="
+              isSystemUngroupedGroup(row.original)
+                ? 'Служебная группа не может быть главной'
+                : 'Главная: не более одной на коннект (страница «Коннекты»)'
+            "
+          >
+            <UCheckbox
+              :model-value="row.original.isMainGroup === true"
+              :disabled="
+                isSystemUngroupedGroup(row.original) ||
+                  togglingMainGroupId === row.original.id
+              "
+              @update:model-value="
+                (v) => {
+                  if (typeof v === 'boolean') {
+                    toggleGroupMain(row.original, v)
+                  }
+                }
+              "
+            />
+          </UTooltip>
         </template>
 
         <template #activeConnectCount-cell="{ row }">
@@ -591,6 +668,13 @@ async function saveDefaultInterval() {
               class="w-full"
               placeholder="Например: Основная"
             />
+          </UFormField>
+          <UFormField
+            label="Главная группа"
+            description="У одного коннекта не может быть двух главных групп на странице «Коннекты»"
+            class="w-full"
+          >
+            <UCheckbox v-model="createForm.isMainGroup" label="Пометить как главную" />
           </UFormField>
           <UFormField
             label="Название для публичной подписки"
@@ -663,6 +747,17 @@ async function saveDefaultInterval() {
               class="w-full"
               placeholder="Уникальное имя"
               :readonly="isSystemUngroupedGroup(editing)"
+            />
+          </UFormField>
+          <UFormField
+            label="Главная группа"
+            description="У одного коннекта не может быть двух главных групп на странице «Коннекты»"
+            class="w-full"
+          >
+            <UCheckbox
+              v-model="editForm.isMainGroup"
+              :disabled="isSystemUngroupedGroup(editing)"
+              label="Пометить как главную"
             />
           </UFormField>
           <UFormField

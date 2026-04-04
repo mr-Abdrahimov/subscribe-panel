@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui';
 import type { RowSelectionState } from '@tanstack/table-core';
-import {
-  useSortable,
-  moveArrayElement,
-} from '@vueuse/integrations/useSortable';
+import Sortable from 'sortablejs';
+import type { SortableEvent } from 'sortablejs';
 
 definePageMeta({
   layout: 'dashboard'
 });
+
+/** Ключ колонки для коннектов без главной группы (визуальная «Без группы») */
+const NO_MAIN_BUCKET = '__no_main__';
 
 /** Как на бэкенде: служебная группа для коннектов без явных тегов */
 const UNGROUPED_CONNECT_GROUP_NAME = 'Без группы';
 
 function isUngroupedGroupLabel(name: string): boolean {
   return name === UNGROUPED_CONNECT_GROUP_NAME;
+}
+
+function isMainGroupLabel(name: string): boolean {
+  return groups.value.some((g) => g.name === name && g.isMainGroup === true);
 }
 
 type ConnectRow = {
@@ -37,7 +41,9 @@ type ConnectRow = {
 type GroupItem = {
   id: string;
   name: string;
+  sortOrder?: number;
   createdAt: string;
+  isMainGroup?: boolean;
   subscriptionDisplayName?: string | null;
 };
 
@@ -88,10 +94,40 @@ const subscriptionFilterItems = computed(() => {
 
 const groupFilterItems = computed(() => {
   const rest = groups.value
-    .map((g) => ({ label: g.name, id: g.name }))
+    .map((g) => ({
+      label: g.isMainGroup === true ? `${g.name} · главная` : g.name,
+      id: g.name
+    }))
     .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
   return [{ label: 'Любая группа', id: null }, ...rest];
 });
+
+const mainGroupNameSet = computed(
+  () => new Set(groups.value.filter((g) => g.isMainGroup === true).map((g) => g.name)),
+);
+
+function countMainGroupsInNames(names: string[]): number {
+  let n = 0;
+  for (const x of names) {
+    if (mainGroupNameSet.value.has(x)) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+function fetchErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const d = (err as { data?: { message?: unknown } }).data?.message;
+    if (typeof d === 'string') {
+      return d;
+    }
+    if (Array.isArray(d)) {
+      return d.join(', ');
+    }
+  }
+  return fallback;
+}
 
 const filtersActive = computed(
   () =>
@@ -126,37 +162,286 @@ const tableEmptyText = computed(() => {
 });
 
 const selectedConnectsCount = computed(
-  () => Object.values(rowSelection.value).filter(Boolean).length
+  () => Object.values(rowSelection.value).filter(Boolean).length,
 );
 
-const sortableList = useSortable('.connects-table-tbody', connects, {
-  handle: '.connect-drag-handle',
-  animation: 150,
-  onUpdate: async (e) => {
-    moveArrayElement(connects, e.oldIndex!, e.newIndex!, e);
-    await nextTick();
-    await syncOrder();
-  },
-});
+const mainGroupsSorted = computed(() =>
+  [...groups.value]
+    .filter((g) => g.isMainGroup === true)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+);
 
-function setSortableDisabled(active: boolean) {
-  try {
-    sortableList.option('disabled', active);
-  } catch {
-    /* sortable ещё не инициализирован */
+const bucketKeysOrdered = computed(() => [
+  ...mainGroupsSorted.value.map((g) => `m:${g.id}`),
+  NO_MAIN_BUCKET,
+]);
+
+/** bucketKey → порядок id коннектов (только из текущего фильтра) */
+const bucketOrder = ref<Record<string, string[]>>({});
+
+const bucketListEls: Record<string, HTMLElement | undefined> = {};
+let bucketSortableInstances: Sortable[] = [];
+
+function bindBucketListEl(key: string, el: unknown) {
+  if (el instanceof HTMLElement) {
+    bucketListEls[key] = el;
+  } else {
+    delete bucketListEls[key];
   }
 }
 
-watch(filtersActive, (active) => {
-  nextTick(() => setSortableDisabled(active));
+function compareConnectsForBucket(a: ConnectRow, b: ConnectRow): number {
+  const d = a.sortOrder - b.sortOrder;
+  if (d !== 0) {
+    return d;
+  }
+  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+}
+
+function rebuildBucketOrder() {
+  const list = filteredConnects.value;
+  const next: Record<string, string[]> = {};
+  for (const g of mainGroupsSorted.value) {
+    const key = `m:${g.id}`;
+    next[key] = list
+      .filter((c) => c.groupNames.includes(g.name))
+      .sort(compareConnectsForBucket)
+      .map((c) => c.id);
+  }
+  next[NO_MAIN_BUCKET] = list
+    .filter((c) => !c.groupNames.some((n) => mainGroupNameSet.value.has(n)))
+    .sort(compareConnectsForBucket)
+    .map((c) => c.id);
+  bucketOrder.value = next;
+}
+
+function bucketColumnTitle(key: string): string {
+  if (key === NO_MAIN_BUCKET) {
+    return 'Без группы';
+  }
+  const id = key.startsWith('m:') ? key.slice(2) : '';
+  const g = groups.value.find((x) => x.id === id);
+  return g?.name ?? key;
+}
+
+function mainNameForBucketKey(key: string): string | null {
+  if (key === NO_MAIN_BUCKET) {
+    return null;
+  }
+  const id = key.startsWith('m:') ? key.slice(2) : '';
+  return groups.value.find((x) => x.id === id)?.name ?? null;
+}
+
+function connectById(id: string): ConnectRow | undefined {
+  return connects.value.find((c) => c.id === id);
+}
+
+function readConnectIdsFromListEl(el: HTMLElement): string[] {
+  return [...el.querySelectorAll('[data-connect-id]')]
+    .map((node) => (node as HTMLElement).dataset.connectId)
+    .filter((x): x is string => Boolean(x));
+}
+
+function destroyBucketSortables() {
+  for (const s of bucketSortableInstances) {
+    s.destroy();
+  }
+  bucketSortableInstances = [];
+}
+
+function initBucketSortables() {
+  destroyBucketSortables();
+  if (filtersActive.value || loading.value) {
+    return;
+  }
+  for (const key of bucketKeysOrdered.value) {
+    const el = bucketListEls[key];
+    if (!el) {
+      continue;
+    }
+    const inst = Sortable.create(el, {
+      group: { name: 'connects-main-buckets', pull: true, put: true },
+      animation: 180,
+      handle: '.connect-bucket-drag-handle',
+      draggable: '[data-connect-row]',
+      onEnd: (e) => {
+        void onBucketSortEnd(e);
+      },
+    });
+    bucketSortableInstances.push(inst);
+  }
+}
+
+function computeGroupNamesForBucket(connect: ConnectRow, targetKey: string): string[] {
+  const nonMain = connect.groupNames.filter((n) => !mainGroupNameSet.value.has(n));
+  if (targetKey === NO_MAIN_BUCKET) {
+    return nonMain;
+  }
+  const mainName = mainNameForBucketKey(targetKey);
+  if (!mainName) {
+    return nonMain;
+  }
+  return [...new Set([...nonMain, mainName])];
+}
+
+async function onBucketSortEnd(evt: SortableEvent) {
+  if (filtersActive.value) {
+    return;
+  }
+  const fromKey = (evt.from as HTMLElement).dataset.bucketKey;
+  const toKey = (evt.to as HTMLElement).dataset.bucketKey;
+  const movedId = (evt.item as HTMLElement).dataset.connectId;
+  if (!fromKey || !toKey || !movedId) {
+    rebuildBucketOrder();
+    await nextTick();
+    initBucketSortables();
+    return;
+  }
+
+  const keys = bucketKeysOrdered.value;
+  const newBuckets: Record<string, string[]> = {};
+  for (const key of keys) {
+    const el = bucketListEls[key];
+    newBuckets[key] = el ? readConnectIdsFromListEl(el) : [...(bucketOrder.value[key] ?? [])];
+  }
+
+  if (fromKey !== toKey) {
+    const c = connects.value.find((x) => x.id === movedId);
+    if (!c) {
+      await loadConnects();
+      return;
+    }
+    const nextNames = computeGroupNamesForBucket(c, toKey);
+    try {
+      await $fetch(`${config.public.apiBaseUrl}/connects/${movedId}/groups`, {
+        method: 'PATCH',
+        body: { groupNames: nextNames },
+      });
+      toast.add({ title: 'Коннект перенесён', color: 'success' });
+    } catch (err: unknown) {
+      toast.add({
+        title: fetchErrorMessage(err, 'Не удалось перенести коннект'),
+        color: 'error',
+      });
+      await loadConnects();
+      await nextTick();
+      initBucketSortables();
+      return;
+    }
+    bucketOrder.value = newBuckets;
+    await persistGlobalOrderFromBuckets(false);
+    return;
+  }
+
+  bucketOrder.value = newBuckets;
+  await persistGlobalOrderFromBuckets(true);
+}
+
+async function persistGlobalOrderFromBuckets(showToast: boolean) {
+  const keys = bucketKeysOrdered.value;
+  const ordered: string[] = [];
+  for (const k of keys) {
+    ordered.push(...(bucketOrder.value[k] ?? []));
+  }
+  const allIds = new Set(connects.value.map((c) => c.id));
+  if (ordered.length !== allIds.size) {
+    const inOrdered = new Set(ordered);
+    const rest = connects.value
+      .filter((c) => !inOrdered.has(c.id))
+      .sort(compareConnectsForBucket);
+    ordered.push(...rest.map((c) => c.id));
+  }
+  const seen = new Set<string>();
+  const uniq: string[] = [];
+  for (const id of ordered) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      uniq.push(id);
+    }
+  }
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/connects/reorder`, {
+      method: 'PATCH',
+      body: { ids: uniq },
+    });
+    if (showToast) {
+      toast.add({ title: 'Порядок сохранён', color: 'success' });
+    }
+    await loadConnects();
+    rebuildBucketOrder();
+    await nextTick();
+    await nextTick();
+    initBucketSortables();
+  } catch {
+    toast.add({ title: 'Не удалось сохранить порядок', color: 'error' });
+    await loadConnects();
+    rebuildBucketOrder();
+    await nextTick();
+    initBucketSortables();
+  }
+}
+
+const allFilteredSelected = computed(() => {
+  const list = filteredConnects.value;
+  if (!list.length) {
+    return false;
+  }
+  return list.every((c) => rowSelection.value[c.id]);
 });
+
+const someFilteredSelected = computed(() =>
+  filteredConnects.value.some((c) => rowSelection.value[c.id]),
+);
+
+function toggleSelectAllFiltered(value: boolean) {
+  const next = { ...rowSelection.value };
+  for (const c of filteredConnects.value) {
+    next[c.id] = value;
+  }
+  rowSelection.value = next;
+}
+
+function toggleRowSelect(id: string, value: boolean) {
+  rowSelection.value = { ...rowSelection.value, [id]: value };
+}
+
+watch(
+  () => [
+    filteredConnects.value.map((c) => c.id).join(),
+    bucketKeysOrdered.value.join(),
+    groups.value.length,
+  ],
+  () => {
+    rebuildBucketOrder();
+  },
+  { flush: 'post' },
+);
+
+watch(
+  () => ({
+    bo: bucketOrder.value,
+    bk: bucketKeysOrdered.value.join(),
+    fa: filtersActive.value,
+    ld: loading.value,
+  }),
+  async () => {
+    await nextTick();
+    await nextTick();
+    destroyBucketSortables();
+    if (filtersActive.value || loading.value) {
+      return;
+    }
+    initBucketSortables();
+  },
+);
 
 onMounted(() => {
   loadConnects();
   loadGroups();
-  nextTick(() => {
-    nextTick(() => setSortableDisabled(filtersActive.value));
-  });
+});
+
+onBeforeUnmount(() => {
+  destroyBucketSortables();
 });
 
 async function loadConnects() {
@@ -286,6 +571,13 @@ async function saveConnectGroups() {
   if (!selectedGroupConnectId.value) {
     return;
   }
+  if (countMainGroupsInNames(selectedGroupNames.value) > 1) {
+    toast.add({
+      title: 'У коннекта может быть не больше одной главной группы',
+      color: 'error',
+    });
+    return;
+  }
   try {
     await $fetch(`${config.public.apiBaseUrl}/connects/${selectedGroupConnectId.value}/groups`, {
       method: 'PATCH',
@@ -296,8 +588,11 @@ async function saveConnectGroups() {
     isGroupModalOpen.value = false;
     toast.add({ title: 'Группы для коннекта обновлены', color: 'success' });
     await loadConnects();
-  } catch {
-    toast.add({ title: 'Не удалось обновить группы коннекта', color: 'error' });
+  } catch (err: unknown) {
+    toast.add({
+      title: fetchErrorMessage(err, 'Не удалось обновить группы коннекта'),
+      color: 'error',
+    });
   }
 }
 
@@ -327,6 +622,18 @@ async function bulkAddGroupsToSelection() {
   }
 
   const snapshots = new Map(ids.map((id) => [id, [...getConnectGroups(id)]] as const));
+  for (const id of ids) {
+    const current = snapshots.get(id)!;
+    const next = [...new Set([...current, ...toAdd])];
+    if (countMainGroupsInNames(next) > 1) {
+      toast.add({
+        title:
+          'После добавления у одного из коннектов получилось бы две главные группы. Уберите лишнюю главную из выбора или у коннекта.',
+        color: 'error',
+      });
+      return;
+    }
+  }
   bulkLoading.value = true;
   try {
     await Promise.all(
@@ -343,8 +650,11 @@ async function bulkAddGroupsToSelection() {
     bulkGroupNames.value = [];
     clearRowSelection();
     await loadConnects();
-  } catch {
-    toast.add({ title: 'Не удалось добавить группы', color: 'error' });
+  } catch (err: unknown) {
+    toast.add({
+      title: fetchErrorMessage(err, 'Не удалось добавить группы'),
+      color: 'error',
+    });
   } finally {
     bulkLoading.value = false;
   }
@@ -385,77 +695,6 @@ async function bulkRemoveGroupsFromSelection() {
   }
 }
 
-function getConnectRowId(row: ConnectRow) {
-  return row.id
-}
-
-async function syncOrder() {
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/connects/reorder`, {
-      method: 'PATCH',
-      body: { ids: connects.value.map((item) => item.id) },
-    });
-    toast.add({ title: 'Порядок обновлен', color: 'success' });
-  } catch {
-    toast.add({ title: 'Не удалось сохранить порядок', color: 'error' });
-    await loadConnects();
-  }
-}
-
-const columns: TableColumn<ConnectRow>[] = [
-  {
-    id: 'drag',
-    header: '',
-    meta: {
-      class: {
-        th: 'w-10',
-        td: 'w-10'
-      }
-    }
-  },
-  {
-    id: 'select',
-    header: '',
-    meta: {
-      class: {
-        th: 'w-12',
-        td: 'w-12'
-      }
-    }
-  },
-  {
-    accessorKey: 'subscription',
-    header: 'Подписка'
-  },
-  {
-    accessorKey: 'originalName',
-    header: 'Оригинальное название'
-  },
-  {
-    accessorKey: 'name',
-    header: 'Название'
-  },
-  {
-    id: 'status',
-    header: 'Статус'
-  },
-  {
-    accessorKey: 'protocol',
-    header: 'Протокол'
-  },
-  {
-    id: 'groups',
-    header: 'Группы'
-  },
-  {
-    accessorKey: 'createdAt',
-    header: 'Дата добавления'
-  },
-  {
-    id: 'actions',
-    header: 'Действия'
-  }
-];
 </script>
 
 <template>
@@ -514,8 +753,35 @@ const columns: TableColumn<ConnectRow>[] = [
             />
           </UFormField>
         </div>
+        <div
+          v-if="!loading && filteredConnects.length > 0"
+          class="flex flex-wrap items-center gap-3 border-t border-default pt-3"
+        >
+          <UCheckbox
+            :model-value="
+              allFilteredSelected
+                ? true
+                : someFilteredSelected
+                  ? 'indeterminate'
+                  : false
+            "
+            label="Выбрать всех по фильтру"
+            @update:model-value="
+              (v) => {
+                if (typeof v === 'boolean') {
+                  toggleSelectAllFiltered(v)
+                }
+              }
+            "
+          />
+        </div>
         <p v-if="filtersActive" class="text-xs text-muted">
-          Порядок коннектов перетаскиванием отключён, пока включены фильтры.
+          Перетаскивание между колонками и смена порядка отключены, пока включены фильтры.
+        </p>
+        <p v-else class="text-xs text-muted">
+          Коннекты сгруппированы по главным группам. Без главной группы — колонка «Без группы». Тяните за
+          <span class="font-mono">⋮⋮</span>
+          внутри колонки или переносите в другую колонку.
         </p>
       </div>
 
@@ -566,119 +832,172 @@ const columns: TableColumn<ConnectRow>[] = [
         </div>
       </div>
 
-      <UTable
-        v-model:row-selection="rowSelection"
-        :data="filteredConnects"
-        :columns="columns"
-        :loading="loading"
-        :get-row-id="getConnectRowId"
-        :empty="tableEmptyText"
-        :ui="{ tbody: 'connects-table-tbody' }"
-        class="w-full"
+      <div v-if="loading && connects.length === 0" class="flex justify-center py-16">
+        <UIcon name="i-lucide-loader-2" class="size-8 animate-spin text-muted" />
+      </div>
+      <div
+        v-else-if="filteredConnects.length === 0"
+        class="px-4 py-12 text-center text-sm text-muted"
       >
-        <template #drag-cell>
-          <div
-            class="connect-drag-handle inline-flex text-muted"
-            :class="
-              filtersActive
-                ? 'cursor-not-allowed opacity-40'
-                : 'cursor-grab active:cursor-grabbing'
-            "
-          >
-            <UIcon name="i-lucide-grip-vertical" class="size-4" />
-          </div>
-        </template>
-
-        <template #select-header="{ table }">
-          <div class="flex justify-center" @click.stop>
-            <UCheckbox
-              :model-value="table.getIsAllPageRowsSelected() ? true : table.getIsSomePageRowsSelected() ? 'indeterminate' : false"
-              @update:model-value="(value) => table.toggleAllPageRowsSelected(!!value)"
-            />
-          </div>
-        </template>
-
-        <template #select-cell="{ row }">
-          <div class="flex justify-center" @click.stop>
-            <UCheckbox
-              :model-value="row.getIsSelected()"
-              @update:model-value="(value) => row.toggleSelected(!!value)"
-            />
-          </div>
-        </template>
-
-        <template #subscription-cell="{ row }">
-          {{ row.original.subscription.title }}
-        </template>
-
-        <template #name-cell="{ row }">
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            class="px-0"
-            @click="openEditName(row.original)"
-          >
-            {{ row.original.name }}
-          </UButton>
-        </template>
-
-        <template #status-cell="{ row }">
-          <UTooltip :text="row.original.status === 'ACTIVE' ? 'Отключить коннект' : 'Включить коннект'">
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              :icon="row.original.status === 'ACTIVE' ? 'i-lucide-eye' : 'i-lucide-eye-off'"
-              @click="toggleStatus(row.original.id)"
-            />
-          </UTooltip>
-        </template>
-
-        <template #protocol-cell="{ row }">
-          {{ row.original.protocol.toUpperCase() }}
-        </template>
-
-        <template #groups-cell="{ row }">
-          <div class="flex flex-wrap gap-1.5 items-center">
+        {{ tableEmptyText }}
+      </div>
+      <div
+        v-else
+        class="connect-bucket-board flex flex-col gap-5 p-4 xl:flex-row xl:items-start xl:gap-4 xl:overflow-x-auto xl:pb-3"
+      >
+        <section
+          v-for="bucketKey in bucketKeysOrdered"
+          :key="bucketKey"
+          class="connect-bucket-column w-full min-w-0 flex-shrink-0 xl:w-[min(100%,300px)]"
+        >
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-default pb-2">
+            <h3 class="text-sm font-semibold text-highlighted">
+              {{ bucketColumnTitle(bucketKey) }}
+            </h3>
             <UBadge
-              v-for="group in getConnectGroups(row.original.id)"
-              :key="`${row.original.id}-${group}`"
-              :color="isUngroupedGroupLabel(group) ? 'warning' : 'neutral'"
-              :variant="isUngroupedGroupLabel(group) ? 'solid' : 'subtle'"
-              size="sm"
-              :class="
-                isUngroupedGroupLabel(group)
-                  ? 'connects-ungrouped-badge font-semibold tracking-wide'
-                  : ''
-              "
+              v-if="bucketKey !== NO_MAIN_BUCKET"
+              color="primary"
+              variant="subtle"
+              size="xs"
             >
-              {{ group }}
+              Главная
             </UBadge>
-            <span v-if="getConnectGroups(row.original.id).length === 0" class="text-xs text-muted">Не привязан</span>
+            <UBadge v-else color="warning" variant="subtle" size="xs">
+              Нет главной
+            </UBadge>
           </div>
-        </template>
-
-        <template #createdAt-cell="{ row }">
-          <span class="whitespace-nowrap">
-            {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}
-          </span>
-        </template>
-
-        <template #actions-cell="{ row }">
-          <div class="flex flex-wrap items-center gap-2">
-            <UTooltip text="Добавить тэг">
-              <UButton size="xs" color="primary" variant="ghost" icon="i-lucide-tag" @click="openAddTag(row.original.id)" />
-            </UTooltip>
-            <UTooltip text="Привязать к группам">
-              <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-users-round" @click="openBindGroups(row.original.id)" />
-            </UTooltip>
-            <UTooltip text="Удалить коннект">
-              <UButton size="xs" color="error" variant="ghost" icon="i-lucide-trash" @click="askRemoveConnect(row.original.id)" />
-            </UTooltip>
+          <div
+            :ref="(el) => bindBucketListEl(bucketKey, el)"
+            class="connect-bucket-list min-h-[100px] rounded-lg border border-default p-2"
+            :class="filtersActive ? 'opacity-80' : ''"
+            :data-bucket-key="bucketKey"
+          >
+            <div
+              v-for="cid in bucketOrder[bucketKey] ?? []"
+              :key="cid"
+              data-connect-row
+              :data-connect-id="cid"
+              class="connect-bucket-card mb-2 rounded-md border border-default bg-elevated/40 p-2.5 last:mb-0"
+            >
+              <template v-if="connectById(cid)">
+                <div class="flex items-start gap-2">
+                  <div
+                    class="connect-bucket-drag-handle mt-0.5 inline-flex shrink-0 cursor-grab text-muted active:cursor-grabbing"
+                    :class="filtersActive ? 'pointer-events-none opacity-40' : ''"
+                  >
+                    <UIcon name="i-lucide-grip-vertical" class="size-4" />
+                  </div>
+                  <div class="min-w-0 flex-1 space-y-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <UCheckbox
+                        :model-value="!!rowSelection[cid]"
+                        @update:model-value="(v) => toggleRowSelect(cid, !!v)"
+                      />
+                      <div class="flex shrink-0 flex-wrap justify-end gap-0.5">
+                        <UTooltip text="Добавить тэг">
+                          <UButton
+                            size="xs"
+                            color="primary"
+                            variant="ghost"
+                            icon="i-lucide-tag"
+                            @click="openAddTag(cid)"
+                          />
+                        </UTooltip>
+                        <UTooltip text="Привязать к группам">
+                          <UButton
+                            size="xs"
+                            color="neutral"
+                            variant="ghost"
+                            icon="i-lucide-users-round"
+                            @click="openBindGroups(cid)"
+                          />
+                        </UTooltip>
+                        <UTooltip text="Удалить коннект">
+                          <UButton
+                            size="xs"
+                            color="error"
+                            variant="ghost"
+                            icon="i-lucide-trash"
+                            @click="askRemoveConnect(cid)"
+                          />
+                        </UTooltip>
+                      </div>
+                    </div>
+                    <p class="text-xs text-muted">
+                      {{ connectById(cid)!.subscription.title }}
+                    </p>
+                    <p class="truncate text-xs text-muted" :title="connectById(cid)!.originalName">
+                      {{ connectById(cid)!.originalName }}
+                    </p>
+                    <UButton
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      class="h-auto min-h-0 px-0 py-0 font-medium"
+                      @click="openEditName(connectById(cid)!)"
+                    >
+                      {{ connectById(cid)!.name }}
+                    </UButton>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <UTooltip
+                        :text="
+                          connectById(cid)!.status === 'ACTIVE'
+                            ? 'Отключить коннект'
+                            : 'Включить коннект'
+                        "
+                      >
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          :icon="
+                            connectById(cid)!.status === 'ACTIVE'
+                              ? 'i-lucide-eye'
+                              : 'i-lucide-eye-off'
+                          "
+                          @click="toggleStatus(cid)"
+                        />
+                      </UTooltip>
+                      <UBadge size="xs" variant="subtle" color="neutral">
+                        {{ connectById(cid)!.protocol.toUpperCase() }}
+                      </UBadge>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <UBadge
+                        v-for="group in getConnectGroups(cid)"
+                        :key="`${cid}-${group}`"
+                        :color="
+                          isUngroupedGroupLabel(group)
+                            ? 'warning'
+                            : isMainGroupLabel(group)
+                              ? 'primary'
+                              : 'neutral'
+                        "
+                        :variant="isUngroupedGroupLabel(group) ? 'solid' : 'subtle'"
+                        size="sm"
+                        :class="
+                          isUngroupedGroupLabel(group)
+                            ? 'connects-ungrouped-badge font-semibold tracking-wide'
+                            : ''
+                        "
+                      >
+                        {{ group }}
+                      </UBadge>
+                      <span
+                        v-if="getConnectGroups(cid).length === 0"
+                        class="text-xs text-muted"
+                      >Нет групп</span>
+                    </div>
+                    <p class="text-[0.65rem] text-muted tabular-nums">
+                      {{ new Date(connectById(cid)!.createdAt).toLocaleString('ru-RU') }}
+                    </p>
+                  </div>
+                </div>
+              </template>
+            </div>
           </div>
-        </template>
-      </UTable>
+        </section>
+      </div>
     </UCard>
 
     <UModal v-model:open="isTagModalOpen" title="Добавить тэг">
@@ -701,10 +1020,13 @@ const columns: TableColumn<ConnectRow>[] = [
 
     <UModal v-model:open="isGroupModalOpen" title="Привязать коннект к группам">
       <template #body>
-        <UFormField label="Группы">
+        <UFormField
+          label="Группы"
+          description="Группы с меткой «главная» на странице «Группы»: у коннекта не больше одной такой одновременно."
+        >
           <USelectMenu
             v-model="selectedGroupNames"
-            :items="groups.map(group => group.name)"
+            :items="groups.map((group) => group.name)"
             multiple
             class="w-full"
             placeholder="Выберите группы"
@@ -760,6 +1082,14 @@ const columns: TableColumn<ConnectRow>[] = [
 </template>
 
 <style scoped>
+.connect-bucket-list :deep(.sortable-ghost) {
+  opacity: 0.45;
+}
+
+.connect-bucket-list :deep(.sortable-drag) {
+  opacity: 0.95;
+}
+
 /* «Без группы» — явный акцент в таблице коннектов */
 .connects-ungrouped-badge {
   box-shadow:

@@ -20,6 +20,7 @@ export async function ensureUngroupedConnectGroupExists(
   await prisma.group.create({
     data: {
       name: UNGROUPED_CONNECT_GROUP_NAME,
+      isMainGroup: false,
       sortOrder: (agg._max.sortOrder ?? -1) + 1,
     },
   });

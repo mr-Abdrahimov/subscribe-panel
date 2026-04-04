@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -57,4 +58,13 @@ export class CreateGroupDto {
   @Min(1)
   @Max(8760)
   profileUpdateInterval?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Главная группа: у коннекта на странице «Коннекты» не может быть двух главных групп одновременно.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isMainGroup?: boolean;
 }
