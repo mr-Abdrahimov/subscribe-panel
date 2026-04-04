@@ -98,6 +98,74 @@ async function attachProfileTitleHeadersForHtml(
   }
 }
 
+const SUB_FORWARD_HEADER_NAMES = [
+  'user-agent',
+  'accept',
+  'accept-language',
+  'referer',
+  'x-forwarded-for',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'x-hwid',
+  'hwid',
+  'x-device-id',
+  'device-id',
+  'x-happ-hwid',
+  'x-happ-device-id',
+] as const;
+
+function buildPublicSubProxyHeaders(event: H3Event): Record<string, string> {
+  const proxyHeaders: Record<string, string> = {};
+  for (const name of SUB_FORWARD_HEADER_NAMES) {
+    const v = getRequestHeader(event, name);
+    if (v) {
+      proxyHeaders[name] = v;
+    }
+  }
+  const clientIp = getRequestIP(event, { xForwardedFor: true });
+  if (clientIp && !proxyHeaders['x-forwarded-for']) {
+    proxyHeaders['x-forwarded-for'] = clientIp;
+  }
+  return proxyHeaders;
+}
+
+function buildPublicSubNestUrl(
+  apiRoot: string,
+  code: string,
+  url: URL,
+  isCryptoProxyPath: boolean,
+): string {
+  const forwardParams = new URLSearchParams(url.search);
+  forwardParams.delete('format');
+  if (isCryptoProxyPath && !forwardParams.has('via')) {
+    forwardParams.set('via', 'crypto-page');
+  }
+  const forwardQuery = forwardParams.toString();
+  return `${apiRoot}/public/sub/${encodeURIComponent(code)}${forwardQuery ? `?${forwardQuery}` : ''}`;
+}
+
+/**
+ * Браузер открывает /sub/… с Accept: text/html — ответ отдаёт Nuxt, Nest GET /public/sub не вызывается,
+ * PanelUserAccessLog и очередь TG не срабатывают. Дублируем запрос в фоне с Accept: text/plain.
+ */
+function fireBackgroundNestPublicSubForAccessLog(
+  apiRoot: string,
+  code: string,
+  event: H3Event,
+  url: URL,
+  isCryptoProxyPath: boolean,
+) {
+  const headers = buildPublicSubProxyHeaders(event);
+  headers.accept = 'text/plain, */*;q=0.1';
+  const endpoint = buildPublicSubNestUrl(apiRoot, code, url, isCryptoProxyPath);
+  void $fetch.raw(endpoint, { headers }).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[sub-feed] фоновый GET public/sub для лога/TG не удался: ${endpoint} — ${msg}`,
+    );
+  });
+}
+
 export default defineEventHandler(async (event) => {
   const url = getRequestURL(event);
   const runtime = useRuntimeConfig(event);
@@ -133,42 +201,17 @@ export default defineEventHandler(async (event) => {
 
   if (isHtmlRequest) {
     await attachProfileTitleHeadersForHtml(event, apiRoot, code);
+    fireBackgroundNestPublicSubForAccessLog(
+      apiRoot,
+      code,
+      event,
+      url,
+      isCryptoProxyPath,
+    );
     return;
   }
-  const forwardHeaderNames = [
-    'user-agent',
-    'accept',
-    'accept-language',
-    'referer',
-    'x-forwarded-for',
-    'x-real-ip',
-    'cf-connecting-ip',
-    'x-hwid',
-    'hwid',
-    'x-device-id',
-    'device-id',
-    'x-happ-hwid',
-    'x-happ-device-id',
-  ] as const;
-  const proxyHeaders: Record<string, string> = {};
-  for (const name of forwardHeaderNames) {
-    const v = getRequestHeader(event, name);
-    if (v) {
-      proxyHeaders[name] = v;
-    }
-  }
-  const clientIp = getRequestIP(event, { xForwardedFor: true });
-  if (clientIp && !proxyHeaders['x-forwarded-for']) {
-    proxyHeaders['x-forwarded-for'] = clientIp;
-  }
-
-  const forwardParams = new URLSearchParams(url.search);
-  forwardParams.delete('format');
-  if (isCryptoProxyPath && !forwardParams.has('via')) {
-    forwardParams.set('via', 'crypto-page');
-  }
-  const forwardQuery = forwardParams.toString();
-  const endpoint = `${apiRoot}/public/sub/${encodeURIComponent(code)}${forwardQuery ? `?${forwardQuery}` : ''}`;
+  const proxyHeaders = buildPublicSubProxyHeaders(event);
+  const endpoint = buildPublicSubNestUrl(apiRoot, code, url, isCryptoProxyPath);
   let res: Awaited<ReturnType<typeof $fetch.raw>>;
   try {
     res = await $fetch.raw(endpoint, { headers: proxyHeaders });

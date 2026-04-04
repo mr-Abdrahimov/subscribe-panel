@@ -1742,7 +1742,7 @@ export class ManagementService implements OnModuleInit {
           queryParamsJson = null;
         }
       }
-      await this.subscriptionAccessNotifyQueue.add(
+      const job = await this.subscriptionAccessNotifyQueue.add(
         SUBSCRIPTION_ACCESS_NOTIFY_JOB,
         {
           panelUserName: user.name?.trim() || '—',
@@ -1759,6 +1759,9 @@ export class ManagementService implements OnModuleInit {
           attempts: 4,
           backoff: { type: 'exponential', delay: 2000 },
         },
+      );
+      this.logger.log(
+        `subscription-access-notify: задача ${job.id} поставлена (пользователь ${user.code})`,
       );
     } catch (e) {
       this.logger.warn(

@@ -1,11 +1,12 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import {
   SUBSCRIPTION_ACCESS_NOTIFY_COMPLETED_KEEP,
   SUBSCRIPTION_ACCESS_NOTIFY_QUEUE,
 } from './subscription-access-notify.constants';
 import { SubscriptionAccessNotifyProcessor } from './subscription-access-notify.processor';
 
+@Global()
 @Module({
   imports: [
     BullModule.registerQueue({
@@ -17,5 +18,6 @@ import { SubscriptionAccessNotifyProcessor } from './subscription-access-notify.
     }),
   ],
   providers: [SubscriptionAccessNotifyProcessor],
+  exports: [BullModule],
 })
 export class SubscriptionAccessNotifyModule {}
