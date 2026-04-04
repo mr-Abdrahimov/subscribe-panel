@@ -13,6 +13,13 @@ const PANEL_GLOBAL_SETTINGS_ID = 'global';
 
 const TG_MESSAGE_MAX = 3800;
 
+function escapeTelegramHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 @Processor(SUBSCRIPTION_ACCESS_NOTIFY_QUEUE, { concurrency: 3 })
 export class SubscriptionAccessNotifyProcessor extends WorkerHost {
   private readonly log = new Logger(SubscriptionAccessNotifyProcessor.name);
@@ -40,12 +47,14 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
     }
 
     const p = job.data;
+    const nameBold = escapeTelegramHtml(p.panelUserName);
+    const hwidDisplay = p.hwid?.trim() ? escapeTelegramHtml(p.hwid) : '—';
     const lines = [
       '📡 Новый HWID (первое успешное получение ленты)',
-      `Пользователь: ${p.panelUserName}`,
+      `Пользователь: <b>${nameBold}</b>`,
       `IP: https://ipinfo.io/${p.clientIp ?? '—'}`,
       // `User-Agent: ${p.userAgent ?? '—'}`,
-      `HWID: ${p.hwid ?? '—'}`,
+      `HWID: <b>${hwidDisplay}</b>`,
       // `Referer: ${p.referer ?? '—'}`,
     ];
     // if (p.queryParamsJson) {
@@ -60,6 +69,7 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
 
     const r = await this.telegramService.sendMessage(token, chatId, text, {
       disableNotification: true,
+      parseMode: 'HTML',
     });
     if (!r.ok) {
       this.log.warn(`Telegram (subscription access): ${r.error}`);

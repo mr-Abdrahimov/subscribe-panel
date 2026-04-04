@@ -20,7 +20,11 @@ export class TelegramService {
     botToken: string,
     chatId: string,
     text: string,
-    options?: { disableNotification?: boolean },
+    options?: {
+      disableNotification?: boolean;
+      /** HTML-разметка Telegram (жирный, ссылки и т.д.) */
+      parseMode?: 'HTML';
+    },
   ): Promise<TelegramSendResult> {
     const token = botToken.trim();
     const chat = chatId.trim();
@@ -32,6 +36,7 @@ export class TelegramService {
       const api = new Api(token);
       const msg = await api.sendMessage(chat, body, {
         link_preview_options: { is_disabled: true },
+        ...(options?.parseMode === 'HTML' ? { parse_mode: 'HTML' as const } : {}),
         ...(options?.disableNotification === true
           ? { disable_notification: true }
           : {}),
