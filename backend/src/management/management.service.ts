@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import type { CreateGroupDto } from './dto/create-group.dto';
 import type { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
@@ -18,13 +19,135 @@ import {
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 
 @Injectable()
-export class ManagementService {
+export class ManagementService implements OnModuleInit {
   private readonly logger = new Logger(ManagementService.name);
+  private panelUserGroupsBackfillDone = false;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.ensurePanelUserGroupNamesBackfill();
+  }
+
+  /**
+   * Однократно: перенос legacy поля groupName → groupNames в MongoDB после смены схемы Prisma.
+   */
+  private async ensurePanelUserGroupNamesBackfill(): Promise<void> {
+    if (this.panelUserGroupsBackfillDone) {
+      return;
+    }
+    try {
+      await this.prisma.$runCommandRaw({
+        update: 'PanelUser',
+        updates: [
+          {
+            q: {},
+            u: [
+              {
+                $set: {
+                  groupNames: {
+                    $cond: {
+                      if: {
+                        $gt: [{ $size: { $ifNull: ['$groupNames', []] } }, 0],
+                      },
+                      then: '$groupNames',
+                      else: {
+                        $cond: {
+                          if: {
+                            $gt: [
+                              {
+                                $strLenCP: {
+                                  $toString: { $ifNull: ['$groupName', ''] },
+                                },
+                              },
+                              0,
+                            ],
+                          },
+                          then: [{ $toString: '$groupName' }],
+                          else: [],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+            multi: true,
+          },
+        ],
+      });
+    } catch (e) {
+      this.logger.warn(
+        `PanelUser groupNames backfill: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    this.panelUserGroupsBackfillDone = true;
+  }
+
+  /**
+   * Уникальные группы пользователя с сохранением порядка из `groupNames`
+   * (пустые отбрасываются; дубликаты по NFC+lower схлопываются).
+   */
+  private orderedUniquePanelUserGroupNames(
+    user: Pick<PanelUser, 'groupNames'>,
+  ): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const normKey = (s: string) =>
+      s.trim().normalize('NFC').toLowerCase();
+    for (const g of user.groupNames ?? []) {
+      const t = g.trim();
+      if (!t) {
+        continue;
+      }
+      const k = normKey(t);
+      if (seen.has(k)) {
+        continue;
+      }
+      seen.add(k);
+      out.push(t);
+    }
+    return out;
+  }
+
+  /** Как orderedUniquePanelUserGroupNames, для входных массивов из DTO. */
+  private dedupeOrderedInputGroupNames(names: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const normKey = (s: string) =>
+      s.trim().normalize('NFC').toLowerCase();
+    for (const g of names) {
+      const t = g.trim();
+      if (!t) {
+        continue;
+      }
+      const k = normKey(t);
+      if (seen.has(k)) {
+        continue;
+      }
+      seen.add(k);
+      out.push(t);
+    }
+    return out;
+  }
+
+  private async assertPanelGroupNamesExist(names: string[]): Promise<void> {
+    const cleaned = Array.from(
+      new Set(names.map((n) => n.trim()).filter((n) => n.length > 0)),
+    );
+    if (cleaned.length === 0) {
+      throw new BadRequestException('Укажите хотя бы одну группу');
+    }
+    for (const n of cleaned) {
+      const g = await this.prisma.group.findUnique({ where: { name: n } });
+      if (!g) {
+        throw new BadRequestException(`Группа не найдена: ${n}`);
+      }
+    }
+  }
 
   /** Не отдаём subscriptionAccessToken в API панели. */
   private omitSubscriptionAccessToken<T extends { subscriptionAccessToken?: string | null }>(
@@ -35,11 +158,97 @@ export class ManagementService {
   }
 
   private static readonly PANEL_GLOBAL_SETTINGS_ID = 'global';
+  private groupSortOrderBackfillDone = false;
 
-  listGroups() {
-    return this.prisma.group.findMany({
-      orderBy: { createdAt: 'desc' },
+  /** Однократно: у всех групп был sortOrder по умолчанию 0 — выставляем 0..n-1 по дате создания. */
+  private async ensureGroupSortOrderBackfill(): Promise<void> {
+    if (this.groupSortOrderBackfillDone) {
+      return;
+    }
+    const all = await this.prisma.group.findMany({
+      orderBy: [{ createdAt: 'asc' }],
     });
+    if (all.length <= 1) {
+      this.groupSortOrderBackfillDone = true;
+      return;
+    }
+    const firstOrder = all[0]?.sortOrder ?? 0;
+    const allSame = all.every((g) => (g.sortOrder ?? 0) === firstOrder);
+    if (allSame) {
+      for (let i = 0; i < all.length; i += 1) {
+        await this.prisma.group.update({
+          where: { id: all[i].id },
+          data: { sortOrder: i },
+        });
+      }
+    }
+    this.groupSortOrderBackfillDone = true;
+  }
+
+  async listGroups() {
+    await this.ensureGroupSortOrderBackfill();
+    const groups = await this.prisma.group.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    const nameSet = new Set(groups.map((g) => g.name));
+    const [activeConnects, panelUsers] = await Promise.all([
+      this.prisma.connect.findMany({
+        where: { status: 'ACTIVE' },
+        select: { groupNames: true },
+      }),
+      this.prisma.panelUser.findMany({
+        select: { groupNames: true },
+      }),
+    ]);
+    const connectCount = new Map<string, number>(
+      groups.map((g) => [g.name, 0]),
+    );
+    const userCount = new Map<string, number>(
+      groups.map((g) => [g.name, 0]),
+    );
+    for (const c of activeConnects) {
+      for (const gn of c.groupNames) {
+        if (nameSet.has(gn)) {
+          connectCount.set(gn, (connectCount.get(gn) ?? 0) + 1);
+        }
+      }
+    }
+    for (const u of panelUsers) {
+      for (const gn of u.groupNames) {
+        if (nameSet.has(gn)) {
+          userCount.set(gn, (userCount.get(gn) ?? 0) + 1);
+        }
+      }
+    }
+    return groups.map((g) => ({
+      ...g,
+      activeConnectCount: connectCount.get(g.name) ?? 0,
+      panelUserCount: userCount.get(g.name) ?? 0,
+    }));
+  }
+
+  async reorderGroups(ids: string[]): Promise<{ success: boolean }> {
+    await this.ensureGroupSortOrderBackfill();
+    const uniq = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    const all = await this.prisma.group.findMany({ select: { id: true } });
+    if (uniq.length !== all.length) {
+      throw new BadRequestException(
+        'Список идентификаторов должен включать все группы без пропусков и дубликатов',
+      );
+    }
+    const idSet = new Set(all.map((g) => g.id));
+    for (const id of uniq) {
+      if (!idSet.has(id)) {
+        throw new BadRequestException(`Неизвестная группа: ${id}`);
+      }
+    }
+    for (let i = 0; i < uniq.length; i += 1) {
+      await this.prisma.group.update({
+        where: { id: uniq[i] },
+        data: { sortOrder: i },
+      });
+    }
+    return { success: true };
   }
 
   /** Настройки панели для подписки Happ */
@@ -159,7 +368,7 @@ export class ManagementService {
 
   /**
    * Мета для GET /public/sub: первая существующая группа из порядка
-   * (сначала PanelUser.groupName, затем остальные из ленты), поля группы с наследованием из глобальных настроек.
+   * (сначала группы из PanelUser.groupNames по порядку, затем остальные из ленты), поля группы с наследованием из глобальных настроек.
    */
   async getSubscriptionMetaForPublicSub(user: PanelUser | null): Promise<{
     announceMetaLine: string | null;
@@ -202,16 +411,15 @@ export class ManagementService {
   }
 
   /**
-   * Порядок имён групп для выбора настроек объявления/интервала: сначала группа пользователя панели,
-   * затем остальные из collectPublicDisplayGroupNames (без дубликатов).
+   * Порядок имён групп для выбора настроек объявления/интервала: сначала группы пользователя панели
+   * (порядок в PanelUser.groupNames), затем остальные из collectPublicDisplayGroupNames (без дубликатов).
    */
   private async getOrderedPanelUserGroupNames(
     user: PanelUser,
   ): Promise<string[]> {
-    const primary = user.groupName.trim();
-    const allDisplayed = await this.collectPublicDisplayGroupNames(
-      user.groupName,
-    );
+    const primaries = this.orderedUniquePanelUserGroupNames(user);
+    const allDisplayed =
+      await this.collectPublicDisplayGroupNames(primaries);
     const seen = new Set<string>();
     const out: string[] = [];
     const normKey = (s: string) => s.trim().normalize('NFC').toLowerCase();
@@ -227,8 +435,8 @@ export class ManagementService {
       seen.add(k);
       out.push(t);
     };
-    if (primary) {
-      add(primary);
+    for (const n of primaries) {
+      add(n);
     }
     for (const n of allDisplayed) {
       add(n);
@@ -280,17 +488,23 @@ export class ManagementService {
     };
   }
 
-  createGroup(dto: CreateGroupDto) {
+  async createGroup(dto: CreateGroupDto) {
     const name = dto.name.trim();
     if (!name) {
       throw new BadRequestException('Имя группы не может быть пустым');
     }
+    const agg = await this.prisma.group.aggregate({
+      _max: { sortOrder: true },
+    });
+    const nextSortOrder = (agg._max.sortOrder ?? -1) + 1;
+
     const data: {
       name: string;
+      sortOrder: number;
       subscriptionDisplayName?: string | null;
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
-    } = { name };
+    } = { name, sortOrder: nextSortOrder };
 
     if (dto.subscriptionDisplayName !== undefined) {
       const t = (dto.subscriptionDisplayName ?? '').trim();
@@ -330,7 +544,7 @@ export class ManagementService {
     await this.prisma.group.delete({ where: { id } });
 
     await this.prisma.panelUser.deleteMany({
-      where: { groupName: group.name },
+      where: { groupNames: { has: group.name } },
     });
 
     await this.prisma.$runCommandRaw({
@@ -432,10 +646,12 @@ export class ManagementService {
   async createUser(
     name: string,
     code: string,
-    groupName: string,
+    groupNamesInput: string[],
     cryptoOnlySubscription = false,
     allowAllUserAgents = false,
   ) {
+    const groupNames = this.dedupeOrderedInputGroupNames(groupNamesInput);
+    await this.assertPanelGroupNamesExist(groupNames);
     const trimmedCode = code.trim();
     const subscriptionAccessToken = randomBytes(32).toString('hex');
     const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
@@ -448,7 +664,7 @@ export class ManagementService {
       data: {
         name: name.trim(),
         code: trimmedCode,
-        groupName: groupName.trim(),
+        groupNames,
         allowAllUserAgents: Boolean(allowAllUserAgents),
         requireHwid: true,
         requireNoHwid: false,
@@ -597,7 +813,7 @@ export class ManagementService {
     dto: {
       enabled?: boolean;
       name?: string;
-      groupName?: string;
+      groupNames?: string[];
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
       requireNoHwid?: boolean;
@@ -609,7 +825,7 @@ export class ManagementService {
     const data: {
       enabled?: boolean;
       name?: string;
-      groupName?: string;
+      groupNames?: string[];
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
       requireNoHwid?: boolean;
@@ -626,18 +842,10 @@ export class ManagementService {
       }
       data.name = trimmed;
     }
-    if (dto.groupName !== undefined) {
-      const trimmed = dto.groupName.trim();
-      if (!trimmed) {
-        throw new BadRequestException('Группа не может быть пустой');
-      }
-      const group = await this.prisma.group.findUnique({
-        where: { name: trimmed },
-      });
-      if (!group) {
-        throw new BadRequestException('Группа с таким названием не найдена');
-      }
-      data.groupName = trimmed;
+    if (dto.groupNames !== undefined) {
+      const cleaned = this.dedupeOrderedInputGroupNames(dto.groupNames);
+      await this.assertPanelGroupNamesExist(cleaned);
+      data.groupNames = cleaned;
     }
     if (dto.allowAllUserAgents !== undefined) {
       data.allowAllUserAgents = dto.allowAllUserAgents;
@@ -678,6 +886,7 @@ export class ManagementService {
     ids: string[];
     groupName?: string;
     restrictToCurrentGroupName?: string;
+    addGroupName?: string;
     enabled?: boolean;
     allowAllUserAgents?: boolean;
     maxUniqueHwids?: number;
@@ -698,6 +907,7 @@ export class ManagementService {
 
     const hasPatch =
       dto.groupName !== undefined ||
+      dto.addGroupName !== undefined ||
       dto.enabled !== undefined ||
       dto.allowAllUserAgents !== undefined ||
       dto.maxUniqueHwids !== undefined ||
@@ -715,9 +925,15 @@ export class ManagementService {
       );
     }
 
-    const where: { id: { in: string[] }; groupName?: string } = { id: { in: uniq } };
-    if (dto.groupName !== undefined && restrict) {
-      where.groupName = restrict;
+    if (dto.addGroupName !== undefined && dto.groupName !== undefined) {
+      throw new BadRequestException(
+        'Нельзя одновременно указывать groupName и addGroupName',
+      );
+    }
+    if (dto.addGroupName !== undefined && restrict) {
+      throw new BadRequestException(
+        'Поле addGroupName несовместимо с restrictToCurrentGroupName',
+      );
     }
 
     if (dto.groupName !== undefined) {
@@ -733,32 +949,102 @@ export class ManagementService {
       }
     }
 
-    const data: {
-      groupName?: string;
+    if (dto.addGroupName !== undefined) {
+      const t = dto.addGroupName.trim();
+      if (!t) {
+        throw new BadRequestException('Группа не может быть пустой');
+      }
+      const group = await this.prisma.group.findUnique({
+        where: { name: t },
+      });
+      if (!group) {
+        throw new BadRequestException('Группа с таким названием не найдена');
+      }
+    }
+
+    const baseData: {
       enabled?: boolean;
       allowAllUserAgents?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
     } = {};
-    if (dto.groupName !== undefined) {
-      data.groupName = dto.groupName.trim();
-    }
     if (dto.enabled !== undefined) {
-      data.enabled = dto.enabled;
+      baseData.enabled = dto.enabled;
     }
     if (dto.allowAllUserAgents !== undefined) {
-      data.allowAllUserAgents = dto.allowAllUserAgents;
+      baseData.allowAllUserAgents = dto.allowAllUserAgents;
     }
     if (dto.maxUniqueHwids !== undefined) {
-      data.maxUniqueHwids = dto.maxUniqueHwids;
+      baseData.maxUniqueHwids = dto.maxUniqueHwids;
     }
     if (dto.cryptoOnlySubscription !== undefined) {
-      data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
+      baseData.cryptoOnlySubscription = dto.cryptoOnlySubscription;
     }
 
     let updated = 0;
-    if (Object.keys(data).length > 0) {
-      const result = await this.prisma.panelUser.updateMany({ where, data });
+
+    if (dto.addGroupName !== undefined) {
+      const addG = dto.addGroupName.trim();
+      const users = await this.prisma.panelUser.findMany({
+        where: { id: { in: uniq } },
+        select: { id: true, groupNames: true },
+      });
+      for (const u of users) {
+        const hadGroup = u.groupNames.some((g) => g.trim() === addG);
+        const data: {
+          groupNames?: string[];
+          enabled?: boolean;
+          allowAllUserAgents?: boolean;
+          maxUniqueHwids?: number;
+          cryptoOnlySubscription?: boolean;
+        } = { ...baseData };
+        if (!hadGroup) {
+          data.groupNames = [...u.groupNames, addG];
+        }
+        if (Object.keys(data).length === 0) {
+          continue;
+        }
+        await this.prisma.panelUser.update({
+          where: { id: u.id },
+          data,
+        });
+        updated += 1;
+      }
+    } else if (dto.groupName !== undefined && restrict) {
+      const newG = dto.groupName.trim();
+      const users = await this.prisma.panelUser.findMany({
+        where: {
+          id: { in: uniq },
+          groupNames: { has: restrict },
+        },
+        select: { id: true, groupNames: true },
+      });
+      for (const u of users) {
+        const withoutOld = u.groupNames.filter(
+          (g) => g.trim() !== restrict,
+        );
+        const merged = [...withoutOld];
+        if (!merged.some((g) => g.trim() === newG)) {
+          merged.push(newG);
+        }
+        await this.prisma.panelUser.update({
+          where: { id: u.id },
+          data: { groupNames: merged, ...baseData },
+        });
+        updated += 1;
+      }
+    } else if (dto.groupName !== undefined) {
+      const newG = dto.groupName.trim();
+      const result = await this.prisma.panelUser.updateMany({
+        where: { id: { in: uniq } },
+        data: { groupNames: [newG], ...baseData },
+      });
+      updated = result.count;
+    } else if (Object.keys(baseData).length > 0) {
+      const result = await this.prisma.panelUser.updateMany({
+        where: { id: { in: uniq } },
+        data: baseData,
+      });
       updated = result.count;
     }
 
@@ -841,8 +1127,9 @@ export class ManagementService {
   async resolveSubscriptionProfileTitleForPanelUser(
     user: PanelUser,
   ): Promise<string> {
+    const primaries = this.orderedUniquePanelUserGroupNames(user);
     const fromGroup = await this.resolveSubscriptionDisplayNameForUserGroup(
-      user.groupName,
+      primaries[0] ?? '',
     );
     const g = (fromGroup ?? '').trim();
     if (g) {
@@ -878,22 +1165,26 @@ export class ManagementService {
     panelUserId: string;
     subscriptionDelivered: true;
   }> {
+    const primaries = this.orderedUniquePanelUserGroupNames(user);
     const groupTitle =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
-        user.groupName,
+        primaries[0] ?? '',
       )) ?? '';
     const profileTitle = groupTitle.trim();
 
-    const connects = await this.prisma.connect.findMany({
-      where: {
-        status: 'ACTIVE',
-        groupNames: {
-          has: user.groupName,
-        },
-      },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { raw: true, name: true },
-    });
+    const connects =
+      primaries.length === 0
+        ? []
+        : await this.prisma.connect.findMany({
+            where: {
+              status: 'ACTIVE',
+              OR: primaries.map((g) => ({
+                groupNames: { has: g },
+              })),
+            },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+            select: { raw: true, name: true },
+          });
 
     const uriLines = connects.map((c) =>
       this.applyCustomNameToUri(c.raw, c.name),
@@ -1073,7 +1364,7 @@ export class ManagementService {
         name: true,
         code: true,
         enabled: true,
-        groupName: true,
+        groupNames: true,
         happCryptoUrl: true,
         cryptoOnlySubscription: true,
       },
@@ -1088,11 +1379,12 @@ export class ManagementService {
         ? rawHappCrypto.trim()
         : null;
 
-    const groups = await this.collectPublicDisplayGroupNames(user.groupName);
+    const primaries = this.orderedUniquePanelUserGroupNames(user);
+    const groups = await this.collectPublicDisplayGroupNames(primaries);
 
     const sub =
       (await this.resolveSubscriptionDisplayNameForUserGroup(
-        user.groupName,
+        primaries[0] ?? '',
       )) ?? '';
     const trimmedSub = sub.trim();
     const profileTitle = trimmedSub || null;
@@ -1120,15 +1412,16 @@ export class ManagementService {
   }
 
   /**
-   * Уникальные названия групп: PanelUser.groupName и все теги groupNames у активных коннектов ленты.
+   * Уникальные названия групп: группы пользователя панели и все теги groupNames у активных коннектов их ленты.
    * Имя приводится к записи Group.name в БД при совпадении (регистр, NFC).
    */
   private async collectPublicDisplayGroupNames(
-    panelGroupName: string,
+    panelUserGroupNames: string[],
   ): Promise<string[]> {
     const raw = new Set<string>();
-    const primary = panelGroupName.trim();
-    if (primary) {
+    for (const primary of panelUserGroupNames
+      .map((g) => g.trim())
+      .filter((g) => g.length > 0)) {
       raw.add(primary);
       const connects = await this.prisma.connect.findMany({
         where: {
@@ -1405,7 +1698,7 @@ export class ManagementService {
   }
 
   /**
-   * Название подписки из админки для группы пользователя: PanelUser.groupName → Group.name,
+   * Название подписки из админки для группы пользователя: имя группы → Group.name,
    * поле subscriptionDisplayName. Точное имя, затем NFC и регистронезависимое совпадение с Group.name.
    */
   private async resolveSubscriptionDisplayNameForUserGroup(

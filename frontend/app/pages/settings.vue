@@ -234,7 +234,7 @@ async function saveGroupTitle(groupId: string) {
       <template #group-titles-body>
         <div class="space-y-4 pt-4">
           <p class="text-sm text-muted">
-            Для пользователей панели по группе (<code class="text-xs font-mono text-highlighted">groupName</code>): заголовок
+            Для пользователей панели по группе (<code class="text-xs font-mono text-highlighted">groupNames</code>): заголовок
             <code class="text-xs font-mono text-highlighted">/sub/…</code>,
             <code class="text-xs font-mono text-highlighted">profile-title</code>
             и

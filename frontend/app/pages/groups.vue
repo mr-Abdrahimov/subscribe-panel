@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import {
+  useSortable,
+  moveArrayElement,
+} from '@vueuse/integrations/useSortable';
 import * as yup from 'yup';
 
 definePageMeta({
@@ -9,10 +13,15 @@ definePageMeta({
 type GroupItem = {
   id: string;
   name: string;
+  sortOrder: number;
   createdAt: string;
   subscriptionDisplayName?: string | null;
   subscriptionAnnounce?: string | null;
   profileUpdateInterval?: number | null;
+  /** Активные коннекты, у которых в тегах есть эта группа */
+  activeConnectCount: number;
+  /** Пользователи панели, у которых группа есть в groupNames */
+  panelUserCount: number;
 };
 
 type PanelGlobalSettingsResponse = {
@@ -69,10 +78,50 @@ const defaultAnnounceSaving = ref(false);
 const defaultIntervalSaving = ref(false);
 
 const columns: TableColumn<GroupItem>[] = [
+  {
+    id: 'drag',
+    header: '',
+    meta: {
+      class: {
+        th: 'w-10',
+        td: 'w-10'
+      }
+    }
+  },
   { accessorKey: 'name', header: 'Название' },
+  {
+    id: 'activeConnectCount',
+    header: 'Коннекты',
+    meta: {
+      class: {
+        th: 'text-center w-24',
+        td: 'text-center tabular-nums'
+      }
+    }
+  },
+  {
+    id: 'panelUserCount',
+    header: 'Пользователи',
+    meta: {
+      class: {
+        th: 'text-center w-28',
+        td: 'text-center tabular-nums'
+      }
+    }
+  },
   { accessorKey: 'createdAt', header: 'Дата добавления' },
   { id: 'actions', header: 'Действия' }
 ];
+
+useSortable('.groups-table-tbody', groups, {
+  handle: '.group-drag-handle',
+  animation: 150,
+  onUpdate: async (e) => {
+    moveArrayElement(groups, e.oldIndex!, e.newIndex!, e);
+    await nextTick();
+    await syncGroupsOrder();
+  }
+});
 
 onMounted(async () => {
   await Promise.all([loadGroups(), loadDefaults()]);
@@ -86,6 +135,19 @@ async function loadGroups() {
     toast.add({ title: 'Не удалось загрузить группы', color: 'error' });
   } finally {
     loading.value = false;
+  }
+}
+
+async function syncGroupsOrder() {
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/groups/reorder`, {
+      method: 'PATCH',
+      body: { ids: groups.value.map((g) => g.id) }
+    });
+    toast.add({ title: 'Порядок групп сохранён', color: 'success' });
+  } catch {
+    toast.add({ title: 'Не удалось сохранить порядок', color: 'error' });
+    await loadGroups();
   }
 }
 
@@ -414,13 +476,33 @@ async function saveDefaultInterval() {
     </UCard>
 
     <UCard :ui="{ body: 'p-0 sm:p-0' }">
+      <p class="border-b border-default px-4 py-3 text-xs text-muted">
+        Порядок строк можно менять перетаскиванием за иконку слева (как на странице «Коннекты»).
+      </p>
       <UTable
         :data="groups"
         :columns="columns"
         :loading="loading"
         empty="Групп пока нет"
+        :ui="{ tbody: 'groups-table-tbody' }"
         class="w-full"
       >
+        <template #drag-cell>
+          <div
+            class="group-drag-handle inline-flex cursor-grab text-muted active:cursor-grabbing"
+          >
+            <UIcon name="i-lucide-grip-vertical" class="size-4" />
+          </div>
+        </template>
+
+        <template #activeConnectCount-cell="{ row }">
+          {{ row.original.activeConnectCount ?? 0 }}
+        </template>
+
+        <template #panelUserCount-cell="{ row }">
+          {{ row.original.panelUserCount ?? 0 }}
+        </template>
+
         <template #createdAt-cell="{ row }">
           <span class="whitespace-nowrap">
             {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}

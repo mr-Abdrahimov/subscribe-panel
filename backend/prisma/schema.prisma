@@ -58,6 +58,8 @@ model Connect {
 model Group {
   id                        String   @id @default(auto()) @map("_id") @db.ObjectId
   name                      String   @unique
+  /// Порядок строки в таблице групп панели (как sortOrder у коннектов)
+  sortOrder                 Int      @default(0)
   /// Название профиля подписки: /sub и profile-title; фрагмент # в ленте — всегда Connect.name
   subscriptionDisplayName   String?
   /// Текст объявления Happ для пользователей этой группы (#announce / announce); null — наследовать из глобальных настроек панели
@@ -72,7 +74,8 @@ model PanelUser {
   id                   String                 @id @default(auto()) @map("_id") @db.ObjectId
   name                 String
   code                 String                 @unique
-  groupName            String
+  /// Группы ленты: коннекты из объединения групп; дубликаты строк в подписке не выдаются
+  groupNames           String[]               @default([])
   enabled              Boolean                @default(true)
   /// Если true — base64-подписка отдаётся любому User-Agent; иначе только при UA, начинающемся с «Happ»
   allowAllUserAgents   Boolean                @default(false)

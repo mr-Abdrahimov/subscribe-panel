@@ -27,9 +27,11 @@ import {
   hasSubscriptionHwid,
 } from '../common/subscription-client-meta';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { ReorderGroupsDto } from './dto/reorder-groups.dto';
 import { CreateSubscriptionAppLinkDto } from './dto/create-subscription-app-link.dto';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { BulkUpdatePanelUsersDto } from './dto/bulk-update-panel-users.dto';
+import { CreatePanelUserDto } from './dto/create-panel-user.dto';
 import { UpdatePanelUserDto } from './dto/update-panel-user.dto';
 import { UpdateSubscriptionAppLinkDto } from './dto/update-subscription-app-link.dto';
 import { UpdatePanelGlobalSettingsDto } from './dto/update-panel-global-settings.dto';
@@ -64,7 +66,11 @@ export class ManagementController {
   }
 
   @Get('groups')
-  @ApiOperation({ summary: 'Получить список групп' })
+  @ApiOperation({
+    summary: 'Получить список групп',
+    description:
+      'Группы отсортированы по полю sortOrder (порядок в панели). В каждом элементе: activeConnectCount — число активных коннектов с этой группой в groupNames; panelUserCount — число пользователей панели, у которых группа входит в groupNames.',
+  })
   listGroups() {
     return this.managementService.listGroups();
   }
@@ -79,6 +85,19 @@ export class ManagementController {
     return this.managementService.createGroup(body);
   }
 
+  @Patch('groups/reorder')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Изменить порядок групп',
+    description:
+      'Массив ID всех групп в требуемом порядке. Длина и набор идентификаторов должны совпадать с группами в базе.',
+  })
+  @ApiResponse({ status: 200, description: 'Порядок сохранён' })
+  @ApiResponse({ status: 400, description: 'Некорректный список ID' })
+  reorderGroups(@Body() body: ReorderGroupsDto) {
+    return this.managementService.reorderGroups(body.ids);
+  }
+
   @Delete('groups/:id')
   @ApiOperation({ summary: 'Удалить группу' })
   removeGroup(@Param('id') id: string) {
@@ -89,7 +108,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить настройки группы',
     description:
-      'Частичное обновление. subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupName, затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
+      'Частичное обновление. subscriptionDisplayName — название профиля для этой группы ( /sub, profile-title ленты). subscriptionAnnounce и profileUpdateInterval — объявление и интервал Happ для пользователей, у которых эта группа выбрана первой в порядке (сначала PanelUser.groupNames (порядок в массиве), затем прочие группы ленты); null или пустая строка для объявления — наследование из глобальных настроек панели. Строки ленты (#) — из name коннекта.',
   })
   @ApiResponse({ status: 200, description: 'Группа успешно обновлена' })
   @ApiResponse({ status: 404, description: 'Группа не найдена' })
@@ -113,20 +132,11 @@ export class ManagementController {
     description:
       'После создания бэкенд запрашивает happ:// у crypto.happ.su для URL с ?t=TOKEN. Опционально: cryptoOnlySubscription, allowAllUserAgents (по умолчанию false). GET /public/sub/:code: параметр t= опционален; если передан неверно — 403.',
   })
-  createUser(
-    @Body()
-    body: {
-      name: string;
-      code: string;
-      groupName: string;
-      cryptoOnlySubscription?: boolean;
-      allowAllUserAgents?: boolean;
-    },
-  ) {
+  createUser(@Body() body: CreatePanelUserDto) {
     return this.managementService.createUser(
       body.name,
       body.code,
-      body.groupName,
+      body.groupNames,
       body.cryptoOnlySubscription === true,
       body.allowAllUserAgents === true,
     );
@@ -143,7 +153,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Массовое обновление пользователей панели',
     description:
-      'По списку ids: назначение группы (опционально restrictToCurrentGroupName), смена enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription, очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
+      'По списку ids: groupName без restrict — список групп пользователя заменяется одной группой; с restrictToCurrentGroupName — перенос; addGroupName — добавить группу к существующему списку (без удаления остальных). Также: enabled, allowAllUserAgents, maxUniqueHwids, cryptoOnlySubscription, очистка логов подписки (PanelUserAccessLog). Требуется хотя бы одно действие.',
   })
   @ApiResponse({
     status: 200,
@@ -159,7 +169,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: enabled, name, groupName, allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (happCryptoUrl не сбрасывается). Код подписки (code) не меняется.',
+      'Частичное обновление: enabled, name, groupNames (полная замена списка групп), allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (happCryptoUrl не сбрасывается). Код подписки (code) не меняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({ status: 400, description: 'Некорректные данные или группа не найдена' })
@@ -296,7 +306,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала PanelUser.groupName, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала группы из PanelUser.groupNames по порядку, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты.',
   })
   @ApiResponse({
     status: 200,

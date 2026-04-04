@@ -28,7 +28,7 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
-      'Назначить группу. Если указано restrictToCurrentGroupName — обновляются только выбранные пользователи с текущей группой, совпадающей с этим значением (перенос из группы)',
+      'Без restrictToCurrentGroupName — полная замена списка групп пользователя одной группой (имя должно существовать в справочнике). С restrictToCurrentGroupName — у выбранных пользователей, у которых в groupNames есть указанная группа: эта группа заменяется на новую, остальные группы сохраняются',
     example: 'Офис',
     maxLength: 200,
   })
@@ -39,7 +39,7 @@ export class BulkUpdatePanelUsersDto {
 
   @ApiPropertyOptional({
     description:
-      'Используется только вместе с groupName: менять группу только у пользователей, у которых сейчас эта группа (среди переданных в ids)',
+      'Только вместе с groupName: затрагиваются только пользователи из ids, у которых в массиве groupNames есть эта группа (точное совпадение строки)',
     example: 'Старая',
     maxLength: 200,
   })
@@ -47,6 +47,17 @@ export class BulkUpdatePanelUsersDto {
   @IsString()
   @MaxLength(200)
   restrictToCurrentGroupName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Добавить группу к каждому из выбранных: имя дописывается в groupNames, если его ещё нет (остальные группы не удаляются). Несовместимо с groupName и restrictToCurrentGroupName',
+    example: 'VIP',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  addGroupName?: string;
 
   @ApiPropertyOptional({
     description: 'Включить или отключить пользователей панели',

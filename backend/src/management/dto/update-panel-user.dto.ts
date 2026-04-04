@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -28,14 +30,17 @@ export class UpdatePanelUserDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Название группы (должна существовать в справочнике групп)',
-    example: 'Офис',
-    maxLength: 200,
+    description:
+      'Группы пользователя (полная замена списка). Все названия должны существовать в справочнике.',
+    type: [String],
+    example: ['Офис', 'VIP'],
   })
   @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  groupName?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  groupNames?: string[];
 
   @ApiPropertyOptional({
     description:

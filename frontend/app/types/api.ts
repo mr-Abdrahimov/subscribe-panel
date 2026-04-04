@@ -3,7 +3,7 @@ export type PublicUserResponse = {
   name: string
   code: string
   enabled: boolean
-  groupName: string
+  groupNames: string[]
   subscriptionDisplayName: string | null
   profileTitle: string | null
   /** Реальная лента только через crypto happ:// и секретный путь; /sub/… даёт заглушку */

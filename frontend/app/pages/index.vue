@@ -9,7 +9,10 @@ definePageMeta({
 
 const userFormSchema = yup.object({
   name: yup.string().trim().required('Введите имя').max(200, 'Не более 200 символов'),
-  groupName: yup.string().required('Выберите группу')
+  groupNames: yup
+    .array()
+    .of(yup.string().required())
+    .min(1, 'Выберите хотя бы одну группу')
 });
 
 type GroupItem = {
@@ -22,7 +25,7 @@ type UserItem = {
   id: string;
   name: string;
   code: string;
-  groupName: string;
+  groupNames: string[];
   enabled: boolean;
   /** happ://… от crypto.happ.su, подстановка {crypto} в приложениях */
   happCryptoUrl?: string | null;
@@ -50,7 +53,7 @@ const isModalOpen = ref(false);
 const editingUserId = ref<string | null>(null);
 const formName = ref('');
 const formCode = ref('');
-const formGroupName = ref('');
+const formGroupNames = ref<string[]>([]);
 const isDeleteConfirmOpen = ref(false);
 const pendingDeleteUserId = ref<string | null>(null);
 const isClearLogsConfirmOpen = ref(false);
@@ -59,6 +62,7 @@ const pendingClearLogsUserId = ref<string | null>(null);
 const rowSelection = ref<RowSelectionState>({});
 const bulkLoading = ref(false);
 const bulkAssignGroupName = ref<string>('');
+const bulkAddGroupName = ref<string>('');
 const bulkTransferFromGroup = ref<string>('');
 const bulkTransferToGroup = ref<string>('');
 const bulkMaxUniqueHwidsInput = ref<string>('0');
@@ -117,8 +121,9 @@ const columns: TableColumn<UserItem>[] = [
     },
   },
   {
-    accessorKey: 'groupName',
-    header: 'Группа',
+    id: 'groupNames',
+    accessorKey: 'groupNames',
+    header: 'Группы',
     meta: {
       class: {
         th: thBase,
@@ -405,7 +410,7 @@ function openCreate() {
   editingUserId.value = null;
   formName.value = '';
   formCode.value = generateCode(32);
-  formGroupName.value = groups.value[0]?.name ?? '';
+  formGroupNames.value = groups.value[0]?.name ? [groups.value[0].name] : [];
   formAccessMode.value = 'crypto';
   isModalOpen.value = true;
 }
@@ -418,7 +423,7 @@ function openEdit(user: UserItem) {
   editingUserId.value = user.id;
   formName.value = user.name;
   formCode.value = user.code;
-  formGroupName.value = user.groupName;
+  formGroupNames.value = [...(user.groupNames ?? [])];
   formAccessMode.value = accessModeFromUser(user);
   isModalOpen.value = true;
 }
@@ -433,14 +438,13 @@ const modalTitle = computed(() =>
 );
 
 async function submitUser() {
-  const groupName =
-    typeof formGroupName.value === 'string'
-      ? formGroupName.value
-      : String(formGroupName.value ?? '');
+  const groupNames = (formGroupNames.value ?? []).filter(
+    (g): g is string => typeof g === 'string' && g.trim().length > 0,
+  );
   try {
     await userFormSchema.validate({
       name: formName.value,
-      groupName
+      groupNames
     });
   } catch (e) {
     if (e instanceof yup.ValidationError) {
@@ -461,7 +465,7 @@ async function submitUser() {
           method: 'PATCH',
           body: {
             name,
-            groupName,
+            groupNames,
             ...accessFlags,
           }
         }
@@ -473,7 +477,7 @@ async function submitUser() {
         body: {
           name,
           code: formCode.value,
-          groupName,
+          groupNames,
           ...accessFlags,
         }
       });
@@ -674,6 +678,7 @@ async function runBulkUpdate(body: Record<string, unknown>) {
     );
     const hadDataPatch =
       body.groupName !== undefined ||
+      body.addGroupName !== undefined ||
       body.enabled !== undefined ||
       body.allowAllUserAgents !== undefined ||
       body.maxUniqueHwids !== undefined ||
@@ -726,6 +731,22 @@ async function bulkAssignGroup() {
     return;
   }
   await runBulkUpdate({ groupName: name });
+}
+
+async function bulkAddGroup() {
+  const name =
+    typeof bulkAddGroupName.value === 'string'
+      ? bulkAddGroupName.value.trim()
+      : String(bulkAddGroupName.value ?? '').trim();
+  if (!name) {
+    toast.add({ title: 'Выберите группу', color: 'warning' });
+    return;
+  }
+  if (groups.value.length === 0) {
+    toast.add({ title: 'Сначала создайте группу', color: 'error' });
+    return;
+  }
+  await runBulkUpdate({ addGroupName: name });
 }
 
 async function bulkTransferFromGroupAction() {
@@ -821,9 +842,12 @@ async function confirmBulkClearLogs() {
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div class="space-y-2 rounded-lg border border-default/60 bg-elevated/30 p-3">
             <p class="text-xs font-semibold text-highlighted">
-              Группа
+              Группы
             </p>
-            <UFormField label="Назначить всем выбранным">
+            <UFormField
+              label="Назначить одну группу всем"
+              description="Полная замена: у каждого останется только эта группа."
+            >
               <USelectMenu
                 v-model="bulkAssignGroupName"
                 :items="groupOptions"
@@ -839,6 +863,29 @@ async function confirmBulkClearLogs() {
               @click="bulkAssignGroup"
             >
               Назначить группу
+            </UButton>
+            <UFormField
+              label="Добавить группу всем"
+              description="К текущим группам; если группа уже есть — список не меняется."
+              class="pt-2 border-t border-default/60"
+            >
+              <USelectMenu
+                v-model="bulkAddGroupName"
+                :items="groupOptions"
+                placeholder="Группа для добавления"
+                class="w-full"
+              />
+            </UFormField>
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              class="w-full sm:w-auto"
+              :loading="bulkLoading"
+              :disabled="!bulkAddGroupName"
+              @click="bulkAddGroup"
+            >
+              Добавить группу
             </UButton>
             <UFormField
               label="Перенести из группы"
@@ -1042,6 +1089,26 @@ async function confirmBulkClearLogs() {
           </div>
         </template>
 
+        <template #groupNames-cell="{ row }">
+          <div
+            class="flex flex-wrap items-center justify-center gap-1 px-1"
+          >
+            <UBadge
+              v-for="g in row.original.groupNames ?? []"
+              :key="g"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+            >
+              {{ g }}
+            </UBadge>
+            <span
+              v-if="!(row.original.groupNames?.length)"
+              class="text-xs text-muted"
+            >—</span>
+          </div>
+        </template>
+
         <template #subscriptionAccess-cell="{ row }">
           <div
             class="flex justify-center"
@@ -1227,11 +1294,16 @@ async function confirmBulkClearLogs() {
             <UInput v-model="formCode" class="w-full" readonly />
           </UFormField>
 
-          <UFormField label="Группа" required>
+          <UFormField
+            label="Группы (одна или несколько)"
+            required
+            description="Можно выбрать несколько: лента подписки объединяет коннекты всех групп без дубликатов строк URI."
+          >
             <USelectMenu
-              v-model="formGroupName"
+              v-model="formGroupNames"
+              multiple
               :items="groupOptions"
-              placeholder="Выберите группу"
+              placeholder="Выберите одну или несколько групп"
               class="w-full"
             />
           </UFormField>
