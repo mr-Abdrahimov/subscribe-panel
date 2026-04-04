@@ -76,8 +76,6 @@ export class SubscriptionFetchProcessor extends WorkerHost {
           { subscriptionId: sub.id },
           {
             jobId: `fetch-connects-${sub.id}`,
-            removeOnComplete: { count: 100 },
-            removeOnFail: { count: 30 },
           },
         );
       } catch {
