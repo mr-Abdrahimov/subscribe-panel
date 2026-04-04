@@ -564,7 +564,7 @@ export class ManagementService implements OnModuleInit {
   }
 
   /**
-   * Две строки в объявлении Happ: группы, коннекты которых в ленте, и отключённые.
+   * Суффикс объявления Happ: «Отображаются: …»; «Не отображаются: …» — только если есть скрытые группы.
    */
   private buildSubscriptionGroupAnnounceSuffix(user: {
     groupNames: string[];
@@ -583,8 +583,10 @@ export class ManagementService implements OnModuleInit {
       .map((e) => e.name.trim())
       .filter((n) => n.length > 0);
     const shownLine = `Отображаются: ${shown.length > 0 ? shown.join(', ') : '—'}`;
-    const hiddenLine = `Не отображаются: ${hidden.length > 0 ? hidden.join(', ') : '—'}`;
-    return `${shownLine}\n${hiddenLine}`;
+    if (hidden.length === 0) {
+      return shownLine;
+    }
+    return `${shownLine}\nНе отображаются: ${hidden.join(', ')}`;
   }
 
   private mergeSubscriptionAnnounceWithGroupLists(

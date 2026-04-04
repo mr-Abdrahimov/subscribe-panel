@@ -20,7 +20,7 @@ export function sliceAnnounceForHappSubscription(t: string): string {
 
 /**
  * Обрезка объявления до лимита Happ, стараясь сохранить хвост, начинающийся с «Отображаются:»
- * (списки групп в подписке после основного текста).
+ * (и при наличии — блок «Не отображаются:» на следующей строке).
  */
 export function sliceAnnounceForHappPreservingGroupLines(t: string): string {
   const max = HAPP_ANNOUNCE_MAX_CHARS;
