@@ -42,6 +42,7 @@ function isBullBoardAuthOk(
   req: Request,
   res: Response,
   expected: string,
+  cookiePath: string,
 ): boolean {
   const q = req.query['token'];
   const qs = typeof q === 'string' ? q : '';
@@ -54,7 +55,7 @@ function isBullBoardAuthOk(
       const v = encodeURIComponent(expected);
       res.append(
         'Set-Cookie',
-        `${BULL_BOARD_COOKIE}=${v}; Path=/admin/queues; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 3600}`,
+        `${BULL_BOARD_COOKIE}=${v}; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 3600}`,
       );
     }
     return true;
@@ -98,8 +99,20 @@ async function bootstrap() {
 
   if (bullBoardEnabled) {
     try {
+      /**
+       * Путь на процессе Nest (после nginx `location /api/ { proxy_pass .../; }` это без префикса /api).
+       */
+      const bullBoardMountPath =
+        config.get<string>('BULL_BOARD_MOUNT_PATH')?.trim() || '/admin/queues';
+      /**
+       * Путь в браузере (ссылки и статика Bull Board). Если API снаружи — `/api/...`, задайте
+       * BULL_BOARD_PUBLIC_PATH=/api/admin/queues, иначе UI грузит `/admin/queues/static/...` с корня домена.
+       */
+      const bullBoardPublicPath =
+        config.get<string>('BULL_BOARD_PUBLIC_PATH')?.trim() || bullBoardMountPath;
+
       const serverAdapter = new ExpressAdapter();
-      serverAdapter.setBasePath('/admin/queues');
+      serverAdapter.setBasePath(bullBoardPublicPath);
       const queue = app.get<Queue>(getQueueToken(SUBSCRIPTION_FETCH_QUEUE));
       createBullBoard({
         queues: [new BullMQAdapter(queue)],
@@ -108,17 +121,19 @@ async function bootstrap() {
       const token = config.get<string>('BULL_BOARD_TOKEN')?.trim();
       if (token) {
         http.use(
-          '/admin/queues',
+          bullBoardMountPath,
           (req: Request, res: Response, next: NextFunction) => {
-            if (isBullBoardAuthOk(req, res, token)) {
+            if (isBullBoardAuthOk(req, res, token, bullBoardPublicPath)) {
               return next();
             }
             res.status(403).send('Forbidden');
           },
         );
       }
-      http.use('/admin/queues', serverAdapter.getRouter() as RequestHandler);
-      logger.log('Bull Board: /admin/queues');
+      http.use(bullBoardMountPath, serverAdapter.getRouter() as RequestHandler);
+      logger.log(
+        `Bull Board: смонтирован на ${bullBoardMountPath}, публичный basePath=${bullBoardPublicPath}`,
+      );
     } catch (e) {
       logger.error(
         `Bull Board не смонтирован: ${e instanceof Error ? e.message : String(e)}`,
@@ -132,10 +147,20 @@ async function bootstrap() {
   console.log(`🚀 Сервер запущен     ${appUrl}`);
   console.log(`📚 Swagger UI:        ${appUrl}/${swaggerPath}`);
   if (bullBoardEnabled) {
-    console.log(`📊 Bull Board:        ${appUrl}/admin/queues/`);
+    const mount =
+      config.get<string>('BULL_BOARD_MOUNT_PATH')?.trim() || '/admin/queues';
+    const pub =
+      config.get<string>('BULL_BOARD_PUBLIC_PATH')?.trim() || mount;
+    const externalBase =
+      config.get<string>('FRONTEND_ORIGIN')?.replace(/\/$/, '') ||
+      new URL(appUrl).origin;
+    console.log(`📊 Bull Board (процесс): ${appUrl}${mount}/`);
+    if (pub !== mount) {
+      console.log(`📊 Bull Board (браузер):  ${externalBase}${pub}/`);
+    }
     if (config.get<string>('BULL_BOARD_TOKEN')?.trim()) {
       console.log(
-        '   Доступ: один раз откройте с ?token=… (ставится cookie для /admin/queues) или заголовок x-bull-board-token',
+        `   Доступ: ?token=… (cookie Path=${pub}) или заголовок x-bull-board-token`,
       );
     }
   }
