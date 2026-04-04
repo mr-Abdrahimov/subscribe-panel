@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
   ensureUngroupedConnectGroupExists,
   UNGROUPED_CONNECT_GROUP_NAME,
 } from '../common/ungrouped-connect-group';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../telegram/telegram.service';
 import {
   normalizedConnectIdentity,
   prepareConnectUriForParse,
@@ -13,9 +14,19 @@ import {
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
+/** Совпадает с ManagementService.PANEL_GLOBAL_SETTINGS_ID */
+const PANEL_GLOBAL_SETTINGS_ID = 'global';
+
+const TELEGRAM_MESSAGE_MAX = 3900;
+
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(SubscriptionsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   findAll() {
     return this.prisma.subscription.findMany({
@@ -139,6 +150,7 @@ export class SubscriptionsService {
       _max: { sortOrder: true },
     });
     let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
+    const newUngroupedDisplayNames: string[] = [];
 
     for (const [identity, incoming] of incomingByIdentity) {
       const existing = poolSorted.find(
@@ -165,6 +177,7 @@ export class SubscriptionsService {
             subscriptionId: id,
           },
         });
+        newUngroupedDisplayNames.push(incoming.originalName);
         continue;
       }
 
@@ -209,6 +222,13 @@ export class SubscriptionsService {
       where: { id },
       data: { lastFetchedAt: new Date() },
     });
+
+    if (newUngroupedDisplayNames.length > 0) {
+      await this.notifyTelegramNewUngroupedConnects(
+        subscription.title,
+        newUngroupedDisplayNames,
+      );
+    }
 
     const connects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
@@ -312,5 +332,89 @@ export class SubscriptionsService {
   private extractProtocol(raw: string) {
     const scheme = raw.split('://')[0]?.trim().toLowerCase();
     return scheme || 'unknown';
+  }
+
+  /**
+   * Уведомление в Telegram при появлении новых коннектов в «Без группы»
+   * (ручной fetch и очередь используют один и тот же fetchConnects).
+   */
+  private async notifyTelegramNewUngroupedConnects(
+    subscriptionTitle: string,
+    displayNames: string[],
+  ): Promise<void> {
+    if (displayNames.length === 0) {
+      return;
+    }
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: PANEL_GLOBAL_SETTINGS_ID },
+      select: { telegramBotSecret: true, telegramGroupId: true },
+    });
+    const token = row?.telegramBotSecret?.trim() ?? '';
+    const chatId = row?.telegramGroupId?.trim() ?? '';
+    if (!token || !chatId) {
+      return;
+    }
+
+    const chunks = this.buildTelegramNewConnectsChunks(
+      subscriptionTitle,
+      displayNames,
+    );
+    for (let i = 0; i < chunks.length; i++) {
+      const r = await this.telegramService.sendMessage(
+        token,
+        chatId,
+        chunks[i],
+      );
+      if (!r.ok) {
+        this.logger.warn(
+          `Telegram: не удалось отправить уведомление о новых коннектах (часть ${i + 1}/${chunks.length}): ${r.error}`,
+        );
+        break;
+      }
+    }
+  }
+
+  private buildTelegramNewConnectsChunks(
+    subscriptionTitle: string,
+    displayNames: string[],
+  ): string[] {
+    const itemLines = displayNames.map((n) => `• ${n}`);
+    const firstHeader = `🔔 Новые коннекты в группе «${UNGROUPED_CONNECT_GROUP_NAME}»\n\nПодписка: ${subscriptionTitle}\nВсего новых: ${displayNames.length}\n\n`;
+
+    const chunks: string[] = [];
+    let lineIndex = 0;
+    let partIdx = 0;
+
+    while (lineIndex < itemLines.length) {
+      const header =
+        partIdx === 0
+          ? firstHeader
+          : `… часть ${partIdx + 1}: новые в «${UNGROUPED_CONNECT_GROUP_NAME}», ${subscriptionTitle}\n\n`;
+
+      const bodyLines: string[] = [];
+      let used = header.length;
+
+      while (lineIndex < itemLines.length) {
+        const line = itemLines[lineIndex];
+        const sep = bodyLines.length > 0 ? 1 : 0;
+        if (used + sep + line.length <= TELEGRAM_MESSAGE_MAX) {
+          bodyLines.push(line);
+          used += sep + line.length;
+          lineIndex += 1;
+          continue;
+        }
+        if (bodyLines.length === 0) {
+          const max = TELEGRAM_MESSAGE_MAX - header.length - 1;
+          bodyLines.push(`${line.slice(0, Math.max(0, max - 1))}…`);
+          lineIndex += 1;
+        }
+        break;
+      }
+
+      chunks.push(header + bodyLines.join('\n'));
+      partIdx += 1;
+    }
+
+    return chunks;
   }
 }
