@@ -76,6 +76,9 @@ const filterStatus = ref<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
 /** null — любая группа (фильтр не задан) */
 const filterGroupName = ref<string | null>(null);
 
+/** Подстрока в кастомном или исходном названии; без учёта регистра; вместе с прочими фильтрами ограничивает видимые карточки */
+const connectSearchQuery = ref('');
+
 const statusFilterItems = [
   { label: 'Любой', id: 'ALL' as const },
   { label: 'Включён', id: 'ACTIVE' as const },
@@ -130,12 +133,26 @@ function fetchErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+const connectSearchNeedle = computed(() =>
+  connectSearchQuery.value.trim().toLowerCase(),
+);
+
 const filtersActive = computed(
   () =>
     filterSubscriptionId.value != null ||
     filterStatus.value !== 'ALL' ||
-    filterGroupName.value != null
+    filterGroupName.value != null ||
+    connectSearchNeedle.value.length > 0,
 );
+
+function connectMatchesNameSearch(c: ConnectRow, needleLower: string): boolean {
+  if (!needleLower) {
+    return true;
+  }
+  const name = (c.name ?? '').toLowerCase();
+  const orig = (c.originalName ?? '').toLowerCase();
+  return name.includes(needleLower) || orig.includes(needleLower);
+}
 
 const filteredConnects = computed(() => {
   let list = connects.value;
@@ -149,6 +166,10 @@ const filteredConnects = computed(() => {
     const g = filterGroupName.value;
     list = list.filter((c) => c.groupNames.includes(g));
   }
+  const needle = connectSearchNeedle.value;
+  if (needle.length > 0) {
+    list = list.filter((c) => connectMatchesNameSearch(c, needle));
+  }
   return list;
 });
 
@@ -157,6 +178,9 @@ const tableEmptyText = computed(() => {
     return 'Коннектов пока нет';
   }
   if (filteredConnects.value.length === 0) {
+    if (connectSearchNeedle.value.length > 0) {
+      return 'Нет коннектов по поиску и фильтрам';
+    }
     return 'Нет коннектов по выбранным фильтрам';
   }
   return 'Коннектов пока нет';
@@ -691,6 +715,28 @@ function toggleSelectAllFiltered(value: boolean) {
   rowSelection.value = next;
 }
 
+/** Только id, видимые в колонке сейчас (учёт фильтров и поиска). */
+function visibleIdsInBucket(bucketKey: string): string[] {
+  return [...(bucketOrder.value[bucketKey] ?? [])];
+}
+
+function someVisibleInBucketSelected(bucketKey: string): boolean {
+  const ids = visibleIdsInBucket(bucketKey);
+  return ids.some((id) => rowSelection.value[id]);
+}
+
+function toggleSelectAllInBucket(bucketKey: string, value: boolean) {
+  const ids = visibleIdsInBucket(bucketKey);
+  if (ids.length === 0) {
+    return;
+  }
+  const next = { ...rowSelection.value };
+  for (const id of ids) {
+    next[id] = value;
+  }
+  rowSelection.value = next;
+}
+
 function toggleRowSelect(id: string, value: boolean) {
   rowSelection.value = { ...rowSelection.value, [id]: value };
 }
@@ -1031,6 +1077,19 @@ async function bulkRemoveGroupsFromSelection() {
               clear
             />
           </UFormField>
+          <UFormField
+            label="Поиск по названию"
+            description="Кастомное и исходное имя, подстрока, без учёта регистра; по всем колонкам"
+            class="sm:col-span-2 lg:col-span-3"
+          >
+            <UInput
+              v-model="connectSearchQuery"
+              class="w-full"
+              placeholder="Например: youtube или NL"
+              icon="i-lucide-search"
+              clear
+            />
+          </UFormField>
         </div>
         <div
           v-if="!loading && filteredConnects.length > 0"
@@ -1055,7 +1114,7 @@ async function bulkRemoveGroupsFromSelection() {
           />
         </div>
         <p v-if="filtersActive" class="text-xs text-muted">
-          Перетаскивание между колонками и смена порядка отключены, пока включены фильтры.
+          Перетаскивание между колонками и смена порядка отключены, пока включены фильтры или поиск.
         </p>
         <p v-else class="text-xs text-muted">
           Коннекты сгруппированы по главным группам. Без главной группы — колонка «Без группы». Тяните за
@@ -1134,7 +1193,31 @@ async function bulkRemoveGroupsFromSelection() {
               <h3 class="text-sm font-semibold text-highlighted min-w-0">
                 {{ bucketColumnTitle(bucketKey) }}
               </h3>
-              <div class="flex flex-shrink-0 flex-wrap items-center gap-1.5">
+              <div class="flex flex-shrink-0 flex-wrap items-center gap-1">
+                <UTooltip
+                  text="Выбрать всех в этой колонке (только карточки, видимые сейчас — с учётом фильтров и поиска)"
+                >
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-check-square"
+                    :disabled="(bucketOrder[bucketKey] ?? []).length === 0"
+                    aria-label="Выбрать всех в колонке"
+                    @click="toggleSelectAllInBucket(bucketKey, true)"
+                  />
+                </UTooltip>
+                <UTooltip text="Снять выбор только с видимых в этой колонке">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-square-minus"
+                    :disabled="!someVisibleInBucketSelected(bucketKey)"
+                    aria-label="Снять выбор в колонке"
+                    @click="toggleSelectAllInBucket(bucketKey, false)"
+                  />
+                </UTooltip>
                 <UBadge
                   v-if="bucketKey !== NO_MAIN_BUCKET"
                   color="primary"
