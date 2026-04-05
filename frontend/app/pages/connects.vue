@@ -609,7 +609,7 @@ async function onBucketSortEnd(evt: SortableEvent) {
         title: fetchErrorMessage(err, 'Не удалось перенести коннект(ы)'),
         color: 'error',
       });
-      await loadConnects();
+      await loadConnects({ quiet: true });
       rebuildBucketOrder();
       await nextTick();
       initBucketSortables();
@@ -620,7 +620,7 @@ async function onBucketSortEnd(evt: SortableEvent) {
   if (fromKey !== toKey) {
     const c = connects.value.find((x) => x.id === movedId);
     if (!c) {
-      await loadConnects();
+      await loadConnects({ quiet: true });
       return;
     }
     const nextNames = computeGroupNamesForBucket(c, toKey);
@@ -635,7 +635,7 @@ async function onBucketSortEnd(evt: SortableEvent) {
         title: fetchErrorMessage(err, 'Не удалось перенести коннект'),
         color: 'error',
       });
-      await loadConnects();
+      await loadConnects({ quiet: true });
       await nextTick();
       initBucketSortables();
       return;
@@ -681,14 +681,14 @@ async function persistGlobalOrderFromBuckets(showToast: boolean) {
     if (showToast) {
       toast.add({ title: 'Порядок сохранён', color: 'success' });
     }
-    await loadConnects();
+    await loadConnects({ quiet: true });
     rebuildBucketOrder();
     await nextTick();
     await nextTick();
     initBucketSortables();
   } catch {
     toast.add({ title: 'Не удалось сохранить порядок', color: 'error' });
-    await loadConnects();
+    await loadConnects({ quiet: true });
     rebuildBucketOrder();
     await nextTick();
     initBucketSortables();
@@ -780,14 +780,25 @@ onBeforeUnmount(() => {
   destroyBucketSortables();
 });
 
-async function loadConnects() {
-  loading.value = true;
+/**
+ * @param quiet — без глобального loading (нет «мигания» фильтров/чекбокса), если в панели уже есть данные;
+ *               после сохранения порядка перетаскиванием.
+ */
+async function loadConnects(options?: { quiet?: boolean }) {
+  const quiet =
+    options?.quiet === true &&
+    connects.value.length > 0;
+  if (!quiet) {
+    loading.value = true;
+  }
   try {
     connects.value = await $fetch<ConnectRow[]>(`${config.public.apiBaseUrl}/connects`);
   } catch {
     toast.add({ title: 'Не удалось загрузить коннекты', color: 'error' });
   } finally {
-    loading.value = false;
+    if (!quiet) {
+      loading.value = false;
+    }
   }
 }
 
@@ -1092,10 +1103,11 @@ async function bulkRemoveGroupsFromSelection() {
           </UFormField>
         </div>
         <div
-          v-if="!loading && filteredConnects.length > 0"
+          v-if="filteredConnects.length > 0"
           class="flex flex-wrap items-center gap-3 border-t border-default pt-3"
         >
           <UCheckbox
+            :disabled="loading"
             :model-value="
               allFilteredSelected
                 ? true
