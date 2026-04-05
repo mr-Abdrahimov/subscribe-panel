@@ -351,7 +351,7 @@ const VLESS_CORE_QUERY_KEYS = new Set([
 
 /**
  * Ядро VLESS для сопоставления при синке (без «шумовых» query).
- * @param omitSniAndSid — убрать sni/servername/sid из ключа: та же нода, провайдер сменил только SNI или short_id.
+ * @param omitSniAndSid — убрать userinfo (UUID), sni/servername/sid: та же нода при смене UUID, SNI или short_id.
  */
 function buildVlessCoreIdentityForMatching(
   raw: string,
@@ -392,11 +392,13 @@ function buildVlessCoreIdentityForMatching(
         ? safeDecodeURIComponent(u.password).normalize('NFC')
         : '';
     const userinfo =
-      userDecoded !== ''
-        ? `${normalizeUserinfoUser(userDecoded, protocol)}${
-            passDecoded !== '' ? ':' + passDecoded : ''
-          }@`
-        : '';
+      omitSniAndSid
+        ? ''
+        : userDecoded !== ''
+          ? `${normalizeUserinfoUser(userDecoded, protocol)}${
+              passDecoded !== '' ? ':' + passDecoded : ''
+            }@`
+          : '';
 
     const qs = u.search.startsWith('?') ? u.search.slice(1) : u.search;
     const byKey = new Map<string, string[]>();
@@ -467,14 +469,15 @@ export function vlessCoreIdentityForMatching(raw: string): string | null {
 }
 
 /**
- * Как {@link vlessCoreIdentityForMatching}, но без sni/servername/sid — обновляем запись, если поменялся только SNI или Reality short_id.
+ * Как {@link vlessCoreIdentityForMatching}, но без userinfo (UUID), sni/servername/sid —
+ * обновляем запись, если провайдер сменил только UUID, SNI или Reality short_id.
  */
 export function vlessStableMatchIdentity(raw: string): string | null {
   return buildVlessCoreIdentityForMatching(raw, true);
 }
 
 /**
- * Ключ строки подписки при приёме: для vless — стабильное ядро без sni/sid (не плодим дубликаты в одном fetch);
+ * Ключ строки подписки при приёме: для vless — стабильное ядро без UUID/sni/sid (не плодим дубликаты в одном fetch);
  * иначе — {@link normalizedConnectIdentity}.
  */
 export function subscriptionIncomingDedupeKey(raw: string): string {

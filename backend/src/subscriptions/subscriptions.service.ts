@@ -135,8 +135,8 @@ export class SubscriptionsService {
     });
 
     /**
-     * Одна запись на стабильный ключ (для vless — без sni/sid): дубликаты и «та же нода, другой SNI»
-     * в одном fetch схлопываем (последняя строка побеждает).
+     * Одна запись на стабильный ключ (для vless — без UUID в userinfo, sni/sid): дубликаты и «та же нода,
+     * другой UUID/SNI» в одном fetch схлопываем (последняя строка побеждает).
      * identityKey в БД — полный {@link normalizedConnectIdentity}, чтобы отличать реально разные URI.
      */
     const incomingByDedupeKey = new Map<
@@ -285,7 +285,7 @@ export class SubscriptionsService {
 
   /**
    * Совпадение: полный ключ (normalize raw), сохранённый identityKey, либо стабильное ядро VLESS
-   * без sni/servername/sid — смена только SNI или Reality short_id обновляет запись, не пересоздавая.
+   * без userinfo (UUID), sni/servername/sid — смена только UUID, SNI или Reality short_id обновляет запись.
    */
   private connectMatchesIdentity(
     c: { raw: string; identityKey: string | null },

@@ -126,6 +126,17 @@ describe('vlessCoreIdentityForMatching', () => {
 });
 
 describe('vlessStableMatchIdentity', () => {
+  it('сводит варианты, отличающиеся только UUID в userinfo', () => {
+    const a =
+      'vless://98da9046-cec1-4a87-ac9c-76a787596bdb@ru5.mambo-jambo.ru:443?encryption=none&type=xhttp&path=%2F&host=enterprisekitten.com&mode=stream-one&security=none';
+    const b = a.replace(
+      '98da9046-cec1-4a87-ac9c-76a787596bdb',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    );
+    expect(normalizedConnectIdentity(a)).not.toBe(normalizedConnectIdentity(b));
+    expect(vlessStableMatchIdentity(a)).toBe(vlessStableMatchIdentity(b));
+  });
+
   it('сводит варианты, отличающиеся только sni', () => {
     const a =
       'vless://d3958b70-9432-4c84-9ced-8f72abbc8a00@maja.example.com:443?type=tcp&security=reality&flow=x&sni=old.example.com&pbk=AbCd_EfGhIjKlMnOpQrStUvWxYz0123456789';
@@ -140,6 +151,16 @@ describe('vlessStableMatchIdentity', () => {
 });
 
 describe('subscriptionIncomingDedupeKey', () => {
+  it('для vless с разным UUID даёт один ключ', () => {
+    const a =
+      'vless://98da9046-cec1-4a87-ac9c-76a787596bdb@ru5.mambo-jambo.ru:443?type=xhttp&path=%2F&host=enterprisekitten.com&mode=stream-one&security=none';
+    const b = a.replace(
+      '98da9046-cec1-4a87-ac9c-76a787596bdb',
+      '11111111-2222-3333-4444-555555555555',
+    );
+    expect(subscriptionIncomingDedupeKey(a)).toBe(subscriptionIncomingDedupeKey(b));
+  });
+
   it('для vless с разным sni даёт один ключ', () => {
     const a =
       'vless://d3958b70-9432-4c84-9ced-8f72abbc8a00@maja.example.com:443?type=tcp&security=reality&sni=a.com&pbk=AbCd_EfGhIjKlMnOpQrStUvWxYz0123456789';
