@@ -457,7 +457,7 @@ export class ManagementController {
           ? String(uaHeader[0]).trim()
           : '';
 
-    let subscriptionProfileTitle = '❌ Ошибка: Нет подключений';
+    let subscriptionProfileTitle = '❌ Ошибка: Нет подключений 1';
     if (user) {
       subscriptionProfileTitle =
         await this.managementService.resolveSubscriptionProfileTitleForPanelUser(
@@ -482,7 +482,7 @@ export class ManagementController {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         null,
         code,
-        '❌ Ошибка: Нет подключений',
+        '❌ Ошибка: Нет подключений 2',
         announceMetaLine,
         profileUpdateIntervalMetaLine,
       );

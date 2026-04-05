@@ -1705,7 +1705,7 @@ export class ManagementService implements OnModuleInit {
     subscriptionDelivered: false;
   } {
     const meta = profileTitleForMeta.trim() || '❌ Ошибка:Нет подключений';
-    const conn = connectionDisplayName.trim() || '❌ Ошибка: Нет подключений';
+    const conn = connectionDisplayName.trim() || '❌ Ошибка: Нет подключений 3';
     const line = this.buildRandomPlaceholderVlessLineForName(conn);
     const web = this.profileWebPageUrlMetaLine(code);
     const ann = announceMetaLine?.trim();
@@ -1747,7 +1747,7 @@ export class ManagementService implements OnModuleInit {
       panelUserId,
       code,
       profileTitleForMeta,
-      '❌ Ошибка: Нет подключений',
+      '❌ Ошибка: Нет подключений 4',
       announceMetaLine,
       profileUpdateIntervalMetaLine,
     );
