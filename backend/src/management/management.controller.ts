@@ -482,7 +482,7 @@ export class ManagementController {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
         null,
         code,
-        'Нет подключений',
+        '❌ Ошибка: Нет подключений',
         announceMetaLine,
         profileUpdateIntervalMetaLine,
       );
