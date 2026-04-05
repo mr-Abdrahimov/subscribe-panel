@@ -546,7 +546,7 @@ export class ManagementController {
           user.id,
           user.code,
           subscriptionProfileTitle,
-          '❌ Ошибка: Превышен лимит HWID',
+          '❌ Ошибка: Превышен лимит устройств',
           announceMetaLine,
           profileUpdateIntervalMetaLine,
         );
