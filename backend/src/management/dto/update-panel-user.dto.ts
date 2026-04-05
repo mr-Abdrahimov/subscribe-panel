@@ -31,6 +31,16 @@ export class UpdatePanelUserDto {
 
   @ApiPropertyOptional({
     description:
+      'Код в URL подписки /sub/… (уникален). При смене бэкенд заново запрашивает happ:// у crypto.happ.su для нового URL с тем же секретом t=.',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  code?: string;
+
+  @ApiPropertyOptional({
+    description:
       'Группы пользователя (полная замена списка). Все названия должны существовать в справочнике.',
     type: [String],
     example: ['Офис', 'VIP'],

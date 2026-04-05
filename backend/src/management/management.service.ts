@@ -1096,6 +1096,7 @@ export class ManagementService implements OnModuleInit {
     dto: {
       enabled?: boolean;
       name?: string;
+      code?: string;
       groupNames?: string[];
       allowAllUserAgents?: boolean;
       requireHwid?: boolean;
@@ -1105,9 +1106,15 @@ export class ManagementService implements OnModuleInit {
     },
   ) {
     await this.ensureUser(id);
+    const current = await this.prisma.panelUser.findUniqueOrThrow({
+      where: { id },
+      select: { code: true, cryptoOnlySubscription: true },
+    });
+
     const data: {
       enabled?: boolean;
       name?: string;
+      code?: string;
       groupNames?: string[];
       subscriptionGroupPrefs?: null;
       allowAllUserAgents?: boolean;
@@ -1115,7 +1122,28 @@ export class ManagementService implements OnModuleInit {
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
+      happCryptoUrl?: string | null;
     } = {};
+
+    let codeChanged = false;
+    if (dto.code !== undefined) {
+      const trimmed = dto.code.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Код подписки не может быть пустым');
+      }
+      if (trimmed !== current.code) {
+        const taken = await this.prisma.panelUser.findFirst({
+          where: { code: trimmed, id: { not: id } },
+          select: { id: true },
+        });
+        if (taken) {
+          throw new BadRequestException('Код подписки уже используется');
+        }
+        data.code = trimmed;
+        codeChanged = true;
+      }
+    }
+
     if (dto.enabled !== undefined) {
       data.enabled = dto.enabled;
     }
@@ -1153,6 +1181,29 @@ export class ManagementService implements OnModuleInit {
     if (dto.cryptoOnlySubscription !== undefined) {
       data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
     }
+
+    const effectiveCryptoOnly =
+      dto.cryptoOnlySubscription !== undefined
+        ? dto.cryptoOnlySubscription === true
+        : current.cryptoOnlySubscription === true;
+    const effectiveCode = data.code ?? current.code;
+
+    if (codeChanged) {
+      const token = await this.ensureSubscriptionAccessToken(id);
+      const pageUrl = this.buildAbsoluteSubscriptionPageUrlForCrypto(
+        effectiveCode,
+        token,
+        effectiveCryptoOnly,
+      );
+      const happCryptoUrl = await this.fetchHappCryptoLink(pageUrl);
+      if (!happCryptoUrl) {
+        throw new BadRequestException(
+          'Не удалось получить ссылку happ:// после смены кода (crypto.happ.su). Код не изменён.',
+        );
+      }
+      data.happCryptoUrl = happCryptoUrl;
+    }
+
     if (Object.keys(data).length === 0) {
       const row = await this.prisma.panelUser.findUnique({ where: { id } });
       return row ? this.omitSubscriptionAccessToken(row) : null;

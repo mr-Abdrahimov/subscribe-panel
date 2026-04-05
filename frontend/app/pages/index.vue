@@ -9,6 +9,11 @@ definePageMeta({
 
 const userFormSchema = yup.object({
   name: yup.string().trim().required('Введите имя').max(200, 'Не более 200 символов'),
+  code: yup
+    .string()
+    .trim()
+    .required('Укажите код подписки')
+    .max(200, 'Не более 200 символов'),
   groupNames: yup
     .array()
     .of(yup.string().required())
@@ -436,6 +441,19 @@ const modalTitle = computed(() =>
   editingUserId.value ? 'Редактировать пользователя' : 'Добавить пользователя',
 );
 
+function panelUserSaveErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const d = (err as { data?: { message?: unknown } }).data?.message;
+    if (typeof d === 'string') {
+      return d;
+    }
+    if (Array.isArray(d)) {
+      return d.join(', ');
+    }
+  }
+  return fallback;
+}
+
 async function submitUser() {
   const groupNames = (formGroupNames.value ?? []).filter(
     (g): g is string => typeof g === 'string' && g.trim().length > 0,
@@ -443,6 +461,7 @@ async function submitUser() {
   try {
     await userFormSchema.validate({
       name: formName.value,
+      code: formCode.value,
       groupNames
     });
   } catch (e) {
@@ -454,6 +473,7 @@ async function submitUser() {
   }
 
   const name = formName.value.trim();
+  const code = formCode.value.trim();
   const accessFlags = accessModeToFlags(formAccessMode.value);
 
   try {
@@ -464,6 +484,7 @@ async function submitUser() {
           method: 'PATCH',
           body: {
             name,
+            code,
             groupNames,
             ...accessFlags,
           }
@@ -475,7 +496,7 @@ async function submitUser() {
         method: 'POST',
         body: {
           name,
-          code: formCode.value,
+          code,
           groupNames,
           ...accessFlags,
         }
@@ -484,11 +505,14 @@ async function submitUser() {
     }
     closeUserModal();
     await loadData();
-  } catch {
+  } catch (e) {
     toast.add({
-      title: editingUserId.value
-        ? 'Не удалось сохранить изменения'
-        : 'Не удалось добавить пользователя',
+      title: panelUserSaveErrorMessage(
+        e,
+        editingUserId.value
+          ? 'Не удалось сохранить изменения'
+          : 'Не удалось добавить пользователя',
+      ),
       color: 'error'
     });
   }
@@ -1261,9 +1285,14 @@ async function confirmBulkClearLogs() {
 
           <UFormField
             label="Код подписки"
-            :description="editingUserId ? 'Код в ссылке /sub/… не меняется' : undefined"
+            required
+            :description="
+              editingUserId
+                ? 'Фрагмент пути /sub/… Уникален. При смене кода ссылка happ:// для Happ запрашивается заново.'
+                : 'Подставляется автоматически; при необходимости измените до сохранения.'
+            "
           >
-            <UInput v-model="formCode" class="w-full" readonly />
+            <UInput v-model="formCode" class="w-full" placeholder="Код в URL подписки" />
           </UFormField>
 
           <UFormField

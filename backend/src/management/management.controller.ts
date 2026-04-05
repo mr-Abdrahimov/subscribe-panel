@@ -199,7 +199,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить пользователя панели',
     description:
-      'Частичное обновление: enabled, name, groupNames (полная замена списка групп), allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription (happCryptoUrl не сбрасывается). Код подписки (code) не меняется.',
+      'Частичное обновление: enabled, name, code (код в /sub/…; при изменении заново запрашивается happ:// для Happ), groupNames (полная замена списка групп), allowAllUserAgents, requireHwid, requireNoHwid, maxUniqueHwids, cryptoOnlySubscription. Если code не передан — прежний код сохраняется.',
   })
   @ApiResponse({ status: 200, description: 'Пользователь успешно обновлён' })
   @ApiResponse({
