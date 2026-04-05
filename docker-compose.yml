@@ -1,5 +1,6 @@
 # Параметры из .env (например backend/.env.production): MONGO_PORT, REDIS_PORT, REDIS_PASSWORD.
 # Подключение с хоста к контейнерам: MONGO_HOST и REDIS_HOST в .env (обычно 127.0.0.1 при пробросе портов).
+# Порты привязаны к 127.0.0.1 — с внешней сети на хосте к MongoDB/Redis не подключиться (только localhost).
 services:
   # mongo:7 на части VPS падает с Restarting (132) — SIGILL, старый CPU без нужных инструкций.
   mongodb:
@@ -7,7 +8,7 @@ services:
     restart: unless-stopped
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -25,7 +26,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
