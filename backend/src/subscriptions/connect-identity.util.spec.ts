@@ -1,6 +1,8 @@
 import {
   normalizedConnectIdentity,
+  subscriptionIncomingDedupeKey,
   vlessCoreIdentityForMatching,
+  vlessStableMatchIdentity,
 } from './connect-identity.util';
 
 describe('normalizedConnectIdentity', () => {
@@ -120,5 +122,33 @@ describe('vlessCoreIdentityForMatching', () => {
 
   it('для не-vless возвращает null', () => {
     expect(vlessCoreIdentityForMatching('trojan://p@h.com:443')).toBeNull();
+  });
+});
+
+describe('vlessStableMatchIdentity', () => {
+  it('сводит варианты, отличающиеся только sni', () => {
+    const a =
+      'vless://d3958b70-9432-4c84-9ced-8f72abbc8a00@maja.example.com:443?type=tcp&security=reality&flow=x&sni=old.example.com&pbk=AbCd_EfGhIjKlMnOpQrStUvWxYz0123456789';
+    const b = a.replace('sni=old.example.com', 'sni=new.example.com');
+    expect(normalizedConnectIdentity(a)).not.toBe(normalizedConnectIdentity(b));
+    expect(vlessStableMatchIdentity(a)).toBe(vlessStableMatchIdentity(b));
+  });
+
+  it('для не-vless возвращает null', () => {
+    expect(vlessStableMatchIdentity('ss://YmFzZTY0@h:1')).toBeNull();
+  });
+});
+
+describe('subscriptionIncomingDedupeKey', () => {
+  it('для vless с разным sni даёт один ключ', () => {
+    const a =
+      'vless://d3958b70-9432-4c84-9ced-8f72abbc8a00@maja.example.com:443?type=tcp&security=reality&sni=a.com&pbk=AbCd_EfGhIjKlMnOpQrStUvWxYz0123456789';
+    const b = a.replace('sni=a.com', 'sni=b.com');
+    expect(subscriptionIncomingDedupeKey(a)).toBe(subscriptionIncomingDedupeKey(b));
+  });
+
+  it('для не-vless совпадает с normalizedConnectIdentity', () => {
+    const u = 'trojan://p@h.com:443/path?peer=sni#x';
+    expect(subscriptionIncomingDedupeKey(u)).toBe(normalizedConnectIdentity(u));
   });
 });

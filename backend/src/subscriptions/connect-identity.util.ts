@@ -350,10 +350,13 @@ const VLESS_CORE_QUERY_KEYS = new Set([
 ]);
 
 /**
- * Вторичный ключ только для сопоставления при синке подписки с уже существующей записью Connect.
- * Не заменяет normalizedConnectIdentity для identityKey в БД.
+ * Ядро VLESS для сопоставления при синке (без «шумовых» query).
+ * @param omitSniAndSid — убрать sni/servername/sid из ключа: та же нода, провайдер сменил только SNI или short_id.
  */
-export function vlessCoreIdentityForMatching(raw: string): string | null {
+function buildVlessCoreIdentityForMatching(
+  raw: string,
+  omitSniAndSid: boolean,
+): string | null {
   const prepared = prepareConnectUriForParse(raw);
   const hashIdx = prepared.indexOf('#');
   const base = hashIdx >= 0 ? prepared.slice(0, hashIdx) : prepared;
@@ -429,6 +432,12 @@ export function vlessCoreIdentityForMatching(raw: string): string | null {
       }
     }
 
+    if (omitSniAndSid) {
+      byKey.delete('sni');
+      byKey.delete('servername');
+      byKey.delete('sid');
+    }
+
     const sortedKeys = [...byKey.keys()].sort((a, b) => a.localeCompare(b));
     const pairs: string[] = [];
     for (const lk of sortedKeys) {
@@ -447,4 +456,31 @@ export function vlessCoreIdentityForMatching(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Вторичный ключ только для сопоставления при синке подписки с уже существующей записью Connect.
+ * Не заменяет normalizedConnectIdentity для identityKey в БД.
+ */
+export function vlessCoreIdentityForMatching(raw: string): string | null {
+  return buildVlessCoreIdentityForMatching(raw, false);
+}
+
+/**
+ * Как {@link vlessCoreIdentityForMatching}, но без sni/servername/sid — обновляем запись, если поменялся только SNI или Reality short_id.
+ */
+export function vlessStableMatchIdentity(raw: string): string | null {
+  return buildVlessCoreIdentityForMatching(raw, true);
+}
+
+/**
+ * Ключ строки подписки при приёме: для vless — стабильное ядро без sni/sid (не плодим дубликаты в одном fetch);
+ * иначе — {@link normalizedConnectIdentity}.
+ */
+export function subscriptionIncomingDedupeKey(raw: string): string {
+  const stable = vlessStableMatchIdentity(raw);
+  if (stable != null && stable.length > 0) {
+    return `vless|${stable}`;
+  }
+  return normalizedConnectIdentity(raw);
 }

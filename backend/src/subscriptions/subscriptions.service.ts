@@ -9,7 +9,8 @@ import { TelegramService } from '../telegram/telegram.service';
 import {
   normalizedConnectIdentity,
   prepareConnectUriForParse,
-  vlessCoreIdentityForMatching,
+  subscriptionIncomingDedupeKey,
+  vlessStableMatchIdentity,
 } from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
@@ -134,23 +135,27 @@ export class SubscriptionsService {
     });
 
     /**
-     * Одна запись на identity: дубликаты строк в подписке схлопываем (последняя строка побеждает).
-     * Порядок строк в файле подписки не влияет на «удалить/создать»: только на то, какое raw оставить.
+     * Одна запись на стабильный ключ (для vless — без sni/sid): дубликаты и «та же нода, другой SNI»
+     * в одном fetch схлопываем (последняя строка побеждает).
+     * identityKey в БД — полный {@link normalizedConnectIdentity}, чтобы отличать реально разные URI.
      */
-    const incomingByIdentity = new Map<
+    const incomingByDedupeKey = new Map<
       string,
       {
         raw: string;
         originalName: string;
         protocol: string;
+        fullIdentity: string;
       }
     >();
     for (const raw of links) {
-      const identity = normalizedConnectIdentity(raw);
-      incomingByIdentity.set(identity, {
+      const dedupeKey = subscriptionIncomingDedupeKey(raw);
+      const fullIdentity = normalizedConnectIdentity(raw);
+      incomingByDedupeKey.set(dedupeKey, {
         raw,
         originalName: this.extractConnectName(raw),
         protocol: this.extractProtocol(raw),
+        fullIdentity,
       });
     }
 
@@ -179,11 +184,15 @@ export class SubscriptionsService {
     let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
     const newUngroupedDisplayNames: string[] = [];
 
-    for (const [identity, incoming] of incomingByIdentity) {
+    for (const [, incoming] of incomingByDedupeKey) {
       const existing = poolSorted.find(
         (c) =>
           !matchedIds.has(c.id) &&
-          this.connectMatchesIdentity(c, identity, incoming.raw),
+          this.connectMatchesIdentity(
+            c,
+            incoming.fullIdentity,
+            incoming.raw,
+          ),
       );
 
       if (!existing) {
@@ -194,7 +203,7 @@ export class SubscriptionsService {
             originalName: incoming.originalName,
             name: incoming.originalName,
             raw: incoming.raw,
-            identityKey: identity,
+            identityKey: incoming.fullIdentity,
             protocol: incoming.protocol,
             status: 'ACTIVE',
             hidden: false,
@@ -225,8 +234,8 @@ export class SubscriptionsService {
       if (existing.protocol !== incoming.protocol) {
         data.protocol = incoming.protocol;
       }
-      if ((existing.identityKey ?? '') !== identity) {
-        data.identityKey = identity;
+      if ((existing.identityKey ?? '') !== incoming.fullIdentity) {
+        data.identityKey = incoming.fullIdentity;
       }
       if (Object.keys(data).length > 0) {
         await this.prisma.connect.update({
@@ -275,28 +284,28 @@ export class SubscriptionsService {
   }
 
   /**
-   * Совпадение: полный ключ (normalize raw), сохранённый identityKey, либо ядро VLESS
-   * (uuid+хост+порт+reality/tls без «шумовых» query) — чтобы не пересоздавать запись и не сбрасывать groupNames.
+   * Совпадение: полный ключ (normalize raw), сохранённый identityKey, либо стабильное ядро VLESS
+   * без sni/servername/sid — смена только SNI или Reality short_id обновляет запись, не пересоздавая.
    */
   private connectMatchesIdentity(
     c: { raw: string; identityKey: string | null },
-    incomingIdentity: string,
+    incomingFullIdentity: string,
     incomingRaw: string,
   ): boolean {
-    if (normalizedConnectIdentity(c.raw) === incomingIdentity) {
+    if (normalizedConnectIdentity(c.raw) === incomingFullIdentity) {
       return true;
     }
     const stored = c.identityKey?.trim();
-    if (!!stored && stored === incomingIdentity) {
+    if (!!stored && stored === incomingFullIdentity) {
       return true;
     }
-    const coreRow = vlessCoreIdentityForMatching(c.raw);
-    const coreIn = vlessCoreIdentityForMatching(incomingRaw);
+    const stableRow = vlessStableMatchIdentity(c.raw);
+    const stableIn = vlessStableMatchIdentity(incomingRaw);
     return (
-      coreRow !== null &&
-      coreIn !== null &&
-      coreRow.length > 0 &&
-      coreRow === coreIn
+      stableRow !== null &&
+      stableIn !== null &&
+      stableRow.length > 0 &&
+      stableRow === stableIn
     );
   }
 
