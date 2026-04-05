@@ -45,6 +45,8 @@ type FetchedConnect = {
 
 type FetchConnectsResponse = {
   fetchedAt: string;
+  /** Совпадает с колонкой «Название», если провайдер прислал profile-title или строку «# …» в теле */
+  title?: string;
   total: number;
   connects: FetchedConnect[];
 };

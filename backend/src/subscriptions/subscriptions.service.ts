@@ -21,6 +21,9 @@ const PANEL_GLOBAL_SETTINGS_ID = 'global';
 /** Заголовок для поля hwid подписки при GET к url */
 const SUBSCRIPTION_FETCH_HWID_HEADER = 'X-HWID';
 
+/** Как в CreateSubscriptionDto — не раздувать название из ответа провайдера */
+const SUBSCRIPTION_TITLE_MAX_LEN = 200;
+
 const TELEGRAM_MESSAGE_MAX = 3900;
 
 @Injectable()
@@ -119,7 +122,12 @@ export class SubscriptionsService {
 
     const response = await fetch(subscription.url, { headers });
     const text = await response.text();
-    const links = this.parseSubscriptionPayload(text);
+    const decodedPayload = this.decodeSubscriptionRawPayload(text);
+    const links = this.extractUriLinesFromDecodedContent(decodedPayload);
+    const remoteTitle = this.resolveRemoteSubscriptionTitle(
+      response,
+      decodedPayload,
+    );
     const existingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
       select: {
@@ -256,12 +264,15 @@ export class SubscriptionsService {
 
     const updatedSubscription = await this.prisma.subscription.update({
       where: { id },
-      data: { lastFetchedAt: new Date() },
+      data: {
+        lastFetchedAt: new Date(),
+        ...(remoteTitle != null ? { title: remoteTitle } : {}),
+      },
     });
 
     if (newUngroupedDisplayNames.length > 0) {
       await this.notifyTelegramNewUngroupedConnects(
-        subscription.title,
+        updatedSubscription.title,
         newUngroupedDisplayNames,
       );
     }
@@ -278,6 +289,7 @@ export class SubscriptionsService {
     return {
       subscriptionId: id,
       fetchedAt: updatedSubscription.lastFetchedAt,
+      title: updatedSubscription.title,
       total: connects.length,
       connects,
     };
@@ -320,7 +332,10 @@ export class SubscriptionsService {
     }
   }
 
-  private parseSubscriptionPayload(payload: string) {
+  /**
+   * Сырой ответ GET подписки → текст ленты (раскодированный base64 при необходимости).
+   */
+  private decodeSubscriptionRawPayload(payload: string): string {
     const trimmed = payload.trim();
     let content = trimmed;
 
@@ -337,11 +352,94 @@ export class SubscriptionsService {
       }
     }
 
+    return content;
+  }
+
+  private extractUriLinesFromDecodedContent(content: string): string[] {
     return content
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
       .filter((line) => /^[a-z][a-z0-9+.-]*:\/\//i.test(line));
+  }
+
+  /**
+   * Имя профиля из ответа провайдера (Happ / v2rayTun и др.): заголовок profile-title,
+   * опционально с префиксом base64: для UTF-8 / эмодзи.
+   */
+  private parseProfileTitleHeader(raw: string | null): string | null {
+    if (raw == null) {
+      return null;
+    }
+    let s = raw.trim().replace(/^\uFEFF/, '');
+    if (!s) {
+      return null;
+    }
+    if (
+      (s.startsWith('"') && s.endsWith('"')) ||
+      (s.startsWith("'") && s.endsWith("'"))
+    ) {
+      s = s.slice(1, -1).trim();
+    }
+    if (!s) {
+      return null;
+    }
+    const lower = s.toLowerCase();
+    if (lower.startsWith('base64:')) {
+      const b64 = s.slice(7).trim().replace(/\s/g, '');
+      if (!b64) {
+        return null;
+      }
+      try {
+        const decoded = Buffer.from(b64, 'base64').toString('utf8').trim();
+        return this.clampSubscriptionTitle(decoded);
+      } catch {
+        return null;
+      }
+    }
+    return this.clampSubscriptionTitle(s);
+  }
+
+  private clampSubscriptionTitle(s: string): string | null {
+    const t = s.trim().replace(/\s+/g, ' ');
+    if (!t) {
+      return null;
+    }
+    if (t.length > SUBSCRIPTION_TITLE_MAX_LEN) {
+      return t.slice(0, SUBSCRIPTION_TITLE_MAX_LEN);
+    }
+    return t;
+  }
+
+  /**
+   * Первая строка вида «# Название» в текстовой ленте (часто перед списком URI).
+   */
+  private extractTitleFromDecodedSubscriptionBody(decodedContent: string): string | null {
+    const lines = decodedContent
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length < 2) {
+      return null;
+    }
+    const first = lines[0];
+    if (!first.startsWith('#')) {
+      return null;
+    }
+    return this.clampSubscriptionTitle(first.slice(1).trim());
+  }
+
+  private resolveRemoteSubscriptionTitle(
+    response: Response,
+    decodedPayload: string,
+  ): string | null {
+    const fromHeader = this.parseProfileTitleHeader(
+      response.headers.get('profile-title'),
+    );
+    if (fromHeader != null) {
+      return fromHeader;
+    }
+    return this.extractTitleFromDecodedSubscriptionBody(decodedPayload);
   }
 
   private extractConnectName(raw: string) {
