@@ -9,7 +9,7 @@ import {
   SUBSCRIPTION_FETCH_SCHEDULER_JOB,
 } from './subscription-fetch.constants';
 
-@Processor(SUBSCRIPTION_FETCH_QUEUE, { concurrency: 2 })
+@Processor(SUBSCRIPTION_FETCH_QUEUE, { concurrency: 4 })
 export class SubscriptionFetchProcessor extends WorkerHost {
   private readonly log = new Logger(SubscriptionFetchProcessor.name);
 
@@ -71,15 +71,23 @@ export class SubscriptionFetchProcessor extends WorkerHost {
       }
 
       try {
+        /**
+         * Не задаём jobId: при removeOnFail в Redis остаются failed-задачи с тем же id,
+         * и BullMQ отказывает в add — раньше ошибка глоталась, автообновление «залипало» навсегда.
+         */
         await this.queue.add(
           SUBSCRIPTION_FETCH_CONNECTS_JOB,
           { subscriptionId: sub.id },
           {
-            jobId: `fetch-connects-${sub.id}`,
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 45_000 },
           },
         );
-      } catch {
-        // Дубликат jobId — задача уже в очереди или выполняется
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.log.warn(
+          `Не удалось поставить fetch-connects в очередь (подписка ${sub.id}): ${msg}`,
+        );
       }
     }
   }

@@ -25,6 +25,7 @@ import {
   isReservedUngroupedConnectGroupName,
   normalizeConnectGroupNamesForStorage,
 } from '../common/ungrouped-connect-group';
+import { withPrismaWriteRetry } from '../common/prisma-write-retry';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
 import {
   SUBSCRIPTION_ACCESS_NOTIFY_JOB,
@@ -1208,10 +1209,12 @@ export class ManagementService implements OnModuleInit {
       const row = await this.prisma.panelUser.findUnique({ where: { id } });
       return row ? this.omitSubscriptionAccessToken(row) : null;
     }
-    const updated = await this.prisma.panelUser.update({
-      where: { id },
-      data,
-    });
+    const updated = await withPrismaWriteRetry(() =>
+      this.prisma.panelUser.update({
+        where: { id },
+        data,
+      }),
+    );
     return this.omitSubscriptionAccessToken(updated);
   }
 

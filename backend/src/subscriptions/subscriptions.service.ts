@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import {
   ensureUngroupedConnectGroupExists,
@@ -36,6 +37,7 @@ export class SubscriptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly config: ConfigService,
   ) {}
 
   findAll() {
@@ -123,7 +125,17 @@ export class SubscriptionsService {
       headers.set(SUBSCRIPTION_FETCH_HWID_HEADER, hw);
     }
 
-    const response = await fetch(subscription.url, { headers });
+    const rawTimeout = Number(
+      this.config.get<string>('SUBSCRIPTION_FETCH_TIMEOUT_MS') ?? 120_000,
+    );
+    const timeoutMs = Number.isFinite(rawTimeout)
+      ? Math.min(300_000, Math.max(10_000, Math.trunc(rawTimeout)))
+      : 120_000;
+
+    const response = await fetch(subscription.url, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     const text = await response.text();
     const decodedPayload = this.decodeSubscriptionRawPayload(text);
     const links = this.extractUriLinesFromDecodedContent(decodedPayload);

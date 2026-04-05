@@ -32,27 +32,45 @@ export class TelegramService {
     if (!token || !chat || !body) {
       return { ok: false, error: 'Пустой токен, chat id или текст' };
     }
-    try {
-      const api = new Api(token);
-      const msg = await api.sendMessage(chat, body, {
-        link_preview_options: { is_disabled: true },
-        ...(options?.markdownV2 === true
-          ? { parse_mode: 'MarkdownV2' as const }
-          : {}),
-        ...(options?.disableNotification === true
-          ? { disable_notification: true }
-          : {}),
-      });
-      return { ok: true, messageId: msg.message_id };
-    } catch (e: unknown) {
-      const desc =
-        e && typeof e === 'object' && 'description' in e
-          ? String((e as { description?: unknown }).description)
-          : e instanceof Error
-            ? e.message
-            : String(e);
-      this.logger.warn(`Telegram sendMessage failed: ${desc}`);
-      return { ok: false, error: desc };
+    const maxAttempts = 3;
+    let lastDesc = '';
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const api = new Api(token);
+        const msg = await api.sendMessage(chat, body, {
+          link_preview_options: { is_disabled: true },
+          ...(options?.markdownV2 === true
+            ? { parse_mode: 'MarkdownV2' as const }
+            : {}),
+          ...(options?.disableNotification === true
+            ? { disable_notification: true }
+            : {}),
+        });
+        return { ok: true, messageId: msg.message_id };
+      } catch (e: unknown) {
+        lastDesc =
+          e && typeof e === 'object' && 'description' in e
+            ? String((e as { description?: unknown }).description)
+            : e instanceof Error
+              ? e.message
+              : String(e);
+        const retryable =
+          attempt < maxAttempts &&
+          /network|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket|timed out/i.test(
+            lastDesc,
+          );
+        if (retryable) {
+          const delayMs = 800 * attempt + Math.floor(Math.random() * 400);
+          this.logger.warn(
+            `Telegram sendMessage попытка ${attempt}/${maxAttempts} не удалась (${lastDesc}), повтор через ${delayMs} мс`,
+          );
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        this.logger.warn(`Telegram sendMessage failed: ${lastDesc}`);
+        return { ok: false, error: lastDesc };
+      }
     }
+    return { ok: false, error: lastDesc || 'Неизвестная ошибка' };
   }
 }
