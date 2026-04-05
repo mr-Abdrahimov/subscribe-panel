@@ -26,6 +26,9 @@ const SUBSCRIPTION_TITLE_MAX_LEN = 200;
 
 const TELEGRAM_MESSAGE_MAX = 3900;
 
+/** Предупреждение в Telegram, если до окончания подписки меньше этого интервала */
+const SUBSCRIPTION_EXPIRY_TELEGRAM_WARN_MS = 10 * 60 * 60 * 1000;
+
 @Injectable()
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
@@ -125,6 +128,10 @@ export class SubscriptionsService {
     const decodedPayload = this.decodeSubscriptionRawPayload(text);
     const links = this.extractUriLinesFromDecodedContent(decodedPayload);
     const remoteTitle = this.resolveRemoteSubscriptionTitle(
+      response,
+      decodedPayload,
+    );
+    const remoteExpiresAt = this.resolveRemoteSubscriptionExpiresAt(
       response,
       decodedPayload,
     );
@@ -262,11 +269,20 @@ export class SubscriptionsService {
       });
     }
 
+    const nextTelegramExpiryMarker =
+      await this.resolveTelegramSubscriptionExpiryWarning(
+        subscription,
+        remoteTitle ?? null,
+        remoteExpiresAt,
+      );
+
     const updatedSubscription = await this.prisma.subscription.update({
       where: { id },
       data: {
         lastFetchedAt: new Date(),
-        ...(remoteTitle != null ? { title: remoteTitle } : {}),
+        fetchedProfileTitle: remoteTitle ?? null,
+        fetchedSubscriptionExpiresAt: remoteExpiresAt,
+        telegramExpiryWarningSentForExpiresAt: nextTelegramExpiryMarker,
       },
     });
 
@@ -290,6 +306,8 @@ export class SubscriptionsService {
       subscriptionId: id,
       fetchedAt: updatedSubscription.lastFetchedAt,
       title: updatedSubscription.title,
+      fetchedProfileTitle: updatedSubscription.fetchedProfileTitle,
+      fetchedSubscriptionExpiresAt: updatedSubscription.fetchedSubscriptionExpiresAt,
       total: connects.length,
       connects,
     };
@@ -412,6 +430,28 @@ export class SubscriptionsService {
   }
 
   /**
+   * Строка «#profile-title: …» / «# profile-title: …» до первой URI-строки (часто base64:… в теле после декодирования).
+   */
+  private extractProfileTitleMetaFromDecodedBody(
+    decodedContent: string,
+  ): string | null {
+    const lines = decodedContent
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    for (const line of lines) {
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
+        break;
+      }
+      const m = line.match(/^#\s*profile-title:\s*(.+)$/i);
+      if (m) {
+        return this.parseProfileTitleHeader(m[1].trim());
+      }
+    }
+    return null;
+  }
+
+  /**
    * Первая строка вида «# Название» в текстовой ленте (часто перед списком URI).
    */
   private extractTitleFromDecodedSubscriptionBody(decodedContent: string): string | null {
@@ -424,6 +464,9 @@ export class SubscriptionsService {
     }
     const first = lines[0];
     if (!first.startsWith('#')) {
+      return null;
+    }
+    if (/^#\s*profile-title:/i.test(first)) {
       return null;
     }
     return this.clampSubscriptionTitle(first.slice(1).trim());
@@ -439,7 +482,103 @@ export class SubscriptionsService {
     if (fromHeader != null) {
       return fromHeader;
     }
+    const fromBodyMeta = this.extractProfileTitleMetaFromDecodedBody(decodedPayload);
+    if (fromBodyMeta != null) {
+      return fromBodyMeta;
+    }
     return this.extractTitleFromDecodedSubscriptionBody(decodedPayload);
+  }
+
+  /**
+   * Unix time из subscription-userinfo: «expire=…» (секунды или мс). 0 или отсутствие — без срока.
+   */
+  private parseExpireUnixToDate(unix: number): Date | null {
+    if (!Number.isFinite(unix) || unix <= 0) {
+      return null;
+    }
+    const ms = unix > 10_000_000_000 ? unix : unix * 1000;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  private parseExpireFromSubscriptionUserinfoString(raw: string): Date | null {
+    const t = raw.trim();
+    if (!t) {
+      return null;
+    }
+    const m = t.match(/(?:^|;\s*)expire\s*=\s*(\d+)/i);
+    if (!m) {
+      return null;
+    }
+    const n = Number.parseInt(m[1], 10);
+    return this.parseExpireUnixToDate(n);
+  }
+
+  /**
+   * Строка «#subscription-userinfo: …» до первой URI (как в ленте после base64).
+   */
+  private extractSubscriptionUserinfoMetaFromDecodedBody(
+    decodedContent: string,
+  ): string | null {
+    const lines = decodedContent
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    for (const line of lines) {
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
+        break;
+      }
+      const m = line.match(/^#\s*subscription-userinfo:\s*(.+)$/i);
+      if (m) {
+        return m[1].trim();
+      }
+    }
+    return null;
+  }
+
+  /**
+   * «#expire: 1234567890» до первой URI.
+   */
+  private extractExpireMetaLineFromDecodedBody(
+    decodedContent: string,
+  ): Date | null {
+    const lines = decodedContent
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    for (const line of lines) {
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
+        break;
+      }
+      const m = line.match(/^#\s*expire:\s*(\d+)\s*$/i);
+      if (m) {
+        const n = Number.parseInt(m[1], 10);
+        return this.parseExpireUnixToDate(n);
+      }
+    }
+    return null;
+  }
+
+  private resolveRemoteSubscriptionExpiresAt(
+    response: Response,
+    decodedPayload: string,
+  ): Date | null {
+    const headerRaw = response.headers.get('subscription-userinfo');
+    if (headerRaw?.trim()) {
+      const d = this.parseExpireFromSubscriptionUserinfoString(headerRaw);
+      if (d) {
+        return d;
+      }
+    }
+    const bodyUserinfo =
+      this.extractSubscriptionUserinfoMetaFromDecodedBody(decodedPayload);
+    if (bodyUserinfo) {
+      const d = this.parseExpireFromSubscriptionUserinfoString(bodyUserinfo);
+      if (d) {
+        return d;
+      }
+    }
+    return this.extractExpireMetaLineFromDecodedBody(decodedPayload);
   }
 
   private extractConnectName(raw: string) {
@@ -466,6 +605,116 @@ export class SubscriptionsService {
   private extractProtocol(raw: string) {
     const scheme = raw.split('://')[0]?.trim().toLowerCase();
     return scheme || 'unknown';
+  }
+
+  /** Сравнение момента окончания по секундам (устойчиво к расхождениям ms при записи в БД). */
+  private sameSubscriptionExpiryInstant(
+    a: Date | null | undefined,
+    b: Date | null | undefined,
+  ): boolean {
+    if (!a || !b) {
+      return false;
+    }
+    return Math.floor(a.getTime() / 1000) === Math.floor(b.getTime() / 1000);
+  }
+
+  /**
+   * Маркер для поля telegramExpiryWarningSentForExpiresAt и одноразовая отправка в Telegram
+   * при 0 < остаток < 10 ч для данной даты окончания.
+   */
+  private async resolveTelegramSubscriptionExpiryWarning(
+    subscription: {
+      title: string;
+      telegramExpiryWarningSentForExpiresAt: Date | null;
+    },
+    fetchedProfileTitle: string | null,
+    remoteExpiresAt: Date | null,
+  ): Promise<Date | null> {
+    if (!remoteExpiresAt) {
+      return null;
+    }
+    const leftMs = remoteExpiresAt.getTime() - Date.now();
+    if (leftMs <= 0 || leftMs >= SUBSCRIPTION_EXPIRY_TELEGRAM_WARN_MS) {
+      return null;
+    }
+    if (
+      this.sameSubscriptionExpiryInstant(
+        subscription.telegramExpiryWarningSentForExpiresAt,
+        remoteExpiresAt,
+      )
+    ) {
+      return subscription.telegramExpiryWarningSentForExpiresAt;
+    }
+    const sentOk = await this.notifyTelegramSubscriptionExpirySoon(
+      subscription.title,
+      fetchedProfileTitle,
+      remoteExpiresAt,
+      leftMs,
+    );
+    return sentOk
+      ? remoteExpiresAt
+      : subscription.telegramExpiryWarningSentForExpiresAt;
+  }
+
+  private formatExpiryForTelegram(d: Date): string {
+    return d.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+  }
+
+  private formatDurationLeftRu(leftMs: number): string {
+    const totalMin = Math.max(0, Math.floor(leftMs / 60_000));
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h <= 0) {
+      return `${m} мин`;
+    }
+    if (m === 0) {
+      return `${h} ч`;
+    }
+    return `${h} ч ${m} мин`;
+  }
+
+  /** @returns true, если сообщение ушло (или Telegram не настроен — не считаем ошибкой). */
+  private async notifyTelegramSubscriptionExpirySoon(
+    panelTitle: string,
+    listTitle: string | null,
+    expiresAt: Date,
+    leftMs: number,
+  ): Promise<boolean> {
+    const row = await this.prisma.panelGlobalSettings.findUnique({
+      where: { id: PANEL_GLOBAL_SETTINGS_ID },
+      select: { telegramBotSecret: true, telegramGroupId: true },
+    });
+    const token = row?.telegramBotSecret?.trim() ?? '';
+    const chatId = row?.telegramGroupId?.trim() ?? '';
+    if (!token || !chatId) {
+      return true;
+    }
+    const listLine =
+      listTitle && listTitle.trim() !== ''
+        ? `Название из ленты: ${listTitle.trim()}\n`
+        : '';
+    const body =
+      `⏳ Подписка скоро истекает (осталось меньше 10 ч)\n\n` +
+      `Панель: ${panelTitle}\n` +
+      listLine +
+      `Окончание: ${this.formatExpiryForTelegram(expiresAt)}\n` +
+      `Осталось: ~${this.formatDurationLeftRu(leftMs)}`;
+
+    const r = await this.telegramService.sendMessage(token, chatId, body);
+    if (!r.ok) {
+      this.logger.warn(
+        `Telegram: не удалось отправить предупреждение об окончании подписки «${panelTitle}»: ${r.error}`,
+      );
+      return false;
+    }
+    return true;
   }
 
   /**

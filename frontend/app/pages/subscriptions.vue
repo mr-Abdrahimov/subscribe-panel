@@ -9,9 +9,12 @@ definePageMeta({
 type SubscriptionItem = {
   id: string;
   title: string;
+  /** Из ответа при «Получить коннекты»: profile-title / base64 или «# …» в теле ленты */
+  fetchedProfileTitle?: string | null;
+  /** ISO-8601, subscription-userinfo expire=… или «#expire:» */
+  fetchedSubscriptionExpiresAt?: string | null;
   url: string;
   sourceUrl: string | null;
-  createdAt: string;
   lastFetchedAt: string | null;
   fetchIntervalMinutes: number | null;
   userAgent?: string | null;
@@ -45,8 +48,9 @@ type FetchedConnect = {
 
 type FetchConnectsResponse = {
   fetchedAt: string;
-  /** Совпадает с колонкой «Название», если провайдер прислал profile-title или строку «# …» в теле */
   title?: string;
+  fetchedProfileTitle?: string | null;
+  fetchedSubscriptionExpiresAt?: string | null;
   total: number;
   connects: FetchedConnect[];
 };
@@ -107,6 +111,23 @@ function formatLastFetchedLabel(iso: string): string {
   return `${h} ч ${m} мин назад`;
 }
 
+function formatSubscriptionExpiresAt(iso: string | null | undefined): string {
+  if (!iso) {
+    return '';
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
@@ -131,6 +152,10 @@ const columns: TableColumn<SubscriptionItem>[] = [
     header: 'Название'
   },
   {
+    accessorKey: 'fetchedProfileTitle',
+    header: 'Название из ленты'
+  },
+  {
     accessorKey: 'url',
     header: 'Саб ссылка'
   },
@@ -139,8 +164,8 @@ const columns: TableColumn<SubscriptionItem>[] = [
     header: 'Ссылка'
   },
   {
-    accessorKey: 'createdAt',
-    header: 'Дата добавления'
+    accessorKey: 'fetchedSubscriptionExpiresAt',
+    header: 'Окончание подписки'
   },
   {
     id: 'fetchIntervalMinutes',
@@ -371,6 +396,17 @@ async function loadSubscriptions() {
         empty="Подписок пока нет"
         class="w-full"
       >
+        <template #fetchedProfileTitle-cell="{ row }">
+          <span
+            v-if="row.original.fetchedProfileTitle?.trim()"
+            class="text-sm max-w-[14rem] sm:max-w-xs truncate inline-block align-middle"
+            :title="row.original.fetchedProfileTitle"
+          >
+            {{ row.original.fetchedProfileTitle }}
+          </span>
+          <span v-else class="text-muted text-sm">—</span>
+        </template>
+
         <template #url-cell="{ row }">
           <a
             :href="row.original.url"
@@ -397,10 +433,20 @@ async function loadSubscriptions() {
           <span v-else class="text-muted text-sm">—</span>
         </template>
 
-        <template #createdAt-cell="{ row }">
-          <span class="whitespace-nowrap">
-            {{ new Date(row.original.createdAt).toLocaleString('ru-RU') }}
+        <template #fetchedSubscriptionExpiresAt-cell="{ row }">
+          <span
+            v-if="row.original.fetchedSubscriptionExpiresAt"
+            class="whitespace-nowrap text-sm tabular-nums"
+            :class="
+              new Date(row.original.fetchedSubscriptionExpiresAt).getTime() < Date.now()
+                ? 'text-error'
+                : ''
+            "
+            :title="formatSubscriptionExpiresAt(row.original.fetchedSubscriptionExpiresAt)"
+          >
+            {{ formatSubscriptionExpiresAt(row.original.fetchedSubscriptionExpiresAt) }}
           </span>
+          <span v-else class="text-muted text-sm">—</span>
         </template>
 
         <template #fetchIntervalMinutes-cell="{ row }">

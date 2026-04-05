@@ -30,6 +30,12 @@ model User {
 model Subscription {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
   title        String
+  /// Название из ответа ленты при синке: заголовок profile-title (в т.ч. base64:…), иначе комментарий «# …» в раскодированном теле; null — провайдер не прислал
+  fetchedProfileTitle String?
+  /// Окончание подписки из ответа ленты: subscription-userinfo (expire=…), null — нет данных или expire=0 (без срока)
+  fetchedSubscriptionExpiresAt DateTime?
+  /// Для какого момента окончания (Unix-секунда) уже отправляли в Telegram предупреждение «осталось < 10 ч»
+  telegramExpiryWarningSentForExpiresAt DateTime?
   /// Саб ссылка: URL ленты, по которому получают коннекты
   url          String
   /// Ссылка на источник (откуда получена саб ссылка), необязательно

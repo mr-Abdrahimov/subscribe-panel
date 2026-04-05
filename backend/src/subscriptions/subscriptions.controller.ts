@@ -52,12 +52,12 @@ export class SubscriptionsController {
   @ApiOperation({
     summary: 'Получить и сохранить коннекты из подписки (вручную)',
     description:
-      'Скачивает подписку по саб ссылке (поле url), парсит строки коннектов и синхронизирует таблицу Connect по тем же правилам, что и фоновые задачи BullMQ (см. поле fetchIntervalMinutes). Если у подписки заданы поля userAgent и/или hwid, к запросу добавляются заголовки User-Agent и X-HWID соответственно. Если в ответе есть заголовок profile-title (в т.ч. base64:…) или первая непустая строка тела — комментарий «# Название» перед списком URI, поле Subscription.title обновляется и отображается в списке подписок.',
+      'Скачивает подписку по саб ссылке (поле url), парсит строки коннектов и синхронизирует таблицу Connect по тем же правилам, что и фоновые задачи BullMQ (см. поле fetchIntervalMinutes). Если у подписки заданы поля userAgent и/или hwid, к запросу добавляются заголовки User-Agent и X-HWID соответственно. Название из ленты сохраняется в fetchedProfileTitle; срок окончания — из заголовка или тела subscription-userinfo (expire=… Unix), либо строки «#expire: …»; при expire=0 или отсутствии — fetchedSubscriptionExpiresAt сбрасывается в null. Если до окончания осталось меньше 10 ч (и подписка ещё не истекла), один раз на дату окончания отправляется сообщение в Telegram (глобальные telegramBotSecret / telegramGroupId). Поле title (название в панели) не меняется.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Коннекты успешно получены, сохранены и привязаны к подписке; при наличии названия в ответе провайдера обновлено поле title подписки',
+      'Коннекты успешно получены; обновлены lastFetchedAt, fetchedProfileTitle, fetchedSubscriptionExpiresAt',
   })
   fetchConnects(@Param('id') id: string) {
     return this.subscriptionsService.fetchConnects(id);
