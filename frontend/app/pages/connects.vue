@@ -166,16 +166,34 @@ const selectedConnectsCount = computed(
   () => Object.values(rowSelection.value).filter(Boolean).length,
 );
 
+/** Главные группы по sortOrder (для сборки содержимого колонок). */
 const mainGroupsSorted = computed(() =>
   [...groups.value]
     .filter((g) => g.isMainGroup === true)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
 );
 
-const bucketKeysOrdered = computed(() => [
-  ...mainGroupsSorted.value.map((g) => `m:${g.id}`),
-  NO_MAIN_BUCKET,
-]);
+/**
+ * Порядок колонок как на странице «Группы»: общий sortOrder, между главными — слот «Без группы»
+ * в позиции системной группы (не в конце).
+ */
+const bucketKeysOrdered = computed(() => {
+  const ordered = [...groups.value].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  );
+  const keys: string[] = [];
+  for (const g of ordered) {
+    if (g.isMainGroup === true) {
+      keys.push(`m:${g.id}`);
+    } else if (isUngroupedGroupLabel(g.name)) {
+      keys.push(NO_MAIN_BUCKET);
+    }
+  }
+  if (!keys.includes(NO_MAIN_BUCKET)) {
+    keys.push(NO_MAIN_BUCKET);
+  }
+  return keys;
+});
 
 /** bucketKey → порядок id коннектов (только из текущего фильтра) */
 const bucketOrder = ref<Record<string, string[]>>({});
