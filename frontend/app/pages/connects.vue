@@ -25,6 +25,8 @@ type ConnectRow = {
   id: string;
   originalName: string;
   name: string;
+  /** Строка из подписки: vless://, vmess:// и т.д. */
+  raw: string;
   groupNames: string[];
   status: 'ACTIVE' | 'INACTIVE';
   protocol: string;
@@ -53,9 +55,6 @@ const loading = ref(false);
 const connects = ref<ConnectRow[]>([]);
 const groups = ref<GroupItem[]>([]);
 
-const isTagModalOpen = ref(false);
-const tagValue = ref('');
-const selectedConnectId = ref<string | null>(null);
 const isGroupModalOpen = ref(false);
 const selectedGroupConnectId = ref<string | null>(null);
 const selectedGroupNames = ref<string[]>([]);
@@ -766,29 +765,18 @@ async function confirmRemoveConnect() {
   deleteConnectId.value = null;
 }
 
-function openAddTag(id: string) {
-  selectedConnectId.value = id;
-  tagValue.value = '';
-  isTagModalOpen.value = true;
-}
-
-async function submitTag() {
-  const tag = tagValue.value.trim();
-  if (!selectedConnectId.value || !tag) {
-    toast.add({ title: 'Введите тэг', color: 'error' });
+async function copyConnectShareLink(id: string) {
+  const c = connectById(id);
+  const line = c?.raw?.trim() ?? '';
+  if (!line) {
+    toast.add({ title: 'Нет строки подключения', color: 'warning' });
     return;
   }
-
   try {
-    await $fetch(`${config.public.apiBaseUrl}/connects/${selectedConnectId.value}/tags`, {
-      method: 'POST',
-      body: { tag },
-    });
-    toast.add({ title: 'Тэг добавлен', color: 'success' });
-    isTagModalOpen.value = false;
-    await loadConnects();
+    await navigator.clipboard.writeText(line);
+    toast.add({ title: 'Ссылка скопирована в буфер', color: 'success' });
   } catch {
-    toast.add({ title: 'Не удалось добавить тэг', color: 'error' });
+    toast.add({ title: 'Не удалось скопировать', color: 'error' });
   }
 }
 
@@ -1196,13 +1184,21 @@ async function bulkRemoveGroupsFromSelection() {
                         @update:model-value="(v) => toggleRowSelect(cid, !!v)"
                       />
                       <div class="flex shrink-0 flex-wrap justify-end gap-0.5">
-                        <UTooltip text="Добавить тэг">
+                        <UTooltip
+                          :text="
+                            (connectById(cid)?.raw ?? '').trim()
+                              ? 'Скопировать строку подключения (vless и др.)'
+                              : 'Строка подключения недоступна'
+                          "
+                        >
                           <UButton
                             size="xs"
-                            color="primary"
+                            color="neutral"
                             variant="ghost"
-                            icon="i-lucide-tag"
-                            @click="openAddTag(cid)"
+                            icon="i-lucide-copy"
+                            :disabled="!(connectById(cid)?.raw ?? '').trim()"
+                            aria-label="Скопировать ссылку подключения"
+                            @click="copyConnectShareLink(cid)"
                           />
                         </UTooltip>
                         <UTooltip text="Привязать к группам">
@@ -1301,24 +1297,6 @@ async function bulkRemoveGroupsFromSelection() {
         </section>
       </div>
     </UCard>
-
-    <UModal v-model:open="isTagModalOpen" title="Добавить тэг">
-      <template #body>
-        <UFormField label="Тэг" required>
-          <UInput v-model="tagValue" class="w-full" placeholder="Например: work" />
-        </UFormField>
-      </template>
-      <template #footer>
-        <div class="flex justify-end gap-2 w-full">
-          <UButton color="neutral" variant="ghost" @click="isTagModalOpen = false">
-            Отмена
-          </UButton>
-          <UButton @click="submitTag">
-            Сохранить
-          </UButton>
-        </div>
-      </template>
-    </UModal>
 
     <UModal v-model:open="isGroupModalOpen" title="Привязать коннект к группам">
       <template #body>
