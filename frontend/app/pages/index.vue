@@ -106,7 +106,7 @@ const columns: TableColumn<UserItem>[] = [
   },
   {
     accessorKey: 'lastSubscriptionActivityAt',
-    header: 'Последняя активность',
+    header: 'Активность',
     meta: {
       class: {
         th: `${thBase} whitespace-nowrap`,

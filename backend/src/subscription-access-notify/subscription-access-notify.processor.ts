@@ -52,7 +52,7 @@ export class SubscriptionAccessNotifyProcessor extends WorkerHost {
     const p = job.data;
     const lines = [
       escapeMarkdownV2(
-        '📡 Новый HWID (первое успешное получение ленты)',
+        '📡 Новый HWID',
       ),
       `Пользователь: *${escapeMarkdownV2(p.panelUserName)}*`,
       escapeMarkdownV2(
