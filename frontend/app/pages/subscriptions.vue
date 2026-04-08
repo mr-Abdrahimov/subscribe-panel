@@ -9,6 +9,8 @@ definePageMeta({
 type SubscriptionItem = {
   id: string;
   title: string;
+  /** Потраченный трафик (байты): upload+download из subscription-userinfo при последнем fetch */
+  fetchedTrafficUsedBytes?: string | null;
   /** Из ответа при «Получить коннекты»: profile-title / base64 или «# …» в теле ленты */
   fetchedProfileTitle?: string | null;
   /** ISO-8601, subscription-userinfo expire=… или «#expire:» */
@@ -128,13 +130,34 @@ function formatSubscriptionExpiresAt(iso: string | null | undefined): string {
   });
 }
 
+function formatUsedTrafficGb(rawBytes: string | null | undefined): string {
+  const t = (rawBytes ?? '').trim();
+  if (!t) {
+    return '';
+  }
+  try {
+    const bytes = BigInt(t);
+    if (bytes < 0n) {
+      return '';
+    }
+    const GB = 1_000_000_000n;
+    // округление до 0.1 GB: (bytes/GB) с одним знаком после запятой
+    const tenths = (bytes * 10n + GB / 2n) / GB;
+    const whole = tenths / 10n;
+    const frac = tenths % 10n;
+    return `${whole.toString()}.${frac.toString()} ГБ`;
+  } catch {
+    return '';
+  }
+}
+
 const isModalOpen = ref(false);
 const editId = ref<string | null>(null);
 const formTitle = ref('');
 const formUrl = ref('');
 const formSourceUrl = ref('');
-/** Пустое — без автообновления (null в API). UInput type=number может отдавать number. */
-const formFetchIntervalMinutes = ref<string | number>('');
+/** Пустое — без автообновления (null в API). */
+const formFetchIntervalMinutes = ref<string>('');
 const formUserAgent = ref('');
 const formHwid = ref('');
 const loading = ref(false);
@@ -150,6 +173,10 @@ const columns: TableColumn<SubscriptionItem>[] = [
   {
     accessorKey: 'title',
     header: 'Название'
+  },
+  {
+    accessorKey: 'fetchedTrafficUsedBytes',
+    header: 'Трафик'
   },
   {
     accessorKey: 'fetchedProfileTitle',
@@ -396,6 +423,17 @@ async function loadSubscriptions() {
         empty="Подписок пока нет"
         class="w-full"
       >
+        <template #fetchedTrafficUsedBytes-cell="{ row }">
+          <span
+            v-if="row.original.fetchedTrafficUsedBytes"
+            class="whitespace-nowrap tabular-nums text-sm"
+            :title="`${row.original.fetchedTrafficUsedBytes} B`"
+          >
+            {{ formatUsedTrafficGb(row.original.fetchedTrafficUsedBytes) }}
+          </span>
+          <span v-else class="text-muted text-sm">—</span>
+        </template>
+
         <template #fetchedProfileTitle-cell="{ row }">
           <span
             v-if="row.original.fetchedProfileTitle?.trim()"

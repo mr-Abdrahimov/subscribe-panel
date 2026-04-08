@@ -1044,7 +1044,7 @@ async function bulkRemoveGroupsFromSelection() {
         variant="soft"
         icon="i-lucide-refresh-cw"
         :loading="loading"
-        @click="loadConnects"
+        @click="() => loadConnects()"
       >
         Обновить
       </UButton>

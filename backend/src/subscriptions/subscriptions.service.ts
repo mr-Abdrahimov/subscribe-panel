@@ -147,6 +147,10 @@ export class SubscriptionsService {
       response,
       decodedPayload,
     );
+    const remoteTrafficUsedBytes = this.resolveRemoteSubscriptionTrafficUsedBytes(
+      response,
+      decodedPayload,
+    );
     const existingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
       select: {
@@ -294,6 +298,8 @@ export class SubscriptionsService {
         lastFetchedAt: new Date(),
         fetchedProfileTitle: remoteTitle ?? null,
         fetchedSubscriptionExpiresAt: remoteExpiresAt,
+        fetchedTrafficUsedBytes:
+          remoteTrafficUsedBytes != null ? remoteTrafficUsedBytes.toString() : null,
         telegramExpiryWarningSentForExpiresAt: nextTelegramExpiryMarker,
       },
     });
@@ -527,6 +533,33 @@ export class SubscriptionsService {
   }
 
   /**
+   * Трафик из subscription-userinfo:
+   * чаще всего: upload=…; download=…; total=…; expire=…
+   * Нам нужен «потрачено»: upload + download.
+   */
+  private parseUsedBytesFromSubscriptionUserinfoString(
+    raw: string,
+  ): bigint | null {
+    const t = raw.trim();
+    if (!t) {
+      return null;
+    }
+    const up = t.match(/(?:^|;\s*)upload\s*=\s*(\d+)/i);
+    const down = t.match(/(?:^|;\s*)download\s*=\s*(\d+)/i);
+    if (!up && !down) {
+      return null;
+    }
+    try {
+      const u = up ? BigInt(up[1]) : 0n;
+      const d = down ? BigInt(down[1]) : 0n;
+      const sum = u + d;
+      return sum >= 0n ? sum : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Строка «#subscription-userinfo: …» до первой URI (как в ленте после base64).
    */
   private extractSubscriptionUserinfoMetaFromDecodedBody(
@@ -591,6 +624,28 @@ export class SubscriptionsService {
       }
     }
     return this.extractExpireMetaLineFromDecodedBody(decodedPayload);
+  }
+
+  private resolveRemoteSubscriptionTrafficUsedBytes(
+    response: Response,
+    decodedPayload: string,
+  ): bigint | null {
+    const headerRaw = response.headers.get('subscription-userinfo');
+    if (headerRaw?.trim()) {
+      const used = this.parseUsedBytesFromSubscriptionUserinfoString(headerRaw);
+      if (used != null) {
+        return used;
+      }
+    }
+    const bodyUserinfo =
+      this.extractSubscriptionUserinfoMetaFromDecodedBody(decodedPayload);
+    if (bodyUserinfo) {
+      const used = this.parseUsedBytesFromSubscriptionUserinfoString(bodyUserinfo);
+      if (used != null) {
+        return used;
+      }
+    }
+    return null;
   }
 
   private extractConnectName(raw: string) {
