@@ -151,6 +151,10 @@ export class SubscriptionsService {
       response,
       decodedPayload,
     );
+    const remoteTrafficTotalBytes = this.resolveRemoteSubscriptionTrafficTotalBytes(
+      response,
+      decodedPayload,
+    );
     const existingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId: id },
       select: {
@@ -300,6 +304,8 @@ export class SubscriptionsService {
         fetchedSubscriptionExpiresAt: remoteExpiresAt,
         fetchedTrafficUsedBytes:
           remoteTrafficUsedBytes != null ? remoteTrafficUsedBytes.toString() : null,
+        fetchedTrafficTotalBytes:
+          remoteTrafficTotalBytes != null ? remoteTrafficTotalBytes.toString() : null,
         telegramExpiryWarningSentForExpiresAt: nextTelegramExpiryMarker,
       },
     });
@@ -559,6 +565,23 @@ export class SubscriptionsService {
     }
   }
 
+  private parseTotalBytesFromSubscriptionUserinfoString(raw: string): bigint | null {
+    const t = raw.trim();
+    if (!t) {
+      return null;
+    }
+    const total = t.match(/(?:^|;\s*)total\s*=\s*(\d+)/i);
+    if (!total) {
+      return null;
+    }
+    try {
+      const n = BigInt(total[1]);
+      return n >= 0n ? n : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Строка «#subscription-userinfo: …» до первой URI (как в ленте после base64).
    */
@@ -643,6 +666,28 @@ export class SubscriptionsService {
       const used = this.parseUsedBytesFromSubscriptionUserinfoString(bodyUserinfo);
       if (used != null) {
         return used;
+      }
+    }
+    return null;
+  }
+
+  private resolveRemoteSubscriptionTrafficTotalBytes(
+    response: Response,
+    decodedPayload: string,
+  ): bigint | null {
+    const headerRaw = response.headers.get('subscription-userinfo');
+    if (headerRaw?.trim()) {
+      const total = this.parseTotalBytesFromSubscriptionUserinfoString(headerRaw);
+      if (total != null) {
+        return total;
+      }
+    }
+    const bodyUserinfo =
+      this.extractSubscriptionUserinfoMetaFromDecodedBody(decodedPayload);
+    if (bodyUserinfo) {
+      const total = this.parseTotalBytesFromSubscriptionUserinfoString(bodyUserinfo);
+      if (total != null) {
+        return total;
       }
     }
     return null;

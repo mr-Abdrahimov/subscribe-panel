@@ -36,6 +36,8 @@ model Subscription {
   fetchedSubscriptionExpiresAt DateTime?
   /// Использованный трафик (байты): upload + download из subscription-userinfo; null — нет данных
   fetchedTrafficUsedBytes String?
+  /// Доступный трафик (байты): total из subscription-userinfo; null — нет данных
+  fetchedTrafficTotalBytes String?
   /// Для какого момента окончания (Unix-секунда) уже отправляли в Telegram предупреждение «осталось < 10 ч»
   telegramExpiryWarningSentForExpiresAt DateTime?
   /// Саб ссылка: URL ленты, по которому получают коннекты

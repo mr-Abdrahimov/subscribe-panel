@@ -11,6 +11,8 @@ type SubscriptionItem = {
   title: string;
   /** Потраченный трафик (байты): upload+download из subscription-userinfo при последнем fetch */
   fetchedTrafficUsedBytes?: string | null;
+  /** Доступный трафик (байты): total из subscription-userinfo при последнем fetch */
+  fetchedTrafficTotalBytes?: string | null;
   /** Из ответа при «Получить коннекты»: profile-title / base64 или «# …» в теле ленты */
   fetchedProfileTitle?: string | null;
   /** ISO-8601, subscription-userinfo expire=… или «#expire:» */
@@ -179,6 +181,24 @@ function formatUsedTrafficGb(rawBytes: string | null | undefined): string {
   } catch {
     return '';
   }
+}
+
+function formatTrafficUsageShort(
+  usedBytes: string | null | undefined,
+  totalBytes: string | null | undefined,
+): string {
+  const used = formatUsedTrafficGb(usedBytes);
+  const total = formatUsedTrafficGb(totalBytes);
+  if (!used && !total) {
+    return '';
+  }
+  // Нужен вид "10/200" — убираем " ГБ" из обеих частей
+  const u = used.replace(/\s*ГБ\s*$/i, '');
+  const t = total.replace(/\s*ГБ\s*$/i, '');
+  if (u && t) {
+    return `${u}/${t}`;
+  }
+  return u || t;
 }
 
 const isModalOpen = ref(false);
@@ -468,11 +488,11 @@ async function copyToClipboard(text: string) {
       >
         <template #fetchedTrafficUsedBytes-cell="{ row }">
           <span
-            v-if="row.original.fetchedTrafficUsedBytes"
+            v-if="row.original.fetchedTrafficUsedBytes || row.original.fetchedTrafficTotalBytes"
             class="whitespace-nowrap tabular-nums text-sm"
-            :title="`${row.original.fetchedTrafficUsedBytes} B`"
+            :title="`used=${row.original.fetchedTrafficUsedBytes ?? '—'} B, total=${row.original.fetchedTrafficTotalBytes ?? '—'} B`"
           >
-            {{ formatUsedTrafficGb(row.original.fetchedTrafficUsedBytes) }}
+            {{ formatTrafficUsageShort(row.original.fetchedTrafficUsedBytes, row.original.fetchedTrafficTotalBytes) }}
           </span>
           <span v-else class="text-muted text-sm">—</span>
         </template>
