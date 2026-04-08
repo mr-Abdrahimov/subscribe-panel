@@ -242,7 +242,7 @@ const columns: TableColumn<SubscriptionItem>[] = [
   },
   {
     accessorKey: 'fetchedSubscriptionExpiresAt',
-    header: 'Окончание подписки'
+    header: 'Окончание'
   },
   {
     id: 'fetchIntervalMinutes',
@@ -554,7 +554,7 @@ async function copyToClipboard(text: string) {
             v-if="row.original.fetchIntervalMinutes != null"
             class="whitespace-nowrap tabular-nums text-sm"
           >
-            каждые {{ row.original.fetchIntervalMinutes }} мин
+            {{ row.original.fetchIntervalMinutes }} мин
           </span>
           <span v-else class="text-muted text-sm">Только вручную</span>
         </template>
