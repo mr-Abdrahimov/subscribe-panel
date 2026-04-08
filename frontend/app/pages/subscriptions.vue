@@ -130,6 +130,36 @@ function formatSubscriptionExpiresAt(iso: string | null | undefined): string {
   });
 }
 
+function formatSubscriptionExpiresLeft(iso: string | null | undefined): string {
+  if (!iso) {
+    return '';
+  }
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return '';
+  }
+  const diffMs = then - Date.now();
+  if (diffMs <= 0) {
+    return 'истекла';
+  }
+
+  const totalMin = Math.max(0, Math.floor(diffMs / 60_000));
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin - days * 60 * 24) / 60);
+  const mins = totalMin % 60;
+
+  // Правила:
+  // - если есть дни (>0) — минуты не пишем
+  // - если дней 0 — дни не пишем
+  if (days > 0) {
+    return `${days}д ${hours}ч`;
+  }
+  if (hours > 0) {
+    return mins > 0 ? `${hours}ч ${mins}мин` : `${hours}ч`;
+  }
+  return `${mins}мин`;
+}
+
 function formatUsedTrafficGb(rawBytes: string | null | undefined): string {
   const t = (rawBytes ?? '').trim();
   if (!t) {
@@ -401,6 +431,19 @@ async function loadSubscriptions() {
     loading.value = false;
   }
 }
+
+async function copyToClipboard(text: string) {
+  const t = text.trim();
+  if (!t) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(t);
+    toast.add({ title: 'Ссылка скопирована', color: 'success' });
+  } catch {
+    toast.add({ title: 'Не удалось скопировать', color: 'error' });
+  }
+}
 </script>
 
 <template>
@@ -446,28 +489,27 @@ async function loadSubscriptions() {
         </template>
 
         <template #url-cell="{ row }">
-          <a
-            :href="row.original.url"
-            :title="row.original.url"
-            target="_blank"
-            rel="noreferrer"
-            class="text-primary hover:underline font-mono text-xs"
-          >
-            {{ truncateLinkLabel(row.original.url) }}
-          </a>
+          <UTooltip text="Скопировать саб ссылку">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-copy"
+              @click="copyToClipboard(row.original.url)"
+            />
+          </UTooltip>
         </template>
 
         <template #sourceUrl-cell="{ row }">
-          <a
-            v-if="row.original.sourceUrl"
-            :href="row.original.sourceUrl"
-            :title="row.original.sourceUrl"
-            target="_blank"
-            rel="noreferrer"
-            class="text-primary hover:underline font-mono text-xs"
-          >
-            {{ truncateLinkLabel(row.original.sourceUrl) }}
-          </a>
+          <UTooltip v-if="row.original.sourceUrl" text="Скопировать ссылку">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-copy"
+              @click="copyToClipboard(row.original.sourceUrl)"
+            />
+          </UTooltip>
           <span v-else class="text-muted text-sm">—</span>
         </template>
 
@@ -482,7 +524,7 @@ async function loadSubscriptions() {
             "
             :title="formatSubscriptionExpiresAt(row.original.fetchedSubscriptionExpiresAt)"
           >
-            {{ formatSubscriptionExpiresAt(row.original.fetchedSubscriptionExpiresAt) }}
+            {{ formatSubscriptionExpiresLeft(row.original.fetchedSubscriptionExpiresAt) }}
           </span>
           <span v-else class="text-muted text-sm">—</span>
         </template>
