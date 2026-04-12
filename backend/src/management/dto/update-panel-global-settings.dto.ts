@@ -55,4 +55,14 @@ export class UpdatePanelGlobalSettingsDto {
   @IsString()
   @MaxLength(64)
   telegramGroupId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Текст маршрутизации для панели (произвольная строка: URL, JSON, заметки). Пустая строка — сбросить значение в базе.',
+    maxLength: 8000,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  routingConfig?: string;
 }

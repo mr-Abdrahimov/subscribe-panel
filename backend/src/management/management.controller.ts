@@ -18,6 +18,7 @@ import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
   setHappHideSettingsHeader,
+  setHappRoutingResponseHeader,
   setProfileTitleResponseHeaders,
   setProfileUpdateIntervalResponseHeaders,
   setSubscriptionAnnounceResponseHeaders,
@@ -50,7 +51,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить глобальные настройки панели',
     description:
-      'Значения по умолчанию для объявления и интервала автообновления Happ: используются в GET /public/sub/:code, если у соответствующей группы пользователя поля не заданы (наследование). Пер-групповые значения настраиваются в PATCH /groups/:id. Также настройки Telegram (токен бота и id группы для уведомлений).',
+      'Значения по умолчанию для объявления и интервала автообновления Happ: используются в GET /public/sub/:code, если у соответствующей группы пользователя поля не заданы (наследование). Пер-групповые значения настраиваются в PATCH /groups/:id. Также настройки Telegram (токен бота и id группы для уведомлений) и поле routingConfig (текст маршрутизации, хранится в панели).',
   })
   getPanelGlobalSettings() {
     return this.managementService.getPanelGlobalSettings();
@@ -60,7 +61,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Обновить глобальные настройки панели',
     description:
-      'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить); telegramBotSecret и telegramGroupId (пустая строка — сбросить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
+      'Частичное обновление значений по умолчанию: subscriptionAnnounce (до 200 символов; пустая строка — отключить в глобальных настройках); profileUpdateInterval (часы 1–8760; null — отключить); telegramBotSecret и telegramGroupId (пустая строка — сбросить); routingConfig (до 8000 символов; пустая строка — сбросить). Для пользователей группы с собственными полями в PATCH /groups/:id приоритет у настроек группы. Не переданные поля не меняются.',
   })
   @ApiResponse({
     status: 200,
@@ -394,7 +395,7 @@ export class ManagementController {
   @ApiOperation({
     summary: 'Получить base64-подписку по коду пользователя',
     description:
-      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала группы из PanelUser.groupNames по порядку, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для известного пользователя к тексту объявления с новой строки добавляется «Отображаются: …» (группы по персональным настройкам подписки; у каждой группы в скобках — число активных коннектов с этим тегом, как в ленте); строка «Не отображаются: …» с тем же форматом имён и чисел добавляется только если есть хотя бы одна группа, скрытая из ленты; усечение до лимита Happ (200 символов); для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты. При включённом TELEGRAM_NOTIFY_SUBSCRIPTION_ACCESS (по умолчанию) и настроенных в панели Telegram — в очередь subscription-access-notify ставится задача только при первом успешном получении ленты с новым непустым HWID для данного пользователя панели (как при подсчёте уникальных HWID); сообщение в чат бесшумно (disable_notification).',
+      'Тело всегда base64(UTF-8). Всегда присутствует строка #profile-web-page-url: абсолютный URL страницы …/sub/CODE (PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN). Для Happ: #hide-settings в теле и заголовок hide-settings. Если в глобальных настройках панели задано поле routingConfig — в ответ добавляется HTTP-заголовок routing (первая непустая строка) и те же строки в начале тела подписки до base64 (документация Happ: геонастройки / routing). Строки #announce / announce и #profile-update-interval / profile-update-interval берутся из первой подходящей группы пользователя (сначала группы из PanelUser.groupNames по порядку, затем остальные группы ленты) с наследованием незаполненных полей из глобальных настроек панели; для известного пользователя к тексту объявления с новой строки добавляется «Отображаются: …» (группы по персональным настройкам подписки; у каждой группы в скобках — число активных коннектов с этим тегом, как в ленте); строка «Не отображаются: …» с тем же форматом имён и чисел добавляется только если есть хотя бы одна группа, скрытая из ленты; усечение до лимита Happ (200 символов); для неизвестного кода — только глобальные настройки (документация Happ app-management). Заглушки: #profile-title и заголовок profile-title — из subscriptionDisplayName группы (настройки) или имени пользователя панели; отображаемое имя единственной строки vless — по сценарию («Нет подключений», «Только Cripto», «Отключите HWID», «Превышен лимит HWID»). Query t= опционален. Прокси Nuxt добавляет via=crypto-page на секретном пути. При известном panelUserId запись в PanelUserAccessLog: success=false для заглушек (не учитывается в лимите HWID и активности), success=true для полной ленты. При включённом TELEGRAM_NOTIFY_SUBSCRIPTION_ACCESS (по умолчанию) и настроенных в панели Telegram — в очередь subscription-access-notify ставится задача только при первом успешном получении ленты с новым непустым HWID для данного пользователя панели (как при подсчёте уникальных HWID); сообщение в чат бесшумно (disable_notification).',
   })
   @ApiResponse({
     status: 200,
@@ -469,6 +470,7 @@ export class ManagementController {
       announceMetaLine,
       profileUpdateIntervalMetaLine,
       profileUpdateIntervalHours,
+      routingConfig,
     } = await this.managementService.getSubscriptionMetaForPublicSub(user);
 
     let payload: {
@@ -485,6 +487,7 @@ export class ManagementController {
         '❌ Ошибка: Нет подключений 2',
         announceMetaLine,
         profileUpdateIntervalMetaLine,
+        routingConfig,
       );
     } else if (!user.enabled) {
       payload = this.managementService.buildNoConnectionsPlaceholderFeed(
@@ -493,6 +496,7 @@ export class ManagementController {
         subscriptionProfileTitle,
         announceMetaLine,
         profileUpdateIntervalMetaLine,
+        routingConfig,
       );
     } else if (user.cryptoOnlySubscription === true && !viaCryptoPage) {
       payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
@@ -502,6 +506,7 @@ export class ManagementController {
         '❌ Ошибка: Режим Только Cripto',
         announceMetaLine,
         profileUpdateIntervalMetaLine,
+        routingConfig,
       );
     } else {
       const allowAll = user.allowAllUserAgents === true;
@@ -514,6 +519,7 @@ export class ManagementController {
           subscriptionProfileTitle,
           announceMetaLine,
           profileUpdateIntervalMetaLine,
+          routingConfig,
         );
       } else if (requireNoHwid && hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNamedSubscriptionPlaceholderFeed(
@@ -523,6 +529,7 @@ export class ManagementController {
           '❌ Ошибка: Отключите HWID',
           announceMetaLine,
           profileUpdateIntervalMetaLine,
+          routingConfig,
         );
       } else if (requireHwid && !hasSubscriptionHwid(req)) {
         payload = this.managementService.buildNoConnectionsPlaceholderFeed(
@@ -531,6 +538,7 @@ export class ManagementController {
           subscriptionProfileTitle,
           announceMetaLine,
           profileUpdateIntervalMetaLine,
+          routingConfig,
         );
       } else if (
         requireNoHwid !== true &&
@@ -549,12 +557,14 @@ export class ManagementController {
           '❌ Ошибка: Превышен лимит устройств',
           announceMetaLine,
           profileUpdateIntervalMetaLine,
+          routingConfig,
         );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(
           user,
           announceMetaLine,
           profileUpdateIntervalMetaLine,
+          routingConfig,
         );
       }
     }
@@ -583,6 +593,7 @@ export class ManagementController {
     setHappHideSettingsHeader(res);
     setSubscriptionAnnounceResponseHeaders(res, announceMetaLine);
     setProfileUpdateIntervalResponseHeaders(res, profileUpdateIntervalHours);
+    setHappRoutingResponseHeader(res, routingConfig);
     if (payload.profileTitle) {
       setProfileTitleResponseHeaders(res, payload.profileTitle);
     }

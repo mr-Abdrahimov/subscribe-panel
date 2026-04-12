@@ -134,3 +134,26 @@ export function setProfileUpdateIntervalResponseHeaders(
   }
   res.setHeader('profile-update-interval', String(n));
 }
+
+/**
+ * Заголовок routing для Happ: ссылка вида happ://routing/… (как в теле подписки).
+ * При нескольких непустых строках в настройке в заголовок попадает первая строка.
+ * @see https://www.happ.su/main/ru/dev-docs/routing
+ */
+export function setHappRoutingResponseHeader(
+  res: Response,
+  routingConfig: string | null | undefined,
+): void {
+  const raw = routingConfig?.trim();
+  if (!raw) {
+    return;
+  }
+  const first = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!first) {
+    return;
+  }
+  res.setHeader('routing', first);
+}

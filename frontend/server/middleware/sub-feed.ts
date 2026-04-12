@@ -58,6 +58,7 @@ function buildSubscriptionJsonBody(
   base64Body: string,
   profileTitleStar: string | null,
   profileTitlePlain: string | null,
+  routing: string | null,
 ): string {
   const payload: Record<string, string> = {
     /** то же значение, что в plain-ответе (UTF-8 → base64 одной строкой) */
@@ -72,6 +73,9 @@ function buildSubscriptionJsonBody(
   if (profileTitleStar) {
     payload['profile-title*'] = profileTitleStar;
     payload.profileTitleStar = profileTitleStar;
+  }
+  if (routing) {
+    payload.routing = routing;
   }
   return JSON.stringify(payload);
 }
@@ -218,6 +222,7 @@ export default defineEventHandler(async (event) => {
   const profileTitleStar = res.headers.get('profile-title*');
   const profileTitlePlain = res.headers.get('profile-title');
   const hideSettings = res.headers.get('hide-settings');
+  const routing = res.headers.get('routing');
   setHeader(
     event,
     'cache-control',
@@ -233,12 +238,16 @@ export default defineEventHandler(async (event) => {
   if (profileTitlePlain) {
     setHeader(event, 'profile-title', profileTitlePlain);
   }
+  if (routing) {
+    setHeader(event, 'routing', routing);
+  }
   if (wantsJson) {
     setHeader(event, 'content-type', 'application/json; charset=utf-8');
     return buildSubscriptionJsonBody(
       data,
       profileTitleStar,
       profileTitlePlain,
+      routing,
     );
   }
   setHeader(event, 'content-type', 'text/plain; charset=utf-8');

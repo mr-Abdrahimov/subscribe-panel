@@ -19,6 +19,12 @@ const settingsAccordionItems: AccordionItem[] = [
     value: 'telegram',
     slot: 'telegram',
   },
+  {
+    label: 'Routing',
+    icon: 'i-lucide-route',
+    value: 'routing',
+    slot: 'routing',
+  },
 ];
 
 const appLinkFormSchema = yup.object({
@@ -32,12 +38,14 @@ const appLinkFormSchema = yup.object({
 
 const telegramSecretSchema = yup.string().max(256, 'Не более 256 символов');
 const telegramGroupIdSchema = yup.string().max(64, 'Не более 64 символов');
+const routingConfigSchema = yup.string().max(8000, 'Не более 8000 символов');
 
-type PanelGlobalSettingsTelegram = {
+type PanelGlobalSettingsPayload = {
   subscriptionAnnounce: string | null;
   profileUpdateInterval: number | null;
   telegramBotSecret: string | null;
   telegramGroupId: string | null;
+  routingConfig: string | null;
 };
 
 type AppLinkItem = {
@@ -58,29 +66,32 @@ const newAppLink = ref({ name: '', urlTemplate: '' });
 const newAppLinkSaving = ref(false);
 
 const telegramDraft = ref({ secret: '', groupId: '' });
-const telegramLoading = ref(false);
+const routingDraft = ref('');
+const panelGlobalFormsLoading = ref(false);
 const telegramSaving = ref(false);
 const telegramTestLoading = ref(false);
+const routingSaving = ref(false);
 
 onMounted(() => {
   loadAppLinks();
-  loadTelegramSettings();
+  loadPanelGlobalSettingsForms();
 });
 
-async function loadTelegramSettings() {
-  telegramLoading.value = true;
+async function loadPanelGlobalSettingsForms() {
+  panelGlobalFormsLoading.value = true;
   try {
-    const data = await $fetch<PanelGlobalSettingsTelegram>(
+    const data = await $fetch<PanelGlobalSettingsPayload>(
       `${config.public.apiBaseUrl}/panel-global-settings`,
     );
     telegramDraft.value = {
       secret: data.telegramBotSecret ?? '',
       groupId: data.telegramGroupId ?? '',
     };
+    routingDraft.value = data.routingConfig ?? '';
   } catch {
-    toast.add({ title: 'Не удалось загрузить настройки Telegram', color: 'error' });
+    toast.add({ title: 'Не удалось загрузить настройки панели', color: 'error' });
   } finally {
-    telegramLoading.value = false;
+    panelGlobalFormsLoading.value = false;
   }
 }
 
@@ -97,7 +108,7 @@ async function saveTelegramSettings() {
   }
   telegramSaving.value = true;
   try {
-    await $fetch<PanelGlobalSettingsTelegram>(
+    await $fetch<PanelGlobalSettingsPayload>(
       `${config.public.apiBaseUrl}/panel-global-settings`,
       {
         method: 'PATCH',
@@ -108,7 +119,7 @@ async function saveTelegramSettings() {
       },
     );
     toast.add({ title: 'Настройки Telegram сохранены', color: 'success' });
-    await loadTelegramSettings();
+    await loadPanelGlobalSettingsForms();
   } catch {
     toast.add({ title: 'Не удалось сохранить', color: 'error' });
   } finally {
@@ -135,6 +146,36 @@ async function sendTelegramTest() {
     toast.add({ title: 'Ошибка отправки', description: msg, color: 'error' });
   } finally {
     telegramTestLoading.value = false;
+  }
+}
+
+async function saveRoutingSettings() {
+  try {
+    await routingConfigSchema.validate(routingDraft.value);
+  } catch (e) {
+    if (e instanceof yup.ValidationError) {
+      toast.add({ title: e.message, color: 'error' });
+      return;
+    }
+    throw e;
+  }
+  routingSaving.value = true;
+  try {
+    await $fetch<PanelGlobalSettingsPayload>(
+      `${config.public.apiBaseUrl}/panel-global-settings`,
+      {
+        method: 'PATCH',
+        body: {
+          routingConfig: routingDraft.value.trim(),
+        },
+      },
+    );
+    toast.add({ title: 'Routing сохранён', color: 'success' });
+    await loadPanelGlobalSettingsForms();
+  } catch {
+    toast.add({ title: 'Не удалось сохранить', color: 'error' });
+  } finally {
+    routingSaving.value = false;
   }
 }
 
@@ -372,7 +413,7 @@ async function createAppLink() {
             <code class="text-xs font-mono text-highlighted">-100…</code>) можно узнать через ботов вроде
             @userinfobot / @getidsbot, либо из ответов Bot API. Бот должен быть участником группы и иметь право писать сообщения.
           </p>
-          <div v-if="telegramLoading" class="space-y-3">
+          <div v-if="panelGlobalFormsLoading" class="space-y-3">
             <USkeleton class="h-14 w-full rounded-lg" />
             <USkeleton class="h-14 w-full rounded-lg" />
           </div>
@@ -411,7 +452,7 @@ async function createAppLink() {
                   variant="ghost"
                   size="sm"
                   :disabled="telegramSaving || telegramTestLoading"
-                  @click="loadTelegramSettings"
+                  @click="loadPanelGlobalSettingsForms"
                 >
                   Сбросить из сервера
                 </UButton>
@@ -420,7 +461,7 @@ async function createAppLink() {
                   variant="outline"
                   size="sm"
                   :loading="telegramTestLoading"
-                  :disabled="telegramSaving || telegramLoading"
+                  :disabled="telegramSaving || panelGlobalFormsLoading"
                   @click="sendTelegramTest"
                 >
                   Отправить тест
@@ -428,8 +469,75 @@ async function createAppLink() {
                 <UButton
                   size="sm"
                   :loading="telegramSaving"
-                  :disabled="telegramTestLoading || telegramLoading"
+                  :disabled="telegramTestLoading || panelGlobalFormsLoading"
                   @click="saveTelegramSettings"
+                >
+                  Сохранить
+                </UButton>
+              </div>
+            </template>
+          </UCard>
+        </div>
+      </template>
+
+      <template #routing-body>
+        <div class="space-y-4 pt-4">
+          <p class="text-sm text-muted">
+            Ссылка Happ вида
+            <code class="text-xs font-mono text-highlighted">happ://routing/…</code>
+            (например с
+            <a
+              href="https://routing.happ.su/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary underline underline-offset-2"
+            >routing.happ.su</a>):
+            при каждом обновлении подписки клиент получит её в HTTP-заголовке
+            <code class="text-xs font-mono text-highlighted">routing</code>
+            и в начале тела ленты (см.
+            <a
+              href="https://www.happ.su/main/ru/dev-docs/routing"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary underline underline-offset-2"
+            >документацию Happ</a>).
+            Несколько строк — каждая в теле ленты; в заголовок попадает первая непустая строка.
+          </p>
+          <div v-if="panelGlobalFormsLoading" class="space-y-3">
+            <USkeleton class="h-32 w-full rounded-lg" />
+          </div>
+          <UCard v-else>
+            <div class="space-y-3">
+              <UFormField
+                label="Конфигурация"
+                description="До 8000 символов; пустое поле при сохранении очистит значение в БД"
+                class="w-full"
+              >
+                <UTextarea
+                  v-model="routingDraft"
+                  :rows="8"
+                  autoresize
+                  class="w-full font-mono text-sm min-h-32"
+                  placeholder="Вставьте или введите текст…"
+                />
+              </UFormField>
+            </div>
+            <template #footer>
+              <div class="flex flex-wrap items-center gap-2 justify-end w-full">
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="routingSaving"
+                  @click="loadPanelGlobalSettingsForms"
+                >
+                  Сбросить из сервера
+                </UButton>
+                <UButton
+                  size="sm"
+                  :loading="routingSaving"
+                  :disabled="panelGlobalFormsLoading"
+                  @click="saveRoutingSettings"
                 >
                   Сохранить
                 </UButton>

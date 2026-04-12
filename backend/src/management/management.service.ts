@@ -374,6 +374,7 @@ export class ManagementService implements OnModuleInit {
     profileUpdateInterval: number | null;
     telegramBotSecret: string | null;
     telegramGroupId: string | null;
+    routingConfig: string | null;
   }> {
     const row = await this.prisma.panelGlobalSettings.findUnique({
       where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
@@ -382,6 +383,7 @@ export class ManagementService implements OnModuleInit {
         profileUpdateInterval: true,
         telegramBotSecret: true,
         telegramGroupId: true,
+        routingConfig: true,
       },
     });
     const h = row?.profileUpdateInterval;
@@ -394,6 +396,7 @@ export class ManagementService implements OnModuleInit {
       profileUpdateInterval: intervalOk,
       telegramBotSecret: row?.telegramBotSecret?.trim() || null,
       telegramGroupId: row?.telegramGroupId?.trim() || null,
+      routingConfig: row?.routingConfig?.trim() || null,
     };
   }
 
@@ -402,12 +405,14 @@ export class ManagementService implements OnModuleInit {
     profileUpdateInterval: number | null;
     telegramBotSecret: string | null;
     telegramGroupId: string | null;
+    routingConfig: string | null;
   }> {
     const patch: {
       subscriptionAnnounce?: string | null;
       profileUpdateInterval?: number | null;
       telegramBotSecret?: string | null;
       telegramGroupId?: string | null;
+      routingConfig?: string | null;
     } = {};
 
     if (dto.subscriptionAnnounce !== undefined) {
@@ -429,6 +434,10 @@ export class ManagementService implements OnModuleInit {
       const t = dto.telegramGroupId.trim();
       patch.telegramGroupId = t === '' ? null : t;
     }
+    if (dto.routingConfig !== undefined) {
+      const t = dto.routingConfig.trim();
+      patch.routingConfig = t === '' ? null : t;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.getPanelGlobalSettings();
@@ -442,6 +451,7 @@ export class ManagementService implements OnModuleInit {
         profileUpdateInterval: patch.profileUpdateInterval ?? null,
         telegramBotSecret: patch.telegramBotSecret ?? null,
         telegramGroupId: patch.telegramGroupId ?? null,
+        routingConfig: patch.routingConfig ?? null,
       },
       update: patch,
     });
@@ -643,10 +653,16 @@ export class ManagementService implements OnModuleInit {
     announceMetaLine: string | null;
     profileUpdateIntervalMetaLine: string | null;
     profileUpdateIntervalHours: number | null;
+    /** Ссылки/строки маршрутизации Happ из глобальных настроек панели (не наследуются с группы). */
+    routingConfig: string | null;
   }> {
     const globalRow = await this.prisma.panelGlobalSettings.findUnique({
       where: { id: ManagementService.PANEL_GLOBAL_SETTINGS_ID },
-      select: { subscriptionAnnounce: true, profileUpdateInterval: true },
+      select: {
+        subscriptionAnnounce: true,
+        profileUpdateInterval: true,
+        routingConfig: true,
+      },
     });
 
     let effectiveAnnounce: string | null | undefined =
@@ -678,7 +694,40 @@ export class ManagementService implements OnModuleInit {
       effectiveAnnounce,
       user,
     );
-    return this.buildSubscriptionMetaLines(announcePlain, effectiveInterval);
+    const meta = this.buildSubscriptionMetaLines(
+      announcePlain,
+      effectiveInterval,
+    );
+    const routingTrimmed = globalRow?.routingConfig?.trim() || null;
+    return {
+      ...meta,
+      routingConfig: routingTrimmed,
+    };
+  }
+
+  /** Непустые строки из настройки routing (каждая — отдельная строка тела подписки до base64). */
+  private routingBodyLinesFromPanelConfig(
+    routingConfig: string | null | undefined,
+  ): string[] {
+    const raw = routingConfig?.trim();
+    if (!raw) {
+      return [];
+    }
+    return raw
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+
+  private prependRoutingLinesToSubscriptionPlaintext(
+    routingConfig: string | null | undefined,
+    bodyPlain: string,
+  ): string {
+    const lines = this.routingBodyLinesFromPanelConfig(routingConfig);
+    if (lines.length === 0) {
+      return bodyPlain;
+    }
+    return `${lines.join('\n')}\n${bodyPlain}`;
   }
 
   /**
@@ -1628,6 +1677,7 @@ export class ManagementService implements OnModuleInit {
     user: PanelUser,
     announceMetaLine: string | null = null,
     profileUpdateIntervalMetaLine: string | null = null,
+    routingConfig: string | null = null,
   ): Promise<{
     encoded: string;
     profileTitle: string;
@@ -1679,8 +1729,12 @@ export class ManagementService implements OnModuleInit {
     }
     metaLines.push('#hide-settings: 1');
     const head = metaLines.join('\n');
-    const bodyText =
+    const bodyTextRaw =
       uriLines.length > 0 ? `${head}\n${uriLines.join('\n')}` : head;
+    const bodyText = this.prependRoutingLinesToSubscriptionPlaintext(
+      routingConfig,
+      bodyTextRaw,
+    );
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
@@ -1701,6 +1755,7 @@ export class ManagementService implements OnModuleInit {
     connectionDisplayName: string,
     announceMetaLine: string | null = null,
     profileUpdateIntervalMetaLine: string | null = null,
+    routingConfig: string | null = null,
   ): {
     encoded: string;
     profileTitle: string;
@@ -1721,7 +1776,10 @@ export class ManagementService implements OnModuleInit {
       '#hide-settings: 1',
       line,
     ].join('\n');
-    const bodyText = metaBlock;
+    const bodyText = this.prependRoutingLinesToSubscriptionPlaintext(
+      routingConfig,
+      metaBlock,
+    );
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle: meta,
@@ -1740,6 +1798,7 @@ export class ManagementService implements OnModuleInit {
     profileTitleForMeta = 'Нет подключений',
     announceMetaLine: string | null = null,
     profileUpdateIntervalMetaLine: string | null = null,
+    routingConfig: string | null = null,
   ): {
     encoded: string;
     profileTitle: string;
@@ -1753,6 +1812,7 @@ export class ManagementService implements OnModuleInit {
       '❌ Ошибка: Нет подключений 4',
       announceMetaLine,
       profileUpdateIntervalMetaLine,
+      routingConfig,
     );
   }
 

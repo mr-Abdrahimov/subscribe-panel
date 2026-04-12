@@ -154,6 +154,8 @@ model PanelGlobalSettings {
   telegramBotSecret    String?
   /// ID чата или группы (например -100…), куда бот шлёт сообщения
   telegramGroupId      String?
+  /// Произвольный текст маршрутизации (URL, правила, заметки): редактируется в настройках панели
+  routingConfig        String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
