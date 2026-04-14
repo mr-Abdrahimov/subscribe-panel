@@ -25,6 +25,7 @@ CRYPTO_PATH="sub2128937123"
 REDIS_PASS=""
 JWT_SECRET=""
 SETUP_SSL="yes"   # yes | no
+DC=""             # команда docker compose (определяется в detect_compose)
 
 # ─── Проверки ─────────────────────────────────────────────────────────────────
 check_root() {
@@ -96,6 +97,30 @@ install_packages() {
     systemctl enable --now docker
     docker info &>/dev/null || err "Docker не работает"
     info "Docker: $(docker --version)"
+
+    detect_compose
+}
+
+# ─── Определить команду docker compose ───────────────────────────────────────
+detect_compose() {
+    if docker compose version &>/dev/null 2>&1; then
+        DC="docker compose"
+        info "Docker Compose: $(docker compose version --short 2>/dev/null || docker compose version)"
+    elif command -v docker-compose &>/dev/null; then
+        DC="docker-compose"
+        info "Docker Compose (v1): $(docker-compose --version)"
+    else
+        info "Установка docker-compose-plugin..."
+        apt-get install -y docker-compose-plugin 2>/dev/null \
+            || apt-get install -y docker-compose 2>/dev/null \
+            || err "Не удалось установить docker compose. Установите вручную: https://docs.docker.com/compose/install/"
+        if docker compose version &>/dev/null 2>&1; then
+            DC="docker compose"
+        else
+            DC="docker-compose"
+        fi
+        info "Docker Compose: $($DC version)"
+    fi
 }
 
 # ─── Nginx конфиг ─────────────────────────────────────────────────────────────
@@ -437,13 +462,13 @@ main() {
 
     section "Запуск баз данных"
 
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+    $DC -f "${INSTALL_DIR}/docker-compose.yml" \
         --env-file "${INSTALL_DIR}/.env" \
         up -d mongodb redis
 
     info "Ожидание готовности MongoDB..."
     local attempts=0
-    until docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+    until $DC -f "${INSTALL_DIR}/docker-compose.yml" \
             --env-file "${INSTALL_DIR}/.env" \
             exec -T mongodb mongo --quiet --eval "db.adminCommand({ping:1})" &>/dev/null; do
         attempts=$((attempts + 1))
@@ -454,7 +479,7 @@ main() {
     echo ""
 
     info "Инициализация MongoDB Replica Set..."
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+    $DC -f "${INSTALL_DIR}/docker-compose.yml" \
         --env-file "${INSTALL_DIR}/.env" \
         exec -T mongodb mongo --quiet --eval '
 (function() {
@@ -484,11 +509,11 @@ main() {
        → выберите образ → Package settings → Change visibility → Public"
     fi
 
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+    $DC -f "${INSTALL_DIR}/docker-compose.yml" \
         --env-file "${INSTALL_DIR}/.env" \
         pull
 
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+    $DC -f "${INSTALL_DIR}/docker-compose.yml" \
         --env-file "${INSTALL_DIR}/.env" \
         up -d
 
@@ -502,7 +527,7 @@ main() {
         if [[ $attempts -ge 18 ]]; then
             warn "Сайт пока не отвечает — это может быть нормально если образы ещё скачиваются."
             warn "Проверьте через пару минут: https://${DOMAIN}"
-            warn "Логи: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
+            warn "Логи: $DC -f ${INSTALL_DIR}/docker-compose.yml logs -f"
             break
         fi
         echo -n "."
@@ -528,15 +553,14 @@ main() {
         echo -e "  ${Y}Для подключения SSL позже:${RESET}"
         echo "    apt-get install -y certbot python3-certbot-nginx"
         echo "    certbot --nginx -d ${DOMAIN}"
-        echo "    # Затем обновите FRONTEND_ORIGIN и NUXT_PUBLIC_API_BASE_URL в ${INSTALL_DIR}/.env"
-        echo "    # и перезапустите: docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d"
+        echo "    # Затем перезапустите: $DC -f ${INSTALL_DIR}/docker-compose.yml up -d"
         echo ""
     fi
     echo -e "  ${Y}Полезные команды:${RESET}"
-    echo "    Статус:    docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"
-    echo "    Логи:      docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
-    echo "    Обновить:  docker compose -f ${INSTALL_DIR}/docker-compose.yml pull && \\"
-    echo "               docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d"
+    echo "    Статус:    $DC -f ${INSTALL_DIR}/docker-compose.yml ps"
+    echo "    Логи:      $DC -f ${INSTALL_DIR}/docker-compose.yml logs -f"
+    echo "    Обновить:  $DC -f ${INSTALL_DIR}/docker-compose.yml pull && \\"
+    echo "               $DC -f ${INSTALL_DIR}/docker-compose.yml up -d"
     echo ""
 }
 
