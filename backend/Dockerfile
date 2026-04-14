@@ -3,7 +3,8 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+# Обновляем npm до v11 (lock-файл проекта создан npm v11; npm ci v10 не совместим).
+RUN npm install -g npm@11 --quiet && npm ci
 
 COPY . .
 
