@@ -1,158 +1,288 @@
 # Subscribe Panel
 
-Панель подписок: **NestJS** (API) + **Nuxt 4** (UI), **MongoDB** и **Redis** в Docker, **Prisma** для схемы БД.
+Панель управления подписками на базе **NestJS** (API) + **Nuxt 4** (UI), **MongoDB** и **Redis**.
 
-## Требования на сервере
+---
 
-- Node.js (LTS, напр. 20+) и npm
+## Стек
+
+| Слой | Технология |
+|------|-----------|
+| Backend | NestJS, Prisma, BullMQ |
+| Frontend | Nuxt 4, Nuxt UI, Tailwind 4 |
+| База данных | MongoDB 4.4 (Replica Set) |
+| Очередь | Redis 7 + BullMQ |
+| Инфраструктура | Docker Compose, Nginx, Let's Encrypt |
+
+---
+
+## Быстрая установка на сервер
+
+> Поддерживаются: **Debian 11/12**, **Ubuntu 22.04/24.04**  
+> Требования: root-доступ, открытые порты **80** и **443**, DNS домена указывает на сервер.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/mr-Abdrahimov/subscribe-panel/main/install.sh)
+```
+
+Скрипт автоматически:
+
+1. Устанавливает Docker, Nginx, Certbot
+2. Спрашивает домен, email и пароль администратора
+3. Получает SSL-сертификат Let's Encrypt
+4. Настраивает Nginx с HTTPS и reverse proxy
+5. Запускает MongoDB, Redis, backend, frontend через Docker Compose
+6. Инициализирует MongoDB Replica Set
+7. Выводит URL панели, логин и пароль
+
+После завершения установки панель доступна по адресу `https://ВАШ_ДОМЕН`.
+
+---
+
+## Ручная установка
+
+### 1. Клонировать репозиторий
+
+```bash
+git clone https://github.com/mr-Abdrahimov/subscribe-panel.git /opt/subscribe-panel
+cd /opt/subscribe-panel
+```
+
+### 2. Создать `.env`
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Обязательно заполните:
+
+| Переменная | Описание |
+|-----------|----------|
+| `DOMAIN` | Домен панели (используется в nginx и certbot) |
+| `JWT_SECRET` | Случайная строка: `openssl rand -hex 64` |
+| `REDIS_PASSWORD` | Пароль Redis: `openssl rand -hex 24` |
+| `FRONTEND_ORIGIN` | `https://ВАШ_ДОМЕН` |
+| `NUXT_PUBLIC_API_BASE_URL` | `https://ВАШ_ДОМЕН/api` |
+| `ADMIN_EMAIL` | Email первого администратора |
+| `ADMIN_PASSWORD` | Пароль первого администратора |
+
+### 3. Запустить
+
+```bash
+docker compose pull
+docker compose up -d
+
+# Инициализировать MongoDB Replica Set (один раз)
+docker compose exec mongodb mongo --quiet --eval '
+  (function() {
+    try { rs.status(); return; } catch(e) {}
+    rs.initiate({_id:"rs0",members:[{_id:0,host:"mongodb:27017"}]});
+  })();
+'
+```
+
+### 4. Настроить Nginx + SSL
+
+```bash
+# Установить nginx и certbot
+apt-get install -y nginx certbot python3-certbot-nginx
+
+# Создать конфиг
+cat > /etc/nginx/sites-available/ВАШ_ДОМЕН <<'NGINX'
+server {
+    listen 80;
+    server_name ВАШ_ДОМЕН;
+    location ^~ /api/_nuxt_icon {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+    }
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/ВАШ_ДОМЕН /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+
+# Получить SSL сертификат
+certbot certonly --nginx --non-interactive --agree-tos \
+  -m ВАШ_EMAIL -d ВАШ_ДОМЕН
+```
+
+---
+
+## Обновление
+
+### Обновить образы (рекомендуется)
+
+```bash
+cd /opt/subscribe-panel
+
+# Скачать новые образы
+docker compose pull
+
+# Перезапустить с новыми образами (без остановки БД)
+docker compose up -d --no-deps backend frontend
+```
+
+### Полный перезапуск всего стека
+
+```bash
+cd /opt/subscribe-panel
+docker compose pull
+docker compose up -d
+```
+
+### Проверить статус после обновления
+
+```bash
+docker compose ps
+docker compose logs --tail=50 backend
+docker compose logs --tail=50 frontend
+```
+
+---
+
+## Полезные команды
+
+### Статус контейнеров
+
+```bash
+docker compose -f /opt/subscribe-panel/docker-compose.yml ps
+```
+
+### Логи в реальном времени
+
+```bash
+# Все сервисы
+docker compose -f /opt/subscribe-panel/docker-compose.yml logs -f
+
+# Только backend
+docker compose -f /opt/subscribe-panel/docker-compose.yml logs -f backend
+
+# Только frontend
+docker compose -f /opt/subscribe-panel/docker-compose.yml logs -f frontend
+```
+
+### Остановить / Запустить
+
+```bash
+# Остановить всё
+docker compose -f /opt/subscribe-panel/docker-compose.yml down
+
+# Запустить снова
+docker compose -f /opt/subscribe-panel/docker-compose.yml up -d
+```
+
+### Перезапустить отдельный сервис
+
+```bash
+docker compose -f /opt/subscribe-panel/docker-compose.yml restart backend
+docker compose -f /opt/subscribe-panel/docker-compose.yml restart frontend
+```
+
+### Просмотр конфигурации
+
+```bash
+cat /opt/subscribe-panel/.env
+```
+
+---
+
+## Структура проекта
+
+```
+subscribe-panel/
+├── backend/              # NestJS API
+│   ├── src/
+│   ├── prisma/           # Схема MongoDB
+│   └── Dockerfile
+├── frontend/             # Nuxt 4 UI
+│   ├── app/
+│   ├── prisma/           # FrontendSession
+│   └── Dockerfile
+├── nginx/                # Пример конфига nginx
+├── scripts/              # Вспомогательные скрипты
+├── docker-compose.yml    # Продакшен стек
+├── docker-compose.build.yml  # Override для локальной сборки
+├── install.sh            # Скрипт быстрой установки
+└── .env.example          # Шаблон переменных окружения
+```
+
+---
+
+## Порты
+
+| Сервис | Порт на хосте | Описание |
+|--------|--------------|----------|
+| Frontend (Nuxt) | `127.0.0.1:3001` | Nginx проксирует `/` сюда |
+| Backend (NestJS) | `127.0.0.1:3000` | Nginx проксирует `/api/` сюда |
+| MongoDB | внутри Docker-сети | Доступен только контейнерам |
+| Redis | внутри Docker-сети | Доступен только контейнерам |
+
+Оба приложения слушают только `127.0.0.1` — снаружи доступны только через Nginx.
+
+---
+
+## API документация (Swagger)
+
+После установки документация доступна по адресу:
+
+```
+https://ВАШ_ДОМЕН/api/docs
+```
+
+---
+
+## Локальная разработка
+
+### Требования
+
+- Node.js 22+, npm 11+
 - Docker и Docker Compose v2
-- PM2 (глобально: `npm i -g pm2`)
-- Nginx (для продакшена за обратным прокси)
 
-Корень проекта в примерах ниже: `/var/www/subscribe-panel`. Если у вас другой путь — поправьте **`ecosystem.config.cjs`** (`cwd` у приложений PM2).
-
----
-
-## Переменные окружения
-
-Создайте и заполните (секреты не коммитить):
-
-| Файл | Назначение |
-|------|------------|
-| `backend/.env.production` | `DATABASE_URL`, `JWT_*`, `FRONTEND_ORIGIN`, порты Mongo/Redis, админ для сида |
-| `frontend/.env.production` | `NUXT_PUBLIC_API_BASE_URL` (в проде обычно `https://<ваш-домен>/api`) и учётные данные для автозаполнения формы входа при необходимости |
-
-В репозитории есть примеры значений под домен **inv.avtlk.ru** и прокси `/api`.
-
----
-
-## Запуск в продакшене (порядок действий)
-
-### 1. MongoDB и Redis
-
-Из корня репозитория:
+### Запуск
 
 ```bash
-cd /var/www/subscribe-panel
-docker compose --env-file backend/.env.production pull
-docker compose --env-file backend/.env.production up -d
-docker ps
+# 1. Поднять MongoDB и Redis
+docker compose up -d mongodb redis
+
+# 2. Инициализировать Replica Set (один раз)
+docker compose exec mongodb mongo --quiet --eval \
+  'try{rs.status()}catch(e){rs.initiate({_id:"rs0",members:[{_id:0,host:"mongodb:27017"}]})}'
+
+# 3. Backend
+cd backend
+npm install
+npm run prisma:generate
+npm run start:dev
+
+# 4. Frontend (в отдельном терминале)
+cd frontend
+npm install
+npm run prisma:generate
+npm run dev
 ```
 
-В `docker-compose.yml` по умолчанию **Mongo 4.4** (на части VPS образ **mongo:7** падает с кодом **132**). Порт Mongo на хосте задаётся **`MONGO_PORT`** в `backend/.env.production` (часто `27017`).
+Фронтенд: http://localhost:3001  
+Backend API: http://localhost:3000  
+Swagger: http://localhost:3000/docs
 
-**Один раз** инициализируйте replica set (нужно для Prisma с MongoDB):
+### Локальная сборка Docker образов
 
 ```bash
-bash scripts/init-mongo-rs.sh
-# при другом env-файле compose: bash scripts/init-mongo-rs.sh путь/к/.env
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
-
-### 2. Схема БД (Prisma)
-
-```bash
-cd /var/www/subscribe-panel/backend
-npm ci
-npm run prisma:generate:prod
-npm run prisma:push:prod
-```
-
-Либо без суффикса `:prod`, если на сервере есть только `.env.production` (скрипты сами подхватят его, если нет `.env.development`).
-
-`DATABASE_URL` в `backend/.env.production` должен указывать на **хостовый** порт Mongo (например `mongodb://127.0.0.1:27017/...?replicaSet=rs0`), а не на имя контейнера — бэкенд и Prisma запускаются **на хосте**, не внутри Docker-сети compose.
-
-### 3. Сборка бэкенда
-
-```bash
-cd /var/www/subscribe-panel/backend
-NODE_ENV=production npm run build
-```
-
-### 4. Сборка фронтенда
-
-```bash
-cd /var/www/subscribe-panel/frontend
-npm ci
-npm run build
-```
-
-Должен появиться файл **`frontend/.output/server/index.mjs`**. Без успешной сборки **`npm run start:prod`** на фронте не запустится.
-
-### 5. PM2 (бэкенд + фронтенд)
-
-```bash
-cd /var/www/subscribe-panel
-pm2 start ecosystem.config.cjs
-pm2 save
-```
-
-Обновление после деплоя:
-
-```bash
-cd /var/www/subscribe-panel/backend && npm ci && NODE_ENV=production npm run build
-cd /var/www/subscribe-panel/frontend && npm ci && npm run build
-pm2 reload ecosystem.config.cjs --update-env
-```
-
-Логи:
-
-```bash
-pm2 logs subscribe-backend
-pm2 logs subscribe-frontend
-```
-
-### 6. Nginx
-
-Конфиг сайта в репозитории: **`nginx/sites-available/inv.avtlk.ru.conf`** (только блок `server`).
-
-```bash
-sudo cp /var/www/subscribe-panel/nginx/sites-available/inv.avtlk.ru.conf /etc/nginx/sites-available/inv.avtlk.ru
-sudo ln -sf /etc/nginx/sites-available/inv.avtlk.ru /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-Известный конфликт: [@nuxt/icon по умолчанию использует `/api/_nuxt_icon`](https://github.com/nuxt/icon/issues/185), а Nginx часто проксирует весь `/api/` в Nest → **404**. В проекте: **`app.config.ts`** и модуль **`@nuxt/icon`** с **`localApiEndpoint: '/_nuxt_icon'`** (клиентский плагин читает `appConfig.icon`). В Nginx оставлен запасной **`location ^~ /api/_nuxt_icon`** на порт фронта для старых билдов. В **`nuxt.config`** включено **`experimental.payloadExtraction: false`**, чтобы не запрашивался **`/_payload.json`**.
-
-Если используете **certbot**, проверьте, что блок **`server { listen 443 ssl; }`** содержит те же **`location`**, что и порт **80** (или общий **`include`**).
-
-Ожидается:
-
-- фронт **Nitro** слушает **127.0.0.1:3001**;
-- бэкенд **Nest** слушает **127.0.0.1:3000**;
-- с внешнего URL сайт открывается как **https://inv.avtlk.ru**, API — **https://inv.avtlk.ru/api/** (префикс `/api` снимается прокси и не должен дублироваться в маршрутах Nest).
-
-TLS (после того, как DNS указывает на сервер):
-
-```bash
-sudo certbot --nginx -d inv.avtlk.ru
-```
-
-### 7. Автозапуск PM2 после перезагрузки
-
-```bash
-pm2 save
-pm2 startup
-# выполните команду, которую выведет `pm2 startup`
-```
-
----
-
-## Краткая шпаргалка портов
-
-| Сервис | Где слушает | Назначение |
-|--------|-------------|------------|
-| Nuxt (prod) | `0.0.0.0:3001` | PM2 → Nginx `proxy_pass` |
-| Nest (prod) | `3000` (из `PORT` в `.env.production`) | Nginx `location /api/` |
-| Mongo | `127.0.0.1:27017` (проброс из Docker) | Prisma, Nest |
-| Redis | `6379` (проброс) | при необходимости для бэкенда |
-
----
-
-## Swagger
-
-У приложения **нет** глобального префикса `/api` в коде: Nginx отдаёт на Nest пути без префикса `/api`. Путь Swagger задаётся **`SWAGGER_PATH`** в `backend/.env.production` (по умолчанию `docs`).
-
-Примеры:
-
-- локально: `http://127.0.0.1:3000/docs`
-- за Nginx с доменом **inv.avtlk.ru**: `https://inv.avtlk.ru/api/docs`
