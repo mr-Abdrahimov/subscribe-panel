@@ -67,7 +67,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
-      PUBLIC_SUBSCRIPTION_BASE_URL: ${PUBLIC_SUBSCRIPTION_BASE_URL:-}
       SUBSCRIPTION_CRYPTO_PATH_SEGMENT: ${SUBSCRIPTION_CRYPTO_PATH_SEGMENT:-sub2128937123}
       SWAGGER_PATH: ${SWAGGER_PATH:-docs}
       SWAGGER_TITLE: ${SWAGGER_TITLE:-Subscribe Panel API}
@@ -98,7 +97,8 @@ services:
       NUXT_API_INTERNAL_BASE_URL: http://backend:3000
       # Публичный URL API для браузера (должен быть доступен снаружи).
       NUXT_PUBLIC_API_BASE_URL: ${NUXT_PUBLIC_API_BASE_URL}
-      NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-}
+      # siteUrl берётся из FRONTEND_ORIGIN — один источник истины для домена.
+      NUXT_PUBLIC_SITE_URL: ${FRONTEND_ORIGIN}
       NUXT_PUBLIC_ADMIN_EMAIL: ${ADMIN_EMAIL}
       NUXT_PUBLIC_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       # Сегмент крипто-пути — переопределяет значение зашитое в образ при сборке.

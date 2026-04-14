@@ -1,9 +1,4 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const subscriptionCryptoPath =
-  (process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH ?? 'sub2128937123')
-    .trim()
-    .replace(/^\/+|\/+$/g, '') || 'sub2128937123';
-
 export default defineNuxtConfig({
   /** Превью ссылок (Telegram и др.): HTML с og:* должен отдаваться с сервера */
   ssr: true,
@@ -65,7 +60,7 @@ export default defineNuxtConfig({
        * Сегмент пути крипто-страницы подписки (совпадает с SUBSCRIPTION_CRYPTO_PATH_SEGMENT на бэкенде).
        * Переопределяется через NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH в runtime без пересборки образа.
        */
-      subscriptionCryptoPath: process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH || subscriptionCryptoPath,
+      subscriptionCryptoPath: process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH || 'sub2128937123',
     }
   },
 
@@ -81,9 +76,8 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    /** Явно: превью /sub/… в мессенджерах читают разметку с сервера */
+    /** Явно: превью /sub/… и /{cryptoSegment}/… в мессенджерах — SSR глобально включён, правило-напоминалка. */
     '/sub/**': { ssr: true },
-    [`/${subscriptionCryptoPath}/**`]: { ssr: true },
   },
 
 })

@@ -1020,7 +1020,7 @@ export class ManagementService implements OnModuleInit {
     if (!apiUrl || !url.startsWith('http')) {
       this.logger.warn(
         `Пропуск запроса к HAPP crypto: неверный URL подписки («${url}») или endpoint («${apiUrl}»). ` +
-          'Проверьте что PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN заданы с https://.',
+          'Проверьте что FRONTEND_ORIGIN задан с https://.',
       );
       return null;
     }
@@ -2470,18 +2470,9 @@ export class ManagementService implements OnModuleInit {
   }
 
   /**
-   * База для полного URL страницы подписки: сначала PUBLIC_SUBSCRIPTION_BASE_URL,
-   * иначе FRONTEND_ORIGIN (чтобы всегда получать https://домен/sub/CODE при наличии env).
+   * База для полного URL страницы подписки: FRONTEND_ORIGIN без trailing slash.
    */
   private subscriptionPublicOrigin(): string {
-    const primary = (
-      this.config.get<string>('PUBLIC_SUBSCRIPTION_BASE_URL') ?? ''
-    )
-      .trim()
-      .replace(/\/$/, '');
-    if (primary) {
-      return primary;
-    }
     return (this.config.get<string>('FRONTEND_ORIGIN') ?? '')
       .trim()
       .replace(/\/$/, '');
