@@ -60,7 +60,12 @@ export default defineNuxtConfig({
       /** Публичный origin сайта (https://inv.avtlk.ru) — для абсолютных og:image при SSR, если Host недоступен */
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
       adminEmail: process.env.NUXT_PUBLIC_ADMIN_EMAIL || 'admin@subscribe.local',
-      adminPassword: process.env.NUXT_PUBLIC_ADMIN_PASSWORD || 'Admin123456'
+      adminPassword: process.env.NUXT_PUBLIC_ADMIN_PASSWORD || 'Admin123456',
+      /**
+       * Сегмент пути крипто-страницы подписки (совпадает с SUBSCRIPTION_CRYPTO_PATH_SEGMENT на бэкенде).
+       * Переопределяется через NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH в runtime без пересборки образа.
+       */
+      subscriptionCryptoPath: process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH || subscriptionCryptoPath,
     }
   },
 

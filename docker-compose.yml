@@ -101,6 +101,9 @@ services:
       NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-}
       NUXT_PUBLIC_ADMIN_EMAIL: ${ADMIN_EMAIL}
       NUXT_PUBLIC_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Сегмент крипто-пути — переопределяет значение зашитое в образ при сборке.
+      # Должен совпадать с SUBSCRIPTION_CRYPTO_PATH_SEGMENT у бэкенда.
+      NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH: ${SUBSCRIPTION_CRYPTO_PATH_SEGMENT:-sub2128937123}
       # Prisma (FrontendSession): тот же MongoDB что и backend.
       DATABASE_URL: mongodb://mongodb:27017/${MONGO_DATABASE:-subscribe_panel}?replicaSet=rs0
     ports:
