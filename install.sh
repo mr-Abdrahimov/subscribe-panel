@@ -89,10 +89,11 @@ install_packages() {
         dnsutils coreutils openssl nginx \
         unattended-upgrades
 
-    if ! command -v docker &>/dev/null || ! docker info &>/dev/null; then
-        info "Установка Docker..."
-        curl -fsSL https://get.docker.com | sh
-    fi
+    # Устанавливаем Docker через официальный скрипт — он всегда добавляет
+    # официальный apt-репозиторий и ставит docker-compose-plugin.
+    # Запускаем даже если docker уже есть: скрипт идемпотентен и обновит репо.
+    info "Установка/обновление Docker (официальный репозиторий)..."
+    curl -fsSL https://get.docker.com | sh
 
     systemctl enable --now docker
     docker info &>/dev/null || err "Docker не работает"
