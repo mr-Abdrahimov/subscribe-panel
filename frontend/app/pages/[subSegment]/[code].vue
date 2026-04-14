@@ -18,7 +18,7 @@ const config = useRuntimeConfig()
 const requestURL = useRequestURL()
 
 const cryptoPathSegment = computed(() =>
-  String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
+  String(config.public.subscriptionCryptoPath ?? '')
     .trim()
     .replace(/^\/+|\/+$/g, ''),
 )

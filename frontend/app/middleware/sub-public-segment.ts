@@ -1,6 +1,6 @@
 export default defineNuxtRouteMiddleware((to) => {
   const config = useRuntimeConfig();
-  const crypto = String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
+  const crypto = String(config.public.subscriptionCryptoPath ?? '')
     .trim()
     .replace(/^\/+|\/+$/g, '');
   const seg = String(to.params.subSegment ?? '').trim();

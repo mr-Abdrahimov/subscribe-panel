@@ -2,7 +2,7 @@ export default defineNuxtRouteMiddleware((to) => {
   const token = useCookie<string | null>('accessToken');
   const isAuthenticated = Boolean(token.value);
   const config = useRuntimeConfig();
-  const crypto = String(config.public.subscriptionCryptoPath ?? 'sub2128937123')
+  const crypto = String(config.public.subscriptionCryptoPath ?? '')
     .trim()
     .replace(/^\/+|\/+$/g, '');
   const cryptoPrefix = `/${crypto}/`;

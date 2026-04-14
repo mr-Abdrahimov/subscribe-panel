@@ -151,7 +151,7 @@ function buildPublicSubNestUrl(
 export default defineEventHandler(async (event) => {
   const url = getRequestURL(event);
   const runtime = useRuntimeConfig(event);
-  const cryptoSeg = String(runtime.public.subscriptionCryptoPath ?? 'sub2128937123')
+  const cryptoSeg = String(runtime.public.subscriptionCryptoPath ?? '')
     .trim()
     .replace(/^\/+|\/+$/g, '');
   const cryptoRe = new RegExp(

@@ -49,18 +49,19 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     /** База API для серверных запросов Nitro (например /sub/* → backend). Без суффикса /api — путь как у Nest. Пример: http://127.0.0.1:3000 */
-    apiInternalBaseUrl: process.env.NUXT_API_INTERNAL_BASE_URL || '',
+    apiInternalBaseUrl: '',
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:3000',
+      apiBaseUrl: 'http://localhost:3000',
       /** Публичный origin сайта (https://inv.avtlk.ru) — для абсолютных og:image при SSR, если Host недоступен */
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
-      adminEmail: process.env.NUXT_PUBLIC_ADMIN_EMAIL || 'admin@subscribe.local',
-      adminPassword: process.env.NUXT_PUBLIC_ADMIN_PASSWORD || 'Admin123456',
+      siteUrl: '',
+      adminEmail: 'admin@subscribe.local',
+      adminPassword: 'Admin123456',
       /**
        * Сегмент пути крипто-страницы подписки (совпадает с SUBSCRIPTION_CRYPTO_PATH_SEGMENT на бэкенде).
-       * Переопределяется через NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH в runtime без пересборки образа.
+       * Значение по умолчанию — пустая строка, чтобы Nuxt подставил NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH
+       * из env контейнера в runtime (process.env здесь не использовать — иначе значение вшивается при сборке).
        */
-      subscriptionCryptoPath: process.env.NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH || 'sub2128937123',
+      subscriptionCryptoPath: '',
     }
   },
 
