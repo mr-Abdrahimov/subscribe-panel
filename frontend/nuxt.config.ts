@@ -48,7 +48,8 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   experimental: {
-    payloadExtraction: false
+    payloadExtraction: false,
+    serverAppConfig: false,
   },
 
   runtimeConfig: {
@@ -80,9 +81,4 @@ export default defineNuxtConfig({
     [`/${subscriptionCryptoPath}/**`]: { ssr: true },
   },
 
-  vite: {
-    resolve: {
-      dedupe: ['nitropack']
-    }
-  },
 })
