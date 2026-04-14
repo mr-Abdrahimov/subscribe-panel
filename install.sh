@@ -188,7 +188,7 @@ generate_env() {
     cat > "${INSTALL_DIR}/.env" <<EOF
 # Сгенерировано install.sh — $(date)
 
-GITHUB_REPO=mr-Abdrahimov/subscribe-panel
+GITHUB_REPO=mr-abdrahimov/subscribe-panel
 IMAGE_TAG=latest
 
 MONGO_DATABASE=subscribe_panel

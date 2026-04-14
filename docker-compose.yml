@@ -74,7 +74,7 @@ services:
   # ─── Приложения ──────────────────────────────────────────────────────────────
 
   backend:
-    image: ghcr.io/${GITHUB_REPO:-your-org/subscribe-panel}/backend:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPO:-mr-abdrahimov/subscribe-panel}/backend:${IMAGE_TAG:-latest}
     build:
       context: ./backend
     restart: unless-stopped
@@ -117,7 +117,7 @@ services:
       - subscribe-net
 
   frontend:
-    image: ghcr.io/${GITHUB_REPO:-your-org/subscribe-panel}/frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPO:-mr-abdrahimov/subscribe-panel}/frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
       args:
