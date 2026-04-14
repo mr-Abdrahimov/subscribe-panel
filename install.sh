@@ -103,23 +103,40 @@ install_packages() {
 
 # ─── Определить команду docker compose ───────────────────────────────────────
 detect_compose() {
+    # Проверяем docker compose plugin (v2) — предпочтительный вариант
     if docker compose version &>/dev/null 2>&1; then
         DC="docker compose"
-        info "Docker Compose: $(docker compose version --short 2>/dev/null || docker compose version)"
-    elif command -v docker-compose &>/dev/null; then
-        DC="docker-compose"
-        info "Docker Compose (v1): $(docker-compose --version)"
+        info "Docker Compose: $(docker compose version)"
+        return
+    fi
+
+    # docker-compose v1 сломан на Python 3.12 (нет модуля distutils).
+    # Пробуем установить plugin через apt.
+    info "Устанавливаем docker-compose-plugin (v2)..."
+    apt-get install -y docker-compose-plugin &>/dev/null
+
+    if docker compose version &>/dev/null 2>&1; then
+        DC="docker compose"
+        info "Docker Compose: $(docker compose version)"
+        return
+    fi
+
+    # Крайний случай: установить через официальный скрипт GitHub Releases
+    info "Устанавливаем docker compose из GitHub Releases..."
+    local compose_ver
+    compose_ver=$(curl -fsSL https://api.github.com/repos/docker/compose/releases/latest \
+        | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+    mkdir -p /usr/local/lib/docker/cli-plugins
+    curl -fsSL \
+        "https://github.com/docker/compose/releases/download/${compose_ver}/docker-compose-linux-$(uname -m)" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    if docker compose version &>/dev/null 2>&1; then
+        DC="docker compose"
+        info "Docker Compose: $(docker compose version)"
     else
-        info "Установка docker-compose-plugin..."
-        apt-get install -y docker-compose-plugin 2>/dev/null \
-            || apt-get install -y docker-compose 2>/dev/null \
-            || err "Не удалось установить docker compose. Установите вручную: https://docs.docker.com/compose/install/"
-        if docker compose version &>/dev/null 2>&1; then
-            DC="docker compose"
-        else
-            DC="docker-compose"
-        fi
-        info "Docker Compose: $($DC version)"
+        err "Не удалось установить docker compose. Установите вручную: https://docs.docker.com/compose/install/"
     fi
 }
 
