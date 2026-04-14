@@ -2,11 +2,6 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH используется в nuxt.config.ts в routeRules —
-# он вычисляется во время сборки, поэтому передаётся как build arg.
-ARG NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH=sub2128937123
-ENV NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH=${NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH}
-
 COPY package*.json ./
 RUN npm install
 
@@ -16,9 +11,8 @@ COPY . .
 ENV DATABASE_URL=mongodb://localhost:27017/dummy
 RUN npx prisma generate
 
-# Сборка Nuxt без --dotenv: env-переменные передаются через ENV выше и ARG.
-# Остальные runtimeConfig.public переменные можно переопределить в runtime
-# через NUXT_PUBLIC_* без пересборки образа.
+# Все runtimeConfig.public значения (NUXT_PUBLIC_*) переопределяются
+# через env-переменные контейнера в runtime — без пересборки образа.
 RUN NODE_OPTIONS=--max-old-space-size=3072 npx nuxt build
 
 # ─── Stage 2: production ─────────────────────────────────────────────────────

@@ -111,9 +111,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH: если нужен нестандартный путь —
-          # добавьте секрет SUBSCRIPTION_CRYPTO_PATH_SEGMENT в репозитории.
-          build-args: |
-            NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH=${{ secrets.SUBSCRIPTION_CRYPTO_PATH_SEGMENT || 'sub2128937123' }}
+          # build-args не нужны: NUXT_PUBLIC_* переопределяются через env контейнера в runtime.
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend

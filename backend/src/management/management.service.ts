@@ -1100,13 +1100,11 @@ export class ManagementService implements OnModuleInit {
 
   /** Сегмент пути альтернативной страницы подписки (совпадает с NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH) */
   private subscriptionCryptoPathSegment(): string {
-    const raw = (
-      this.config.get<string>('SUBSCRIPTION_CRYPTO_PATH_SEGMENT') ??
-      'sub2128937123'
+    return (
+      this.config.get<string>('SUBSCRIPTION_CRYPTO_PATH_SEGMENT') ?? ''
     )
       .trim()
       .replace(/^\/+|\/+$/g, '');
-    return raw || 'sub2128937123';
   }
 
   /**
