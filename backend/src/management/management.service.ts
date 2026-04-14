@@ -1024,6 +1024,7 @@ export class ManagementService implements OnModuleInit {
       );
       return null;
     }
+    this.logger.log(`HAPP crypto API: отправляем URL → ${url}`);
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
@@ -1035,19 +1036,33 @@ export class ManagementService implements OnModuleInit {
         signal: AbortSignal.timeout(20_000),
       });
       if (!res.ok) {
-        this.logger.warn(`HAPP crypto API: HTTP ${res.status}`);
+        const body = await res.text().catch(() => '');
+        this.logger.warn(
+          `HAPP crypto API: HTTP ${res.status} — ${body.slice(0, 200)}`,
+        );
         return null;
       }
-      const data = (await res.json()) as { encrypted_link?: unknown };
+      const rawText = await res.text();
+      this.logger.log(`HAPP crypto API: ответ → ${rawText.slice(0, 300)}`);
+      let data: { encrypted_link?: unknown };
+      try {
+        data = JSON.parse(rawText) as { encrypted_link?: unknown };
+      } catch {
+        this.logger.warn(
+          `HAPP crypto API: не удалось распарсить JSON: ${rawText.slice(0, 200)}`,
+        );
+        return null;
+      }
       const link =
         typeof data.encrypted_link === 'string'
           ? data.encrypted_link.trim()
           : '';
       if (link.startsWith('happ://')) {
+        this.logger.log(`HAPP crypto API: получена ссылка ${link.slice(0, 80)}…`);
         return link;
       }
       this.logger.warn(
-        'HAPP crypto API: в ответе нет валидного encrypted_link',
+        `HAPP crypto API: в ответе нет валидного encrypted_link, получено: ${JSON.stringify(data).slice(0, 200)}`,
       );
       return null;
     } catch (e) {
