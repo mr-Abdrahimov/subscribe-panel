@@ -8,54 +8,47 @@
 #
 # Локальная сборка из исходников (нужен клон репозитория):
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-#
-# После первого запуска инициализация replica set MongoDB выполняется автоматически
-# через сервис mongo-init (одноразовый контейнер).
 
 services:
   # ─── Инфраструктура ──────────────────────────────────────────────────────────
 
   # mongo:7 на части VPS падает с Restarting (132) — SIGILL, старый CPU без нужных инструкций.
+  # Replica set rs0 инициализируется автоматически при первом запуске через entrypoint-скрипт.
   mongodb:
     image: mongo:4.4
     restart: unless-stopped
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongod --replSet rs0 --bind_ip_all &
+        MONGOD_PID=$$!
+        # Ждём пока mongod примет соединения
+        until mongo --quiet --eval "db.adminCommand({ping:1})" &>/dev/null; do sleep 1; done
+        # Инициализируем replica set (идемпотентно)
+        mongo --quiet --eval '
+          (function() {
+            try { rs.status(); return; } catch(e) {}
+            rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
+            var d = new Date().getTime() + 30000;
+            while (new Date().getTime() < d) {
+              try { if (rs.status().myState === 1) break; } catch(e2) {}
+              sleep(500);
+            }
+          })();
+        '
+        wait $$MONGOD_PID
     volumes:
       - mongo_data:/data/db
     networks:
       - subscribe-net
     healthcheck:
       test:
-        ["CMD-SHELL", "mongo --quiet --eval 'db.adminCommand({ ping: 1 })' || exit 1"]
+        ["CMD-SHELL", "mongo --quiet --eval 'rs.status().myState' | grep -q 1 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 15
-
-  # Инициализация replica set rs0 — запускается один раз, затем завершается.
-  mongo-init:
-    image: mongo:4.4
-    restart: "no"
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    networks:
-      - subscribe-net
-    entrypoint:
-      - mongo
-      - --host
-      - mongodb:27017
-      - --quiet
-      - --eval
-      - >-
-        (function() {
-          try { rs.status(); return; } catch(e) {}
-          rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
-          var d = new Date().getTime() + 30000;
-          while (new Date().getTime() < d) {
-            try { if (rs.status().myState === 1) break; } catch(e2) {}
-            sleep(500);
-          }
-        })();
+      retries: 20
+      start_period: 30s
 
   redis:
     image: redis:7.2-alpine
@@ -81,8 +74,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 3000

@@ -236,38 +236,6 @@ download_compose() {
         -o "${INSTALL_DIR}/docker-compose.yml"
 }
 
-# ─── Инициализация MongoDB Replica Set ───────────────────────────────────────
-init_mongo_rs() {
-    section "Инициализация MongoDB Replica Set"
-    info "Ожидание запуска MongoDB..."
-
-    local attempts=0
-    until docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
-            exec -T mongodb mongo --quiet --eval "db.adminCommand({ping:1})" \
-            &>/dev/null; do
-        attempts=$((attempts + 1))
-        if [[ $attempts -ge 30 ]]; then
-            err "MongoDB не запустилась за 5 минут"
-        fi
-        echo -n "."
-        sleep 10
-    done
-    echo ""
-
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" exec -T mongodb \
-        mongo --quiet --eval '
-(function() {
-  try { rs.status(); return; } catch(e) {}
-  rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
-  var d = new Date().getTime() + 30000;
-  while (new Date().getTime() < d) {
-    try { if (rs.status().myState === 1) break; } catch(e2) {}
-    sleep(500);
-  }
-})();
-' && info "MongoDB Replica Set инициализирован" \
-  || warn "Replica Set уже был инициализирован"
-}
 
 # ─── Ввод параметров ──────────────────────────────────────────────────────────
 collect_input() {
@@ -353,13 +321,6 @@ main() {
     generate_env
 
     download_compose
-
-    section "Запуск баз данных"
-    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
-        --env-file "${INSTALL_DIR}/.env" \
-        up -d mongodb redis
-
-    init_mongo_rs
 
     section "Запуск Subscribe Panel"
 
