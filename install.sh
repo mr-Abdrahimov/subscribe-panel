@@ -147,8 +147,20 @@ NGINX
 
     rm -f /etc/nginx/sites-enabled/default
     ln -sf "/etc/nginx/sites-available/${domain}" "/etc/nginx/sites-enabled/${domain}"
-    nginx -t && systemctl reload nginx
-    info "Nginx конфиг для $domain создан"
+
+    if ! nginx -t; then
+        err "Ошибка в nginx конфиге. Проверьте: nginx -t"
+    fi
+
+    # Запустить если не запущен, иначе перезагрузить конфиг
+    if systemctl is-active --quiet nginx; then
+        systemctl reload nginx
+    else
+        systemctl start nginx
+    fi
+
+    systemctl is-active --quiet nginx || err "Nginx не запустился. Проверьте: systemctl status nginx"
+    info "Nginx конфиг для $domain создан и применён"
 }
 
 # ─── SSL-сертификат ───────────────────────────────────────────────────────────
@@ -312,7 +324,9 @@ main() {
     install_packages
 
     section "Настройка Nginx"
-    systemctl enable --now nginx
+    systemctl enable nginx
+    # Запускаем nginx отдельно чтобы видеть ошибку если не стартует
+    systemctl start nginx || warn "Nginx не запустился с дефолтным конфигом, попробуем после настройки"
     write_nginx_config "$DOMAIN"
 
     obtain_certificate "$DOMAIN" "$ADMIN_EMAIL"
