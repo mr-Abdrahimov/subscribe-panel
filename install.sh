@@ -170,12 +170,16 @@ obtain_certificate() {
 
     if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
         info "Сертификат для $domain уже существует, пропускаем."
+        write_nginx_https_config "$domain"
         return 0
     fi
 
     section "Получение SSL-сертификата для $domain"
 
-    certbot --nginx \
+    # certbot --nginx получает сертификат и прописывает базовый SSL-блок.
+    # После этого мы перезапишем конфиг своим полным вариантом с нужными location.
+    certbot certonly \
+        --nginx \
         --non-interactive \
         --agree-tos \
         --email "$email" \
@@ -189,10 +193,83 @@ obtain_certificate() {
 
     info "Сертификат получен: /etc/letsencrypt/live/$domain/"
 
+    # Записываем полный HTTPS-конфиг с нашими location
+    write_nginx_https_config "$domain"
+
     if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
         (crontab -l 2>/dev/null; echo "0 5 * * 0 certbot renew --quiet --deploy-hook 'systemctl reload nginx'") | crontab -
         info "Cron для автообновления сертификата добавлен"
     fi
+}
+
+# ─── Полный HTTPS nginx конфиг (после получения сертификата) ─────────────────
+write_nginx_https_config() {
+    local domain="$1"
+    local cert_path="/etc/letsencrypt/live/${domain}"
+
+    cat > "/etc/nginx/sites-available/${domain}" <<NGINX
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${domain};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${domain};
+    client_max_body_size 20m;
+
+    ssl_certificate     ${cert_path}/fullchain.pem;
+    ssl_certificate_key ${cert_path}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Иконки Nuxt (приоритет выше /api/, иначе уходит в NestJS)
+    location ^~ /api/_nuxt_icon {
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+        proxy_pass http://127.0.0.1:3001;
+    }
+
+    # Backend NestJS — /api/ → NestJS (без префикса /api)
+    location /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+        proxy_pass http://127.0.0.1:3000/;
+    }
+
+    # Frontend Nuxt
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+        proxy_pass http://127.0.0.1:3001;
+    }
+}
+NGINX
+
+    nginx -t && systemctl reload nginx
+    info "Nginx HTTPS-конфиг применён"
 }
 
 # ─── Генерация .env ───────────────────────────────────────────────────────────
