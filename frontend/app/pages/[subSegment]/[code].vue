@@ -347,8 +347,6 @@ async function copyCryptoLink() {
                 <strong class="cp__apps-empty-strong">Приложения</strong>
                 — они появятся здесь для страниц подписки
                 <span class="cp__code-inline">/sub/…</span>
-                и
-                <span class="cp__code-inline">/{{ cryptoPathSegment }}/…</span>.
               </p>
             </div>
           </div>
