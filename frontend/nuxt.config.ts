@@ -79,4 +79,10 @@ export default defineNuxtConfig({
     '/sub/**': { ssr: true },
     [`/${subscriptionCryptoPath}/**`]: { ssr: true },
   },
+
+  vite: {
+    resolve: {
+      dedupe: ['nitropack']
+    }
+  },
 })
