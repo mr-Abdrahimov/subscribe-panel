@@ -1,13 +1,13 @@
 # Полный стек: MongoDB, Redis, NestJS backend, Nuxt frontend.
 #
-# Быстрый старт:
+# Быстрый старт (образы скачиваются с GHCR):
 #   cp .env.example .env
 #   # Отредактируйте .env (JWT_SECRET, REDIS_PASSWORD, FRONTEND_ORIGIN и др.)
-#   docker compose pull          # скачать готовые образы с GHCR
+#   docker compose pull
 #   docker compose up -d
 #
-# Или собрать образы локально (без --build скачиваются с GHCR):
-#   docker compose up -d --build
+# Локальная сборка из исходников (нужен клон репозитория):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
 # После первого запуска инициализация replica set MongoDB выполняется автоматически
 # через сервис mongo-init (одноразовый контейнер).
@@ -75,8 +75,6 @@ services:
 
   backend:
     image: ghcr.io/${GITHUB_REPO:-mr-abdrahimov/subscribe-panel}/backend:${IMAGE_TAG:-latest}
-    build:
-      context: ./backend
     restart: unless-stopped
     depends_on:
       mongodb:
@@ -118,10 +116,6 @@ services:
 
   frontend:
     image: ghcr.io/${GITHUB_REPO:-mr-abdrahimov/subscribe-panel}/frontend:${IMAGE_TAG:-latest}
-    build:
-      context: ./frontend
-      args:
-        NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH: ${SUBSCRIPTION_CRYPTO_PATH_SEGMENT:-sub2128937123}
     restart: unless-stopped
     depends_on:
       - backend

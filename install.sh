@@ -362,6 +362,20 @@ main() {
     init_mongo_rs
 
     section "Запуск Subscribe Panel"
+
+    # Проверяем доступность образов на GHCR перед pull
+    local image_base="ghcr.io/mr-abdrahimov/subscribe-panel"
+    if ! docker manifest inspect "${image_base}/backend:latest" &>/dev/null; then
+        echo ""
+        err "Образы недоступны на GHCR (${image_base}).
+  Возможные причины:
+    1. Образы ещё не собраны — дождитесь завершения GitHub Actions:
+       https://github.com/mr-Abdrahimov/subscribe-panel/actions
+    2. Образы приватные — сделайте их публичными:
+       https://github.com/mr-Abdrahimov?tab=packages
+       → выберите образ → Package settings → Change visibility → Public"
+    fi
+
     docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
         --env-file "${INSTALL_DIR}/.env" \
         pull
