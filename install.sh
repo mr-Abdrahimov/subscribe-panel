@@ -24,6 +24,7 @@ ADMIN_PASS=""
 CRYPTO_PATH="sub2128937123"
 REDIS_PASS=""
 JWT_SECRET=""
+SETUP_SSL="yes"   # yes | no
 
 # ─── Проверки ─────────────────────────────────────────────────────────────────
 check_root() {
@@ -77,9 +78,13 @@ install_packages() {
     section "Установка зависимостей"
 
     apt-get update -y
+
+    local ssl_pkgs=""
+    [[ "$SETUP_SSL" == "yes" ]] && ssl_pkgs="certbot python3-certbot-nginx"
+
     apt-get install -y \
         ca-certificates curl jq ufw wget gnupg unzip \
-        nano git certbot python3-certbot-nginx \
+        nano git $ssl_pkgs \
         dnsutils coreutils openssl nginx \
         unattended-upgrades
 
@@ -273,6 +278,9 @@ NGINX
 
 # ─── Генерация .env ───────────────────────────────────────────────────────────
 generate_env() {
+    local PROTO
+    [[ "$SETUP_SSL" == "yes" ]] && PROTO="https" || PROTO="http"
+
     cat > "${INSTALL_DIR}/.env" <<EOF
 # Сгенерировано install.sh — $(date)
 
@@ -288,7 +296,7 @@ FRONTEND_PORT=3001
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=7d
 
-FRONTEND_ORIGIN=https://${DOMAIN}
+FRONTEND_ORIGIN=${PROTO}://${DOMAIN}
 SUBSCRIPTION_CRYPTO_PATH_SEGMENT=${CRYPTO_PATH}
 
 ADMIN_EMAIL=${ADMIN_EMAIL}
@@ -307,7 +315,7 @@ SWAGGER_VERSION=1.0.0
 BULL_BOARD_ENABLED=false
 BULL_BOARD_TOKEN=
 
-NUXT_PUBLIC_API_BASE_URL=https://${DOMAIN}/api
+NUXT_PUBLIC_API_BASE_URL=${PROTO}://${DOMAIN}/api
 EOF
 
     chmod 600 "${INSTALL_DIR}/.env"
@@ -362,6 +370,21 @@ collect_input() {
     read -rp "  Crypto path: " _cp
     CRYPTO_PATH="${_cp:-sub2128937123}"
 
+    # SSL
+    echo ""
+    echo -e "${Y}[?]${RESET} Получить SSL-сертификат Let's Encrypt для домена $DOMAIN?"
+    echo -e "     ${W}y${RESET} — да, настроить HTTPS (рекомендуется)"
+    echo -e "     ${W}n${RESET} — нет, оставить HTTP (например, домен ещё не готов)"
+    read -rp "  SSL (Y/n): " _ssl
+    if [[ "$_ssl" =~ ^[Nn]$ ]]; then
+        SETUP_SSL="no"
+        warn "SSL пропущен. Сайт будет доступен только по HTTP."
+        warn "Запустить получение сертификата можно позже командой:"
+        warn "  certbot --nginx -d $DOMAIN"
+    else
+        SETUP_SSL="yes"
+    fi
+
     # Генерируем секреты
     REDIS_PASS=$(openssl rand -hex 24)
     JWT_SECRET=$(openssl rand -hex 64)
@@ -371,6 +394,7 @@ collect_input() {
     echo -e "  ${W}Домен:${RESET}        $DOMAIN"
     echo -e "  ${W}Email:${RESET}        $ADMIN_EMAIL"
     echo -e "  ${W}Crypto path:${RESET}  $CRYPTO_PATH"
+    echo -e "  ${W}SSL:${RESET}          $([[ "$SETUP_SSL" == "yes" ]] && echo "да (HTTPS)" || echo "нет (HTTP)")"
     echo ""
     read -rp "  Всё верно? Начать установку (y/N): " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
@@ -403,7 +427,11 @@ main() {
     systemctl start nginx || warn "Nginx не запустился с дефолтным конфигом, попробуем после настройки"
     write_nginx_config "$DOMAIN"
 
-    obtain_certificate "$DOMAIN" "$ADMIN_EMAIL"
+    if [[ "$SETUP_SSL" == "yes" ]]; then
+        obtain_certificate "$DOMAIN" "$ADMIN_EMAIL"
+    else
+        info "SSL пропущен — сайт будет работать по HTTP"
+    fi
 
     section "Генерация конфигурации"
     generate_env
@@ -467,14 +495,17 @@ main() {
         --env-file "${INSTALL_DIR}/.env" \
         up -d
 
+    local PROTO
+    [[ "$SETUP_SSL" == "yes" ]] && PROTO="https" || PROTO="http"
+
     section "Проверка доступности"
     info "Ожидание запуска сервисов (до 3 минут)..."
     local attempts=0
-    until curl -sf --max-time 5 "https://${DOMAIN}" &>/dev/null; do
+    until curl -sf --max-time 5 "${PROTO}://${DOMAIN}" &>/dev/null; do
         attempts=$((attempts + 1))
         if [[ $attempts -ge 18 ]]; then
             warn "Сайт пока не отвечает — это может быть нормально если образы ещё скачиваются."
-            warn "Проверьте через пару минут: https://${DOMAIN}"
+            warn "Проверьте через пару минут: ${PROTO}://${DOMAIN}"
             warn "Логи: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
             break
         fi
@@ -489,14 +520,22 @@ main() {
     echo "  ║         Установка завершена успешно!          ║"
     echo "  ╚═══════════════════════════════════════════════╝"
     echo -e "${RESET}"
-    echo -e "  ${W}URL панели:${RESET}      https://${DOMAIN}"
-    echo -e "  ${W}API / Swagger:${RESET}   https://${DOMAIN}/api/docs"
+    echo -e "  ${W}URL панели:${RESET}      ${PROTO}://${DOMAIN}"
+    echo -e "  ${W}API / Swagger:${RESET}   ${PROTO}://${DOMAIN}/api/docs"
     echo -e "  ${W}Admin email:${RESET}     ${ADMIN_EMAIL}"
     echo -e "  ${W}Admin пароль:${RESET}    ${ADMIN_PASS}"
     echo ""
     echo -e "  ${W}Конфигурация:${RESET}    ${INSTALL_DIR}/.env"
     echo -e "  ${W}Логи установки:${RESET}  ${INSTALL_DIR}/install.log"
     echo ""
+    if [[ "$SETUP_SSL" == "no" ]]; then
+        echo -e "  ${Y}Для подключения SSL позже:${RESET}"
+        echo "    apt-get install -y certbot python3-certbot-nginx"
+        echo "    certbot --nginx -d ${DOMAIN}"
+        echo "    # Затем обновите FRONTEND_ORIGIN и NUXT_PUBLIC_API_BASE_URL в ${INSTALL_DIR}/.env"
+        echo "    # и перезапустите: docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d"
+        echo ""
+    fi
     echo -e "  ${Y}Полезные команды:${RESET}"
     echo "    Статус:    docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"
     echo "    Логи:      docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
