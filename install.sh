@@ -278,9 +278,6 @@ NGINX
 
 # ─── Генерация .env ───────────────────────────────────────────────────────────
 generate_env() {
-    local PROTO
-    [[ "$SETUP_SSL" == "yes" ]] && PROTO="https" || PROTO="http"
-
     cat > "${INSTALL_DIR}/.env" <<EOF
 # Сгенерировано install.sh — $(date)
 
@@ -296,7 +293,7 @@ FRONTEND_PORT=3001
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=7d
 
-FRONTEND_ORIGIN=${PROTO}://${DOMAIN}
+FRONTEND_ORIGIN=https://${DOMAIN}
 SUBSCRIPTION_CRYPTO_PATH_SEGMENT=${CRYPTO_PATH}
 
 ADMIN_EMAIL=${ADMIN_EMAIL}
@@ -315,7 +312,7 @@ SWAGGER_VERSION=1.0.0
 BULL_BOARD_ENABLED=false
 BULL_BOARD_TOKEN=
 
-NUXT_PUBLIC_API_BASE_URL=${PROTO}://${DOMAIN}/api
+NUXT_PUBLIC_API_BASE_URL=https://${DOMAIN}/api
 EOF
 
     chmod 600 "${INSTALL_DIR}/.env"
@@ -495,17 +492,16 @@ main() {
         --env-file "${INSTALL_DIR}/.env" \
         up -d
 
-    local PROTO
-    [[ "$SETUP_SSL" == "yes" ]] && PROTO="https" || PROTO="http"
-
     section "Проверка доступности"
     info "Ожидание запуска сервисов (до 3 минут)..."
     local attempts=0
-    until curl -sf --max-time 5 "${PROTO}://${DOMAIN}" &>/dev/null; do
+    local check_url
+    [[ "$SETUP_SSL" == "yes" ]] && check_url="https://${DOMAIN}" || check_url="http://${DOMAIN}"
+    until curl -sf --max-time 5 "$check_url" &>/dev/null; do
         attempts=$((attempts + 1))
         if [[ $attempts -ge 18 ]]; then
             warn "Сайт пока не отвечает — это может быть нормально если образы ещё скачиваются."
-            warn "Проверьте через пару минут: ${PROTO}://${DOMAIN}"
+            warn "Проверьте через пару минут: https://${DOMAIN}"
             warn "Логи: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
             break
         fi
@@ -520,8 +516,8 @@ main() {
     echo "  ║         Установка завершена успешно!          ║"
     echo "  ╚═══════════════════════════════════════════════╝"
     echo -e "${RESET}"
-    echo -e "  ${W}URL панели:${RESET}      ${PROTO}://${DOMAIN}"
-    echo -e "  ${W}API / Swagger:${RESET}   ${PROTO}://${DOMAIN}/api/docs"
+    echo -e "  ${W}URL панели:${RESET}      https://${DOMAIN}"
+    echo -e "  ${W}API / Swagger:${RESET}   https://${DOMAIN}/api/docs"
     echo -e "  ${W}Admin email:${RESET}     ${ADMIN_EMAIL}"
     echo -e "  ${W}Admin пароль:${RESET}    ${ADMIN_PASS}"
     echo ""
