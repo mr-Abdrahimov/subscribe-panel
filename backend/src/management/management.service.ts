@@ -1019,7 +1019,8 @@ export class ManagementService implements OnModuleInit {
     const url = subscriptionPageUrl.trim();
     if (!apiUrl || !url.startsWith('http')) {
       this.logger.warn(
-        'Пропуск запроса к HAPP crypto: неверный URL подписки или endpoint',
+        `Пропуск запроса к HAPP crypto: неверный URL подписки («${url}») или endpoint («${apiUrl}»). ` +
+          'Проверьте что PUBLIC_SUBSCRIPTION_BASE_URL или FRONTEND_ORIGIN заданы с https://.',
       );
       return null;
     }

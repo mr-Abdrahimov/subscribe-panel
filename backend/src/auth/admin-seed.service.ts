@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { deduplicateUngroupedConnectGroup } from '../common/ungrouped-connect-group';
 
 async function withMongoWriteRetry<T>(
   logger: Logger,
@@ -76,5 +77,7 @@ export class AdminSeedService implements OnModuleInit {
     );
 
     this.logger.log(`Admin user ensured: ${email}`);
+
+    await deduplicateUngroupedConnectGroup(this.prisma);
   }
 }
