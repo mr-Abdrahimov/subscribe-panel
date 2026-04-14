@@ -8,8 +8,7 @@ ARG NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH=sub2128937123
 ENV NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH=${NUXT_PUBLIC_SUBSCRIPTION_CRYPTO_PATH}
 
 COPY package*.json ./
-# Обновляем npm до v11 (lock-файл проекта создан npm v11; npm ci v10 не совместим).
-RUN npm install -g npm@11 --quiet && npm ci
+RUN npm install
 
 COPY . .
 
