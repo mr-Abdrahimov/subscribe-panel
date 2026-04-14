@@ -322,6 +322,40 @@ main() {
 
     download_compose
 
+    section "Запуск баз данных"
+
+    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+        --env-file "${INSTALL_DIR}/.env" \
+        up -d mongodb redis
+
+    info "Ожидание готовности MongoDB..."
+    local attempts=0
+    until docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+            --env-file "${INSTALL_DIR}/.env" \
+            exec -T mongodb mongo --quiet --eval "db.adminCommand({ping:1})" &>/dev/null; do
+        attempts=$((attempts + 1))
+        [[ $attempts -ge 30 ]] && err "MongoDB не запустилась за 5 минут"
+        echo -n "."
+        sleep 10
+    done
+    echo ""
+
+    info "Инициализация MongoDB Replica Set..."
+    docker compose -f "${INSTALL_DIR}/docker-compose.yml" \
+        --env-file "${INSTALL_DIR}/.env" \
+        exec -T mongodb mongo --quiet --eval '
+(function() {
+  try { if (rs.status().myState >= 1) { print("RS already initialized"); return; } } catch(e) {}
+  rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
+  var d = new Date().getTime() + 30000;
+  while (new Date().getTime() < d) {
+    try { if (rs.status().myState === 1) break; } catch(e2) {}
+    sleep(500);
+  }
+  print("RS initialized OK");
+})();
+' && info "MongoDB Replica Set готов" || warn "Replica Set уже был инициализирован"
+
     section "Запуск Subscribe Panel"
 
     # Проверяем доступность образов на GHCR перед pull

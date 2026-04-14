@@ -8,47 +8,29 @@
 #
 # Локальная сборка из исходников (нужен клон репозитория):
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Инициализация MongoDB replica set (один раз после первого запуска):
+#   docker compose exec mongodb mongo --quiet --eval \
+#     'try{rs.status()}catch(e){rs.initiate({_id:"rs0",members:[{_id:0,host:"mongodb:27017"}]})}'
 
 services:
   # ─── Инфраструктура ──────────────────────────────────────────────────────────
 
   # mongo:7 на части VPS падает с Restarting (132) — SIGILL, старый CPU без нужных инструкций.
-  # Replica set rs0 инициализируется автоматически при первом запуске через entrypoint-скрипт.
   mongodb:
     image: mongo:4.4
     restart: unless-stopped
-    entrypoint:
-      - bash
-      - -c
-      - |
-        mongod --replSet rs0 --bind_ip_all &
-        MONGOD_PID=$$!
-        # Ждём пока mongod примет соединения
-        until mongo --quiet --eval "db.adminCommand({ping:1})" &>/dev/null; do sleep 1; done
-        # Инициализируем replica set (идемпотентно)
-        mongo --quiet --eval '
-          (function() {
-            try { rs.status(); return; } catch(e) {}
-            rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
-            var d = new Date().getTime() + 30000;
-            while (new Date().getTime() < d) {
-              try { if (rs.status().myState === 1) break; } catch(e2) {}
-              sleep(500);
-            }
-          })();
-        '
-        wait $$MONGOD_PID
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     volumes:
       - mongo_data:/data/db
     networks:
       - subscribe-net
     healthcheck:
-      test:
-        ["CMD-SHELL", "mongo --quiet --eval 'rs.status().myState' | grep -q 1 || exit 1"]
+      test: ["CMD-SHELL", "mongo --quiet --eval 'db.adminCommand({ping:1})' || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 30s
+      retries: 15
+      start_period: 10s
 
   redis:
     image: redis:7.2-alpine
