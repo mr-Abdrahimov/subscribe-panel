@@ -124,7 +124,7 @@ model PanelUser {
   /// Если true — реальная лента только с альтернативного пути …/sub2128937123/CODE?…&via=crypto-page; обычный /sub/… даёт заглушку «Только Cripto»; happ crypto регистрируется на альтернативный URL
   cryptoOnlySubscription  Boolean              @default(false)
   /// Если true — на crypto-странице лента отдаётся в формате JSON (массив v2ray-конфигов), а не base64. Работает только при via=crypto-page.
-  feedJsonMode            Boolean              @default(false)
+  feedJsonMode            Boolean              @default(true)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   accessLogs           PanelUserAccessLog[]
