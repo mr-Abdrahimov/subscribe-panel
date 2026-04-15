@@ -161,7 +161,7 @@ export class SubscriptionsService {
 
     // JSON-режим: парсим JSON-ответ и синхронизируем коннекты в БД
     if (isJsonMode) {
-      return await this.fetchConnectsFromJson(id, text);
+      return await this.fetchConnectsFromJson(id, response, text);
     }
 
     const decodedPayload = this.decodeSubscriptionRawPayload(text);
@@ -372,6 +372,7 @@ export class SubscriptionsService {
    */
   private async fetchConnectsFromJson(
     subscriptionId: string,
+    response: Response,
     rawText: string,
   ): Promise<{
     subscriptionId: string;
@@ -383,6 +384,14 @@ export class SubscriptionsService {
     total: number;
     connects: { id: string; name: string }[];
   }> {
+    // Заголовки парсим сразу — они нужны и при ошибке JSON
+    // decodedPayload для JSON-режима пустой (нет текстового тела с мета-строками)
+    const emptyPayload = '';
+    const remoteTitle = this.resolveRemoteSubscriptionTitle(response, emptyPayload);
+    const remoteExpiresAt = this.resolveRemoteSubscriptionExpiresAt(response, emptyPayload);
+    const remoteTrafficUsedBytes = this.resolveRemoteSubscriptionTrafficUsedBytes(response, emptyPayload);
+    const remoteTrafficTotalBytes = this.resolveRemoteSubscriptionTrafficTotalBytes(response, emptyPayload);
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(rawText.trim());
@@ -399,8 +408,8 @@ export class SubscriptionsService {
         fetchedAt: null,
         feedMode: 'JSON',
         title: sub?.title ?? '',
-        fetchedProfileTitle: null,
-        fetchedSubscriptionExpiresAt: null,
+        fetchedProfileTitle: remoteTitle,
+        fetchedSubscriptionExpiresAt: remoteExpiresAt,
         total: 0,
         connects: [],
       };
@@ -559,9 +568,28 @@ export class SubscriptionsService {
       await this.prisma.connect.deleteMany({ where: { id: { in: staleIds } } });
     }
 
+    const subscriptionForTelegram = await this.prisma.subscription.findUniqueOrThrow({
+      where: { id: subscriptionId },
+    });
+
+    const nextTelegramExpiryMarker = await this.resolveTelegramSubscriptionExpiryWarning(
+      subscriptionForTelegram,
+      remoteTitle ?? null,
+      remoteExpiresAt,
+    );
+
     const updatedSubscription = await this.prisma.subscription.update({
       where: { id: subscriptionId },
-      data: { lastFetchedAt: new Date() },
+      data: {
+        lastFetchedAt: new Date(),
+        fetchedProfileTitle: remoteTitle ?? null,
+        fetchedSubscriptionExpiresAt: remoteExpiresAt,
+        fetchedTrafficUsedBytes:
+          remoteTrafficUsedBytes != null ? remoteTrafficUsedBytes.toString() : null,
+        fetchedTrafficTotalBytes:
+          remoteTrafficTotalBytes != null ? remoteTrafficTotalBytes.toString() : null,
+        telegramExpiryWarningSentForExpiresAt: nextTelegramExpiryMarker,
+      },
     });
 
     if (newUngroupedDisplayNames.length > 0) {
@@ -582,8 +610,8 @@ export class SubscriptionsService {
       fetchedAt: updatedSubscription.lastFetchedAt,
       feedMode: 'JSON',
       title: updatedSubscription.title,
-      fetchedProfileTitle: null,
-      fetchedSubscriptionExpiresAt: null,
+      fetchedProfileTitle: updatedSubscription.fetchedProfileTitle,
+      fetchedSubscriptionExpiresAt: updatedSubscription.fetchedSubscriptionExpiresAt,
       total: connects.length,
       connects,
     };

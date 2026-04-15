@@ -23,6 +23,7 @@ async function main() {
   });
 
   console.log('status:', res.status);
+  console.log('headers:', res.headers);
   console.log('content-type:', res.headers.get('content-type'));
 
   const raw = (await res.text()).trim();
