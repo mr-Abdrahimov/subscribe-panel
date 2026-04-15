@@ -559,7 +559,12 @@ export class ManagementController {
           routingConfig,
         );
       } else if (viaCryptoPage && user.feedJsonMode === true) {
-        payload = await this.managementService.buildJsonFeedForPanelUser(user);
+        const userinfo = await this.managementService.resolveSubscriptionUserinfoForPanelUser(user);
+        payload = await this.managementService.buildJsonFeedForPanelUser(
+          user,
+          announceMetaLine,
+          userinfo?.expiresAt ?? null,
+        );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(
           user,

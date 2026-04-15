@@ -1845,7 +1845,11 @@ export class ManagementService implements OnModuleInit {
    * JSON-режим: отдаёт массив rawJson-объектов коннектов пользователя.
    * Коннекты без rawJson (обычные URI) включаются как { remarks, raw }.
    */
-  async buildJsonFeedForPanelUser(user: PanelUser): Promise<{
+  async buildJsonFeedForPanelUser(
+    user: PanelUser,
+    announceMetaLine: string | null = null,
+    expiresAt: Date | null = null,
+  ): Promise<{
     jsonBody: string;
     profileTitle: string;
     profileWebPageUrl: string;
@@ -1854,6 +1858,22 @@ export class ManagementService implements OnModuleInit {
   }> {
     const entries = this.getEffectiveSubscriptionGroupEntries(user);
     const includedNames = entries.filter((e) => e.include).map((e) => e.name);
+
+    const profileTitle = (
+      await this.resolveSubscriptionProfileTitleForPanelUser(user)
+    ).trim();
+    const pageUrl = this.buildPublicSubPageAbsoluteUrl(user.code);
+
+    // Декодируем текст объявления из #announce: base64:… → plain UTF-8
+    const announceText = this.decodeAnnouncePlainText(announceMetaLine);
+
+    // meta-блок для каждого JSON-объекта (Advanced Announcements Happ)
+    // Включает: объявление как sub-info-text, ссылку на страницу, sub-expire
+    const metaBlock = this.buildJsonFeedMetaBlock(
+      announceText,
+      pageUrl,
+      expiresAt,
+    );
 
     const seenConnectIds = new Set<string>();
     const items: unknown[] = [];
@@ -1867,40 +1887,104 @@ export class ManagementService implements OnModuleInit {
         if (seenConnectIds.has(c.id)) continue;
         seenConnectIds.add(c.id);
 
+        let item: Record<string, unknown>;
+
         if (c.rawJson !== null && c.rawJson !== undefined) {
           // Полный JSON-конфиг (Happ/v2ray формат) — обновляем remarks именем из панели
           if (typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
             const obj = c.rawJson as Record<string, unknown>;
             // Если это outbound-объект (от uriToOutbound) — оборачиваем в полный конфиг
             if (obj['tag'] === 'proxy' && obj['protocol'] && obj['settings']) {
-              items.push(this.outboundToHappConfig(obj, c.name));
+              item = this.outboundToHappConfig(obj, c.name);
             } else {
               // Полный v2ray-конфиг от JSON-подписки — обновляем remarks
-              items.push({ ...obj, remarks: c.name });
+              item = { ...obj, remarks: c.name };
             }
           } else {
             items.push(c.rawJson);
+            continue;
           }
         } else if (!c.raw.startsWith('json://')) {
           // URI-коннект без rawJson — конвертируем на лету
           const outbound = uriToOutbound(c.raw);
           if (outbound) {
-            items.push(this.outboundToHappConfig(outbound as unknown as Record<string, unknown>, c.name));
+            item = this.outboundToHappConfig(outbound as unknown as Record<string, unknown>, c.name);
+          } else {
+            continue;
           }
+        } else {
+          continue;
         }
+
+        // Добавляем meta-блок с объявлением и ссылкой на страницу в каждый объект
+        if (metaBlock) {
+          const existingMeta =
+            item['meta'] && typeof item['meta'] === 'object' && !Array.isArray(item['meta'])
+              ? (item['meta'] as Record<string, unknown>)
+              : {};
+          item = { ...item, meta: { ...metaBlock, ...existingMeta } };
+        }
+
+        items.push(item);
       }
     }
-    const profileTitle = (
-      await this.resolveSubscriptionProfileTitleForPanelUser(user)
-    ).trim();
 
     return {
       jsonBody: JSON.stringify(items),
       profileTitle,
-      profileWebPageUrl: this.buildPublicSubPageAbsoluteUrl(user.code),
+      profileWebPageUrl: pageUrl,
       panelUserId: user.id,
       subscriptionDelivered: true,
     };
+  }
+
+  /**
+   * Декодирует текст объявления из строки формата «#announce: base64:…» или «#announce: текст».
+   * Возвращает plain-текст или null.
+   */
+  private decodeAnnouncePlainText(metaLine: string | null | undefined): string | null {
+    const s = metaLine?.trim();
+    if (!s) return null;
+    const m = s.match(/^#announce:\s*(.+)$/i);
+    if (!m?.[1]) return null;
+    const val = m[1].trim();
+    if (val.startsWith('base64:')) {
+      try {
+        return Buffer.from(val.slice(7), 'base64').toString('utf8').trim();
+      } catch {
+        return null;
+      }
+    }
+    return val || null;
+  }
+
+  /**
+   * Строит meta-объект для JSON-ленты Happ (Advanced Announcements).
+   * sub-info-text  — текст объявления (показывается как цветной блок в интерфейсе)
+   * sub-info-button-text/link — кнопка «Открыть» ведёт на страницу подписки
+   * sub-expire — включает автоматическое уведомление за 3 дня до истечения
+   */
+  private buildJsonFeedMetaBlock(
+    announceText: string | null,
+    pageUrl: string | null,
+    expiresAt: Date | null,
+  ): Record<string, unknown> | null {
+    const meta: Record<string, unknown> = {};
+
+    if (announceText) {
+      meta['sub-info-text'] = announceText.slice(0, 200);
+      meta['sub-info-color'] = 'blue';
+      if (pageUrl) {
+        meta['sub-info-button-text'] = 'Открыть';
+        meta['sub-info-button-link'] = pageUrl;
+      }
+    }
+
+    if (expiresAt) {
+      meta['sub-expire'] = true;
+    }
+
+    return Object.keys(meta).length > 0 ? meta : null;
   }
 
   /**
