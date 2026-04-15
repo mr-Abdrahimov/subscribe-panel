@@ -219,35 +219,49 @@ export default defineEventHandler(async (event) => {
 
   setResponseStatus(event, res.status);
   const data = (res._data ?? '') as string;
-  const profileTitleStar = res.headers.get('profile-title*');
-  const profileTitlePlain = res.headers.get('profile-title');
-  const hideSettings = res.headers.get('hide-settings');
-  const routing = res.headers.get('routing');
+  const contentType = res.headers.get('content-type') ?? '';
+  const isJsonFromBackend = contentType.includes('application/json');
+
+  // Заголовки из бэкенда, которые нужно пробросить клиенту (Happ и совместимые)
+  const PROXY_RESPONSE_HEADERS = [
+    'profile-title',
+    'profile-title*',
+    'hide-settings',
+    'routing',
+    'announce',
+    'profile-update-interval',
+    'profile-web-page-url',
+    'subscription-userinfo',
+    'content-disposition',
+  ] as const;
+
   setHeader(
     event,
     'cache-control',
     'private, no-store, no-cache, must-revalidate, max-age=0',
   );
   setHeader(event, 'pragma', 'no-cache');
-  if (hideSettings) {
-    setHeader(event, 'hide-settings', hideSettings);
+
+  for (const name of PROXY_RESPONSE_HEADERS) {
+    const value = res.headers.get(name);
+    if (value) {
+      setHeader(event, name, value);
+    }
   }
-  if (profileTitleStar) {
-    setHeader(event, 'profile-title*', profileTitleStar);
+
+  // Если бэкенд уже отдал JSON (JSON-лента) — пробрасываем как есть
+  if (isJsonFromBackend) {
+    setHeader(event, 'content-type', 'application/json; charset=utf-8');
+    return data;
   }
-  if (profileTitlePlain) {
-    setHeader(event, 'profile-title', profileTitlePlain);
-  }
-  if (routing) {
-    setHeader(event, 'routing', routing);
-  }
+
   if (wantsJson) {
     setHeader(event, 'content-type', 'application/json; charset=utf-8');
     return buildSubscriptionJsonBody(
       data,
-      profileTitleStar,
-      profileTitlePlain,
-      routing,
+      res.headers.get('profile-title*'),
+      res.headers.get('profile-title'),
+      res.headers.get('routing'),
     );
   }
   setHeader(event, 'content-type', 'text/plain; charset=utf-8');
