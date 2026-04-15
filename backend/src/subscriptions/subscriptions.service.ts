@@ -15,7 +15,7 @@ import {
 } from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
-import { uriToOutbound } from './uri-to-outbound.util';
+import { uriToOutbound, outboundToUri, extractProxyOutbound } from './uri-to-outbound.util';
 
 /** Совпадает с ManagementService.PANEL_GLOBAL_SETTINGS_ID */
 const PANEL_GLOBAL_SETTINGS_ID = 'global';
@@ -496,6 +496,25 @@ export class SubscriptionsService {
         const rawKey = `json://${type}/${server}${port ? `:${port}` : ''}/${encodeURIComponent(tag)}`;
         const displayName = tag || (type && server ? `${type}:${server}` : type || server || 'unknown');
         entries.push({ originalName: displayName, raw: rawKey, protocol: type, rawJson: ob });
+      }
+    }
+
+    // --- Конвертируем JSON-конфиги → URI для BASE64-ленты ---
+    // Для каждой записи с синтетическим raw (json://...) пытаемся
+    // восстановить реальный proxy-URI из rawJson, чтобы коннект работал
+    // в обоих режимах: BASE64 и JSON.
+    for (const entry of entries) {
+      if (!entry.raw.startsWith('json://') || !entry.rawJson) continue;
+      try {
+        const proxyOutbound = extractProxyOutbound(entry.rawJson as Record<string, unknown>);
+        if (!proxyOutbound) continue;
+        const uri = outboundToUri(proxyOutbound, entry.originalName);
+        if (uri) {
+          entry.raw = uri;
+          entry.protocol = entry.protocol || String(proxyOutbound['protocol'] ?? '').trim();
+        }
+      } catch {
+        // Не конвертируется — оставляем синтетический ключ
       }
     }
 

@@ -1727,10 +1727,6 @@ export class ManagementService implements OnModuleInit {
           continue;
         }
         seenConnectIds.add(c.id);
-        // JSON-коннекты (raw начинается с json://) не имеют валидного URI — пропускаем
-        if (c.raw.startsWith('json://')) {
-          continue;
-        }
         uriLines.push(this.applyCustomNameToUri(c.raw, c.name));
       }
     }
