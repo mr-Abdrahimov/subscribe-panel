@@ -706,6 +706,84 @@ export class ManagementService implements OnModuleInit {
     };
   }
 
+  /**
+   * Агрегированный subscription-userinfo для пользователя панели:
+   * суммирует использованный трафик по всем его подпискам,
+   * берёт ближайшую (наименьшую) дату окончания.
+   * Возвращает null если данных нет ни по одной подписке.
+   */
+  async resolveSubscriptionUserinfoForPanelUser(user: PanelUser): Promise<{
+    uploadBytes: bigint;
+    downloadBytes: bigint;
+    totalBytes: bigint;
+    expiresAt: Date | null;
+  } | null> {
+    // Находим все активные подписки, коннекты которых входят в ленту пользователя
+    const entries = this.getEffectiveSubscriptionGroupEntries(user);
+    const includedNames = entries.filter((e) => e.include).map((e) => e.name);
+    if (includedNames.length === 0) return null;
+
+    // Получаем уникальные subscriptionId из коннектов пользователя
+    const connects = await this.prisma.connect.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: includedNames.map((n) => ({ groupNames: { has: n } })),
+      },
+      select: { subscriptionId: true },
+      distinct: ['subscriptionId'],
+    });
+
+    const subIds = connects
+      .map((c) => c.subscriptionId)
+      .filter((id): id is string => !!id);
+
+    if (subIds.length === 0) return null;
+
+    const subs = await this.prisma.subscription.findMany({
+      where: { id: { in: subIds } },
+      select: {
+        fetchedTrafficUsedBytes: true,
+        fetchedTrafficTotalBytes: true,
+        fetchedSubscriptionExpiresAt: true,
+      },
+    });
+
+    let hasAnyData = false;
+    let usedTotal = 0n;
+    let trafficTotal = 0n;
+    let expiresAt: Date | null = null;
+
+    for (const s of subs) {
+      if (s.fetchedTrafficUsedBytes) {
+        try {
+          usedTotal += BigInt(s.fetchedTrafficUsedBytes);
+          hasAnyData = true;
+        } catch { /* пропускаем нечисловые */ }
+      }
+      if (s.fetchedTrafficTotalBytes) {
+        try {
+          trafficTotal += BigInt(s.fetchedTrafficTotalBytes);
+          hasAnyData = true;
+        } catch { /* пропускаем нечисловые */ }
+      }
+      if (s.fetchedSubscriptionExpiresAt) {
+        hasAnyData = true;
+        if (!expiresAt || s.fetchedSubscriptionExpiresAt < expiresAt) {
+          expiresAt = s.fetchedSubscriptionExpiresAt;
+        }
+      }
+    }
+
+    if (!hasAnyData) return null;
+
+    return {
+      uploadBytes: 0n,
+      downloadBytes: usedTotal,
+      totalBytes: trafficTotal,
+      expiresAt,
+    };
+  }
+
   /** Непустые строки из настройки routing (каждая — отдельная строка тела подписки до base64). */
   private routingBodyLinesFromPanelConfig(
     routingConfig: string | null | undefined,

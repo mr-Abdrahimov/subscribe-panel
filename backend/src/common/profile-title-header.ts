@@ -172,6 +172,54 @@ export function setProfileWebPageUrlHeader(
 }
 
 /**
+ * Заголовок content-disposition: attachment; filename=…
+ * Используется рядом клиентов для определения имени файла подписки.
+ */
+export function setContentDispositionHeader(
+  res: Response,
+  filename: string | null | undefined,
+): void {
+  const f = filename?.trim();
+  if (!f) return;
+  // ASCII-безопасное имя для filename= + RFC 5987 для UTF-8
+  const safe = f.replace(/[^\w\s\-_.]/g, '_');
+  res.setHeader(
+    'content-disposition',
+    `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(f)}`,
+  );
+}
+
+/**
+ * Заголовок subscription-userinfo: upload=…; download=…; total=…; expire=…
+ * Агрегирует данные из всех подписок пользователя (суммирует трафик, берёт ближайший expire).
+ */
+export function setSubscriptionUserinfoHeader(
+  res: Response,
+  opts: {
+    uploadBytes?: bigint | null;
+    downloadBytes?: bigint | null;
+    totalBytes?: bigint | null;
+    expiresAt?: Date | null;
+  },
+): void {
+  const parts: string[] = [];
+  const upload = opts.uploadBytes ?? 0n;
+  const download = opts.downloadBytes ?? 0n;
+  parts.push(`upload=${upload}`);
+  parts.push(`download=${download}`);
+  if (opts.totalBytes != null && opts.totalBytes > 0n) {
+    parts.push(`total=${opts.totalBytes}`);
+  } else {
+    parts.push('total=0');
+  }
+  if (opts.expiresAt) {
+    const unix = Math.floor(opts.expiresAt.getTime() / 1000);
+    parts.push(`expire=${unix}`);
+  }
+  res.setHeader('subscription-userinfo', parts.join('; '));
+}
+
+/**
  * Устанавливает все стандартные заголовки профиля подписки (Happ и совместимые клиенты).
  * Применяется одинаково для BASE64 и JSON режимов.
  */
@@ -183,11 +231,20 @@ export function setAllSubscriptionProfileHeaders(
     profileUpdateIntervalHours?: number | null;
     routingConfig?: string | null;
     profileWebPageUrl?: string | null;
+    contentDispositionFilename?: string | null;
+    subscriptionUserinfo?: {
+      uploadBytes?: bigint | null;
+      downloadBytes?: bigint | null;
+      totalBytes?: bigint | null;
+      expiresAt?: Date | null;
+    } | null;
   },
 ): void {
   setHappHideSettingsHeader(res);
   if (opts.profileTitle) setProfileTitleResponseHeaders(res, opts.profileTitle);
   if (opts.profileWebPageUrl) setProfileWebPageUrlHeader(res, opts.profileWebPageUrl);
+  if (opts.contentDispositionFilename) setContentDispositionHeader(res, opts.contentDispositionFilename);
+  if (opts.subscriptionUserinfo) setSubscriptionUserinfoHeader(res, opts.subscriptionUserinfo);
   setSubscriptionAnnounceResponseHeaders(res, opts.announceMetaLine);
   setProfileUpdateIntervalResponseHeaders(res, opts.profileUpdateIntervalHours);
   setHappRoutingResponseHeader(res, opts.routingConfig);

@@ -584,6 +584,11 @@ export class ManagementController {
       }
     }
 
+    // Агрегируем subscription-userinfo из подписок пользователя
+    const subscriptionUserinfo = user
+      ? await this.managementService.resolveSubscriptionUserinfoForPanelUser(user)
+      : null;
+
     res.status(200);
     res.setHeader(
       'Cache-Control',
@@ -595,9 +600,11 @@ export class ManagementController {
     setAllSubscriptionProfileHeaders(res, {
       profileTitle: payload.profileTitle,
       profileWebPageUrl: payload.profileWebPageUrl ?? this.managementService.buildPublicSubPageAbsoluteUrl(user?.code ?? code),
+      contentDispositionFilename: payload.profileTitle || (user?.code ?? code),
       announceMetaLine,
       profileUpdateIntervalHours,
       routingConfig,
+      subscriptionUserinfo,
     });
 
     if (payload.jsonBody !== undefined) {
