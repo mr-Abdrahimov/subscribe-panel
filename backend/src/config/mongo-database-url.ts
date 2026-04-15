@@ -1,3 +1,5 @@
+import { log } from "node:console";
+
 /**
  * Строка подключения Prisma к MongoDB из MONGO_HOST / MONGO_PORT / MONGO_DATABASE.
  * Если MONGO_HOST не задан — используется DATABASE_URL (обратная совместимость).
@@ -18,8 +20,10 @@ export function buildMongoDatabaseUrl(env: NodeJS.ProcessEnv): string {
     const qs = rs ? `?replicaSet=${encodeURIComponent(rs)}` : '';
     return `mongodb://${auth}${host}:${port}/${encodeURIComponent(database)}${qs}`;
   }
+  console.log(11111)
   const fallback = env.DATABASE_URL?.trim();
   if (fallback) {
+    console.log(fallback)
     return fallback;
   }
   throw new Error(

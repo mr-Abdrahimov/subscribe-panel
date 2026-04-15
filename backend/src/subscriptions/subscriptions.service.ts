@@ -406,8 +406,13 @@ export class SubscriptionsService {
       };
     }
 
-    // --- Парсинг: собираем { originalName, raw, protocol } ---
-    type RawEntry = { originalName: string; raw: string; protocol: string };
+    // --- Парсинг: собираем { originalName, raw, protocol, rawJson } ---
+    type RawEntry = {
+      originalName: string;
+      raw: string;
+      protocol: string;
+      rawJson: unknown; // исходный JSON-объект конфига (null для URI-строк)
+    };
     const entries: RawEntry[] = [];
 
     if (Array.isArray(parsed)) {
@@ -420,6 +425,7 @@ export class SubscriptionsService {
               originalName: this.extractConnectName(s),
               raw: s,
               protocol: this.extractProtocol(s),
+              rawJson: null,
             });
           }
           continue;
@@ -436,10 +442,9 @@ export class SubscriptionsService {
           const protocol = proxy ? String(proxy['protocol'] ?? '').trim() : 'unknown';
           const server = this.extractV2rayServer(proxy);
           const port = this.extractV2rayPort(proxy);
-          // Синтетический raw: json:// — стабильный ключ для дедупликации
           const rawKey = `json://${protocol}/${server}${port ? `:${port}` : ''}/${encodeURIComponent(remarks)}`;
           const displayName = remarks || (server ? `${protocol}:${server}` : protocol);
-          entries.push({ originalName: displayName, raw: rawKey, protocol });
+          entries.push({ originalName: displayName, raw: rawKey, protocol, rawJson: item });
           continue;
         }
 
@@ -451,6 +456,7 @@ export class SubscriptionsService {
             originalName: name || rawUri,
             raw: rawUri,
             protocol: this.extractProtocol(rawUri),
+            rawJson: item,
           });
         }
       }
@@ -468,7 +474,7 @@ export class SubscriptionsService {
         const port = this.extractV2rayPort(o);
         const rawKey = `json://${type}/${server}${port ? `:${port}` : ''}/${encodeURIComponent(tag)}`;
         const displayName = tag || (type && server ? `${type}:${server}` : type || server || 'unknown');
-        entries.push({ originalName: displayName, raw: rawKey, protocol: type });
+        entries.push({ originalName: displayName, raw: rawKey, protocol: type, rawJson: ob });
       }
     }
 
@@ -521,6 +527,7 @@ export class SubscriptionsService {
             originalName: incoming.originalName,
             name: incoming.originalName,
             raw: incoming.raw,
+            rawJson: (incoming.rawJson as Prisma.InputJsonValue | undefined) ?? undefined,
             identityKey: incoming.raw,
             protocol: incoming.protocol,
             status: 'ACTIVE',
@@ -537,9 +544,11 @@ export class SubscriptionsService {
 
       matchedIds.add(existing.id);
 
-      const data: { originalName?: string; protocol?: string } = {};
+      const data: { originalName?: string; protocol?: string; rawJson?: Prisma.InputJsonValue | null } = {};
       if (existing.originalName !== incoming.originalName) data.originalName = incoming.originalName;
       if (existing.protocol !== incoming.protocol) data.protocol = incoming.protocol;
+      // Обновляем rawJson всегда (конфиг мог измениться)
+      data.rawJson = (incoming.rawJson as Prisma.InputJsonValue | null | undefined) ?? null;
       if (Object.keys(data).length > 0) {
         await this.prisma.connect.update({ where: { id: existing.id }, data });
       }

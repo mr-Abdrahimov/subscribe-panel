@@ -95,4 +95,12 @@ export class UpdatePanelUserDto {
   @IsOptional()
   @IsBoolean()
   cryptoOnlySubscription?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Если true — на crypto-странице лента отдаётся в формате JSON (массив v2ray-конфигов из rawJson коннектов). Работает только при via=crypto-page.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  feedJsonMode?: boolean;
 }

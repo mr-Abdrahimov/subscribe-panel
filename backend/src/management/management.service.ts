@@ -1167,6 +1167,7 @@ export class ManagementService implements OnModuleInit {
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
+      feedJsonMode?: boolean;
     },
   ) {
     await this.ensureUser(id);
@@ -1186,6 +1187,7 @@ export class ManagementService implements OnModuleInit {
       requireNoHwid?: boolean;
       maxUniqueHwids?: number;
       cryptoOnlySubscription?: boolean;
+      feedJsonMode?: boolean;
       happCryptoUrl?: string | null;
     } = {};
 
@@ -1244,6 +1246,9 @@ export class ManagementService implements OnModuleInit {
     }
     if (dto.cryptoOnlySubscription !== undefined) {
       data.cryptoOnlySubscription = dto.cryptoOnlySubscription;
+    }
+    if (dto.feedJsonMode !== undefined) {
+      data.feedJsonMode = dto.feedJsonMode;
     }
 
     const effectiveCryptoOnly =
@@ -1752,6 +1757,49 @@ export class ManagementService implements OnModuleInit {
     return {
       encoded: Buffer.from(bodyText, 'utf-8').toString('base64'),
       profileTitle,
+      panelUserId: user.id,
+      subscriptionDelivered: true,
+    };
+  }
+
+  /**
+   * JSON-режим: отдаёт массив rawJson-объектов коннектов пользователя.
+   * Коннекты без rawJson (обычные URI) включаются как { remarks, raw }.
+   */
+  async buildJsonFeedForPanelUser(user: PanelUser): Promise<{
+    jsonBody: string;
+    panelUserId: string;
+    subscriptionDelivered: true;
+  }> {
+    const entries = this.getEffectiveSubscriptionGroupEntries(user);
+    const includedNames = entries.filter((e) => e.include).map((e) => e.name);
+
+    const seenConnectIds = new Set<string>();
+    const items: unknown[] = [];
+    for (const gName of includedNames) {
+      const batch = await this.prisma.connect.findMany({
+        where: { status: 'ACTIVE', groupNames: { has: gName } },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        select: { id: true, raw: true, name: true, rawJson: true },
+      });
+      for (const c of batch) {
+        if (seenConnectIds.has(c.id)) continue;
+        seenConnectIds.add(c.id);
+        if (c.rawJson !== null && c.rawJson !== undefined) {
+          // Если rawJson — объект (v2ray-конфиг), обновляем remarks именем из панели
+          if (typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
+            items.push({ ...(c.rawJson as object), remarks: c.name });
+          } else {
+            items.push(c.rawJson);
+          }
+        } else {
+          // Обычный URI-коннект — возвращаем как объект с raw и именем
+          items.push({ remarks: c.name, raw: c.raw });
+        }
+      }
+    }
+    return {
+      jsonBody: JSON.stringify(items),
       panelUserId: user.id,
       subscriptionDelivered: true,
     };

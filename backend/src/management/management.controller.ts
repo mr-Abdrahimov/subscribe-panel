@@ -474,7 +474,8 @@ export class ManagementController {
     } = await this.managementService.getSubscriptionMetaForPublicSub(user);
 
     let payload: {
-      encoded: string;
+      encoded?: string;
+      jsonBody?: string;
       profileTitle: string;
       panelUserId: string | null;
       subscriptionDelivered: boolean;
@@ -559,6 +560,10 @@ export class ManagementController {
           profileUpdateIntervalMetaLine,
           routingConfig,
         );
+      } else if (viaCryptoPage && user.feedJsonMode === true) {
+        const jsonResult = await this.managementService.buildJsonFeedForPanelUser(user);
+        const jsonProfileTitle = await this.managementService.resolveSubscriptionProfileTitleForPanelUser(user);
+        payload = { ...jsonResult, profileTitle: jsonProfileTitle };
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(
           user,
@@ -584,19 +589,25 @@ export class ManagementController {
     }
 
     res.status(200);
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
       'Cache-Control',
       'private, no-store, no-cache, must-revalidate, max-age=0',
     );
     res.setHeader('Pragma', 'no-cache');
-    setHappHideSettingsHeader(res);
-    setSubscriptionAnnounceResponseHeaders(res, announceMetaLine);
-    setProfileUpdateIntervalResponseHeaders(res, profileUpdateIntervalHours);
-    setHappRoutingResponseHeader(res, routingConfig);
-    if (payload.profileTitle) {
-      setProfileTitleResponseHeaders(res, payload.profileTitle);
+
+    if (payload.jsonBody !== undefined) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.send(payload.jsonBody);
+    } else {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      setHappHideSettingsHeader(res);
+      setSubscriptionAnnounceResponseHeaders(res, announceMetaLine);
+      setProfileUpdateIntervalResponseHeaders(res, profileUpdateIntervalHours);
+      setHappRoutingResponseHeader(res, routingConfig);
+      if (payload.profileTitle) {
+        setProfileTitleResponseHeaders(res, payload.profileTitle);
+      }
+      res.send(payload.encoded);
     }
-    res.send(payload.encoded);
   }
 }

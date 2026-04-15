@@ -46,6 +46,8 @@ type UserItem = {
   lastSubscriptionActivityAt?: string | null;
   /** Реальная лента только через happ crypto и секретный путь */
   cryptoOnlySubscription?: boolean;
+  /** На crypto-странице лента отдаётся в формате JSON */
+  feedJsonMode?: boolean;
 };
 
 const toast = useToast();
@@ -141,6 +143,16 @@ const columns: TableColumn<UserItem>[] = [
     meta: {
       class: {
         th: `${thBase} max-w-[9rem] whitespace-normal`,
+        td: 'align-middle',
+      },
+    },
+  },
+  {
+    id: 'feedJsonMode',
+    header: 'JSON лента',
+    meta: {
+      class: {
+        th: `${thBase} max-w-[6rem] whitespace-normal`,
         td: 'align-middle',
       },
     },
@@ -286,6 +298,20 @@ async function setSubscriptionAccessMode(
     user.cryptoOnlySubscription = body.cryptoOnlySubscription;
   } catch {
     toast.add({ title: 'Не удалось сохранить режим доступа', color: 'error' });
+    await loadData();
+  }
+}
+
+async function toggleFeedJsonMode(user: UserItem) {
+  const next = !(user.feedJsonMode === true);
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/panel-users/${user.id}`, {
+      method: 'PATCH',
+      body: { feedJsonMode: next },
+    });
+    user.feedJsonMode = next;
+  } catch {
+    toast.add({ title: 'Не удалось сохранить режим JSON', color: 'error' });
     await loadData();
   }
 }
@@ -1136,6 +1162,24 @@ async function confirmBulkClearLogs() {
                 />
               </UTooltip>
             </div>
+          </div>
+        </template>
+
+        <template #feedJsonMode-cell="{ row }">
+          <div class="flex justify-center">
+            <UTooltip
+              :text="row.original.feedJsonMode ? 'JSON-лента включена (crypto-страница отдаёт JSON). Нажмите чтобы выключить.' : 'JSON-лента выключена (crypto-страница отдаёт base64). Нажмите чтобы включить.'"
+            >
+              <UButton
+                size="xs"
+                :icon="row.original.feedJsonMode ? 'i-lucide-braces' : 'i-lucide-braces'"
+                :variant="row.original.feedJsonMode ? 'solid' : 'ghost'"
+                :color="row.original.feedJsonMode ? 'primary' : 'neutral'"
+                class="min-w-8 min-h-8 justify-center rounded-md sm:min-w-9"
+                :aria-label="row.original.feedJsonMode ? 'JSON включён' : 'JSON выключен'"
+                @click="toggleFeedJsonMode(row.original)"
+              />
+            </UTooltip>
           </div>
         </template>
 
