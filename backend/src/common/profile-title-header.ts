@@ -232,19 +232,12 @@ export function setAllSubscriptionProfileHeaders(
     routingConfig?: string | null;
     profileWebPageUrl?: string | null;
     contentDispositionFilename?: string | null;
-    subscriptionUserinfo?: {
-      uploadBytes?: bigint | null;
-      downloadBytes?: bigint | null;
-      totalBytes?: bigint | null;
-      expiresAt?: Date | null;
-    } | null;
   },
 ): void {
   setHappHideSettingsHeader(res);
   if (opts.profileTitle) setProfileTitleResponseHeaders(res, opts.profileTitle);
   if (opts.profileWebPageUrl) setProfileWebPageUrlHeader(res, opts.profileWebPageUrl);
   if (opts.contentDispositionFilename) setContentDispositionHeader(res, opts.contentDispositionFilename);
-  if (opts.subscriptionUserinfo) setSubscriptionUserinfoHeader(res, opts.subscriptionUserinfo);
   setSubscriptionAnnounceResponseHeaders(res, opts.announceMetaLine);
   setProfileUpdateIntervalResponseHeaders(res, opts.profileUpdateIntervalHours);
   setHappRoutingResponseHeader(res, opts.routingConfig);

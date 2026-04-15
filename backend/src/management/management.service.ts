@@ -1848,7 +1848,6 @@ export class ManagementService implements OnModuleInit {
   async buildJsonFeedForPanelUser(
     user: PanelUser,
     announceMetaLine: string | null = null,
-    expiresAt: Date | null = null,
   ): Promise<{
     jsonBody: string;
     profileTitle: string;
@@ -1868,12 +1867,8 @@ export class ManagementService implements OnModuleInit {
     const announceText = this.decodeAnnouncePlainText(announceMetaLine);
 
     // meta-блок для каждого JSON-объекта (Advanced Announcements Happ)
-    // Включает: объявление как sub-info-text, ссылку на страницу, sub-expire
-    const metaBlock = this.buildJsonFeedMetaBlock(
-      announceText,
-      pageUrl,
-      expiresAt,
-    );
+    // Включает: объявление как sub-info-text и ссылку на страницу подписки
+    const metaBlock = this.buildJsonFeedMetaBlock(announceText, pageUrl);
 
     const seenConnectIds = new Set<string>();
     const items: unknown[] = [];
@@ -1967,24 +1962,20 @@ export class ManagementService implements OnModuleInit {
   private buildJsonFeedMetaBlock(
     announceText: string | null,
     pageUrl: string | null,
-    expiresAt: Date | null,
   ): Record<string, unknown> | null {
-    const meta: Record<string, unknown> = {};
+    if (!announceText) return null;
 
-    if (announceText) {
-      meta['sub-info-text'] = announceText.slice(0, 200);
-      meta['sub-info-color'] = 'blue';
-      if (pageUrl) {
-        meta['sub-info-button-text'] = 'Открыть';
-        meta['sub-info-button-link'] = pageUrl;
-      }
+    const meta: Record<string, unknown> = {
+      'sub-info-text': announceText.slice(0, 200),
+      'sub-info-color': 'blue',
+    };
+
+    if (pageUrl) {
+      meta['sub-info-button-text'] = 'Открыть';
+      meta['sub-info-button-link'] = pageUrl;
     }
 
-    if (expiresAt) {
-      meta['sub-expire'] = true;
-    }
-
-    return Object.keys(meta).length > 0 ? meta : null;
+    return meta;
   }
 
   /**

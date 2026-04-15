@@ -559,11 +559,9 @@ export class ManagementController {
           routingConfig,
         );
       } else if (viaCryptoPage && user.feedJsonMode === true) {
-        const userinfo = await this.managementService.resolveSubscriptionUserinfoForPanelUser(user);
         payload = await this.managementService.buildJsonFeedForPanelUser(
           user,
           announceMetaLine,
-          userinfo?.expiresAt ?? null,
         );
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(
@@ -589,11 +587,6 @@ export class ManagementController {
       }
     }
 
-    // Агрегируем subscription-userinfo из подписок пользователя
-    const subscriptionUserinfo = user
-      ? await this.managementService.resolveSubscriptionUserinfoForPanelUser(user)
-      : null;
-
     res.status(200);
     res.setHeader(
       'Cache-Control',
@@ -609,7 +602,6 @@ export class ManagementController {
       announceMetaLine,
       profileUpdateIntervalHours,
       routingConfig,
-      subscriptionUserinfo,
     });
 
     if (payload.jsonBody !== undefined) {
