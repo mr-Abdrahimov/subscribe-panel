@@ -138,6 +138,13 @@ docker compose pull
 docker compose up -d --no-deps backend frontend
 ```
 
+### Быстрый метод обновления версии (одной командой)
+
+```bash
+docker compose -f /opt/subscribe-panel/docker-compose.yml pull backend frontend \
+  && docker compose -f /opt/subscribe-panel/docker-compose.yml up -d --no-deps backend frontend
+```
+
 ### Полный перезапуск всего стека
 
 ```bash
