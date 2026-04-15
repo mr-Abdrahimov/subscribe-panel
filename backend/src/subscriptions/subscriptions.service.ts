@@ -15,6 +15,7 @@ import {
 } from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { uriToOutbound } from './uri-to-outbound.util';
 
 /** Совпадает с ManagementService.PANEL_GLOBAL_SETTINGS_ID */
 const PANEL_GLOBAL_SETTINGS_ID = 'global';
@@ -187,6 +188,7 @@ export class SubscriptionsService {
       select: {
         id: true,
         raw: true,
+        rawJson: true,
         name: true,
         originalName: true,
         sortOrder: true,
@@ -257,6 +259,9 @@ export class SubscriptionsService {
           ),
       );
 
+      const outbound = uriToOutbound(incoming.raw);
+      const rawJsonValue = outbound as Prisma.InputJsonValue | null;
+
       if (!existing) {
         nextSortOrder += 1;
 
@@ -265,6 +270,7 @@ export class SubscriptionsService {
             originalName: incoming.originalName,
             name: incoming.originalName,
             raw: incoming.raw,
+            rawJson: rawJsonValue ?? undefined,
             identityKey: incoming.fullIdentity,
             protocol: incoming.protocol,
             status: 'ACTIVE',
@@ -283,12 +289,18 @@ export class SubscriptionsService {
 
       const data: {
         raw?: string;
+        rawJson?: Prisma.InputJsonValue | null;
         originalName?: string;
         protocol?: string;
         identityKey?: string;
       } = {};
       if (existing.raw !== incoming.raw) {
         data.raw = incoming.raw;
+        // URI изменился — обновляем и rawJson
+        data.rawJson = rawJsonValue;
+      } else if (existing.rawJson === null || existing.rawJson === undefined) {
+        // rawJson ещё не было — заполняем
+        data.rawJson = rawJsonValue;
       }
       if (existing.originalName !== incoming.originalName) {
         data.originalName = incoming.originalName;

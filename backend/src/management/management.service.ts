@@ -27,6 +27,7 @@ import {
 } from '../common/ungrouped-connect-group';
 import { withPrismaWriteRetry } from '../common/prisma-write-retry';
 import type { SubscriptionAccessMeta } from '../common/subscription-client-meta';
+import { uriToOutbound } from '../subscriptions/uri-to-outbound.util';
 import {
   SUBSCRIPTION_ACCESS_NOTIFY_JOB,
   SUBSCRIPTION_ACCESS_NOTIFY_QUEUE,
@@ -1726,6 +1727,10 @@ export class ManagementService implements OnModuleInit {
           continue;
         }
         seenConnectIds.add(c.id);
+        // JSON-коннекты (raw начинается с json://) не имеют валидного URI — пропускаем
+        if (c.raw.startsWith('json://')) {
+          continue;
+        }
         uriLines.push(this.applyCustomNameToUri(c.raw, c.name));
       }
     }
@@ -1785,16 +1790,27 @@ export class ManagementService implements OnModuleInit {
       for (const c of batch) {
         if (seenConnectIds.has(c.id)) continue;
         seenConnectIds.add(c.id);
+
         if (c.rawJson !== null && c.rawJson !== undefined) {
-          // Если rawJson — объект (v2ray-конфиг), обновляем remarks именем из панели
+          // Полный JSON-конфиг (Happ/v2ray формат) — обновляем remarks именем из панели
           if (typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
-            items.push({ ...(c.rawJson as object), remarks: c.name });
+            const obj = c.rawJson as Record<string, unknown>;
+            // Если это outbound-объект (от uriToOutbound) — оборачиваем в полный конфиг
+            if (obj['tag'] === 'proxy' && obj['protocol'] && obj['settings']) {
+              items.push(this.outboundToHappConfig(obj, c.name));
+            } else {
+              // Полный v2ray-конфиг от JSON-подписки — обновляем remarks
+              items.push({ ...obj, remarks: c.name });
+            }
           } else {
             items.push(c.rawJson);
           }
-        } else {
-          // Обычный URI-коннект — возвращаем как объект с raw и именем
-          items.push({ remarks: c.name, raw: c.raw });
+        } else if (!c.raw.startsWith('json://')) {
+          // URI-коннект без rawJson — конвертируем на лету
+          const outbound = uriToOutbound(c.raw);
+          if (outbound) {
+            items.push(this.outboundToHappConfig(outbound as unknown as Record<string, unknown>, c.name));
+          }
         }
       }
     }
@@ -1802,6 +1818,48 @@ export class ManagementService implements OnModuleInit {
       jsonBody: JSON.stringify(items),
       panelUserId: user.id,
       subscriptionDelivered: true,
+    };
+  }
+
+  /**
+   * Оборачивает outbound-объект (tag: "proxy") в минимальный Happ-совместимый v2ray конфиг
+   * с dns, routing, inbounds и remarks.
+   */
+  private outboundToHappConfig(
+    proxy: Record<string, unknown>,
+    displayName: string,
+  ): Record<string, unknown> {
+    return {
+      dns: { servers: ['1.1.1.1', '1.0.0.1'], queryStrategy: 'UseIP' },
+      routing: {
+        rules: [{ type: 'field', protocol: ['bittorrent'], outboundTag: 'direct' }],
+        domainMatcher: 'hybrid',
+        domainStrategy: 'IPIfNonMatch',
+      },
+      inbounds: [
+        {
+          tag: 'socks',
+          port: 10808,
+          listen: '127.0.0.1',
+          protocol: 'socks',
+          settings: { udp: true, auth: 'noauth' },
+          sniffing: { enabled: true, routeOnly: false, destOverride: ['http', 'tls', 'quic'] },
+        },
+        {
+          tag: 'http',
+          port: 10809,
+          listen: '127.0.0.1',
+          protocol: 'http',
+          settings: { allowTransparent: false },
+          sniffing: { enabled: true, routeOnly: false, destOverride: ['http', 'tls', 'quic'] },
+        },
+      ],
+      outbounds: [
+        { ...proxy, tag: 'proxy' },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole' },
+      ],
+      remarks: displayName,
     };
   }
 
