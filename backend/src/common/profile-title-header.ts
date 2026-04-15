@@ -157,3 +157,38 @@ export function setHappRoutingResponseHeader(
   }
   res.setHeader('routing', first);
 }
+
+/**
+ * Заголовок profile-web-page-url: абсолютный URL страницы подписки.
+ * Поддерживается рядом клиентов (помимо Happ) как "открыть в браузере".
+ */
+export function setProfileWebPageUrlHeader(
+  res: Response,
+  url: string | null | undefined,
+): void {
+  const u = url?.trim();
+  if (!u) return;
+  res.setHeader('profile-web-page-url', u);
+}
+
+/**
+ * Устанавливает все стандартные заголовки профиля подписки (Happ и совместимые клиенты).
+ * Применяется одинаково для BASE64 и JSON режимов.
+ */
+export function setAllSubscriptionProfileHeaders(
+  res: Response,
+  opts: {
+    profileTitle?: string | null;
+    announceMetaLine?: string | null;
+    profileUpdateIntervalHours?: number | null;
+    routingConfig?: string | null;
+    profileWebPageUrl?: string | null;
+  },
+): void {
+  setHappHideSettingsHeader(res);
+  if (opts.profileTitle) setProfileTitleResponseHeaders(res, opts.profileTitle);
+  if (opts.profileWebPageUrl) setProfileWebPageUrlHeader(res, opts.profileWebPageUrl);
+  setSubscriptionAnnounceResponseHeaders(res, opts.announceMetaLine);
+  setProfileUpdateIntervalResponseHeaders(res, opts.profileUpdateIntervalHours);
+  setHappRoutingResponseHeader(res, opts.routingConfig);
+}

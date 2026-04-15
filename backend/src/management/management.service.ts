@@ -1681,7 +1681,7 @@ export class ManagementService implements OnModuleInit {
   }
 
   /** Абсолютный URL страницы вида …/sub/CODE (для #profile-web-page-url). */
-  private buildPublicSubPageAbsoluteUrl(code: string): string {
+  buildPublicSubPageAbsoluteUrl(code: string): string {
     return this.buildSubscriptionPageUrl(code.trim(), false);
   }
 
@@ -1769,6 +1769,8 @@ export class ManagementService implements OnModuleInit {
    */
   async buildJsonFeedForPanelUser(user: PanelUser): Promise<{
     jsonBody: string;
+    profileTitle: string;
+    profileWebPageUrl: string;
     panelUserId: string;
     subscriptionDelivered: true;
   }> {
@@ -1810,8 +1812,14 @@ export class ManagementService implements OnModuleInit {
         }
       }
     }
+    const profileTitle = (
+      await this.resolveSubscriptionProfileTitleForPanelUser(user)
+    ).trim();
+
     return {
       jsonBody: JSON.stringify(items),
+      profileTitle,
+      profileWebPageUrl: this.buildPublicSubPageAbsoluteUrl(user.code),
       panelUserId: user.id,
       subscriptionDelivered: true,
     };

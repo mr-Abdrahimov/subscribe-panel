@@ -17,11 +17,8 @@ import {
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
-  setHappHideSettingsHeader,
   setHappRoutingResponseHeader,
-  setProfileTitleResponseHeaders,
-  setProfileUpdateIntervalResponseHeaders,
-  setSubscriptionAnnounceResponseHeaders,
+  setAllSubscriptionProfileHeaders,
 } from '../common/profile-title-header';
 import {
   extractSubscriptionAccessMeta,
@@ -477,6 +474,7 @@ export class ManagementController {
       encoded?: string;
       jsonBody?: string;
       profileTitle: string;
+      profileWebPageUrl?: string;
       panelUserId: string | null;
       subscriptionDelivered: boolean;
     };
@@ -561,9 +559,7 @@ export class ManagementController {
           routingConfig,
         );
       } else if (viaCryptoPage && user.feedJsonMode === true) {
-        const jsonResult = await this.managementService.buildJsonFeedForPanelUser(user);
-        const jsonProfileTitle = await this.managementService.resolveSubscriptionProfileTitleForPanelUser(user);
-        payload = { ...jsonResult, profileTitle: jsonProfileTitle };
+        payload = await this.managementService.buildJsonFeedForPanelUser(user);
       } else {
         payload = await this.managementService.buildPublicFeedForPanelUser(
           user,
@@ -595,18 +591,20 @@ export class ManagementController {
     );
     res.setHeader('Pragma', 'no-cache');
 
+    // Общие заголовки профиля — одинаково для BASE64 и JSON режимов
+    setAllSubscriptionProfileHeaders(res, {
+      profileTitle: payload.profileTitle,
+      profileWebPageUrl: payload.profileWebPageUrl ?? this.managementService.buildPublicSubPageAbsoluteUrl(user?.code ?? code),
+      announceMetaLine,
+      profileUpdateIntervalHours,
+      routingConfig,
+    });
+
     if (payload.jsonBody !== undefined) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.send(payload.jsonBody);
     } else {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      setHappHideSettingsHeader(res);
-      setSubscriptionAnnounceResponseHeaders(res, announceMetaLine);
-      setProfileUpdateIntervalResponseHeaders(res, profileUpdateIntervalHours);
-      setHappRoutingResponseHeader(res, routingConfig);
-      if (payload.profileTitle) {
-        setProfileTitleResponseHeaders(res, payload.profileTitle);
-      }
       res.send(payload.encoded);
     }
   }
