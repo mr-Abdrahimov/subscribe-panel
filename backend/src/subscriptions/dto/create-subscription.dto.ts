@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -11,6 +12,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { SubscriptionFeedMode } from '@prisma/client';
 
 export class CreateSubscriptionDto {
   @ApiProperty({ description: 'Название подписки', example: 'Основная VPN' })
@@ -118,4 +120,14 @@ export class CreateSubscriptionDto {
   @IsString()
   @MaxLength(512)
   hwid?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Режим получения ленты подписки. BASE64 — стандартный (декодирует base64 и сохраняет коннекты). JSON — парсит JSON-ответ и возвращает список подключений без сохранения в базу.',
+    enum: SubscriptionFeedMode,
+    default: SubscriptionFeedMode.BASE64,
+  })
+  @IsOptional()
+  @IsEnum(SubscriptionFeedMode)
+  feedMode?: SubscriptionFeedMode;
 }

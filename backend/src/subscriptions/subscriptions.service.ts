@@ -60,6 +60,7 @@ export class SubscriptionsService {
         fetchIntervalMinutes: dto.fetchIntervalMinutes ?? null,
         userAgent: dto.userAgent?.trim() || null,
         hwid: dto.hwid?.trim() || null,
+        feedMode: dto.feedMode ?? 'BASE64',
       },
     });
   }
@@ -84,6 +85,9 @@ export class SubscriptionsService {
     if (dto.sourceUrl !== undefined) {
       data.sourceUrl =
         dto.sourceUrl === null ? null : dto.sourceUrl.trim() || null;
+    }
+    if (dto.feedMode !== undefined) {
+      data.feedMode = dto.feedMode;
     }
 
     return this.prisma.subscription.update({
@@ -115,6 +119,8 @@ export class SubscriptionsService {
 
     await ensureUngroupedConnectGroupExists(this.prisma);
 
+    const isJsonMode = subscription.feedMode === 'JSON';
+
     const headers = new Headers();
     const ua = subscription.userAgent?.trim();
     if (ua) {
@@ -123,6 +129,21 @@ export class SubscriptionsService {
     const hw = subscription.hwid?.trim();
     if (hw) {
       headers.set(SUBSCRIPTION_FETCH_HWID_HEADER, hw);
+      // Happ также шлёт HWID без префикса X-
+      headers.set('HWID', hw);
+    }
+
+    // JSON-режим требует полного набора заголовков, как отправляет Happ-клиент
+    if (isJsonMode) {
+      headers.set(
+        'Accept',
+        'application/json, text/plain, */*',
+      );
+      headers.set('Accept-Language', 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7');
+      headers.set('Accept-Encoding', 'gzip, deflate, br');
+      headers.set('Cache-Control', 'no-cache');
+      headers.set('Pragma', 'no-cache');
+      headers.set('Connection', 'keep-alive');
     }
 
     const rawTimeout = Number(
@@ -137,6 +158,12 @@ export class SubscriptionsService {
       signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await response.text();
+
+    // JSON-режим: парсим JSON-ответ и синхронизируем коннекты в БД
+    if (isJsonMode) {
+      return await this.fetchConnectsFromJson(id, text);
+    }
+
     const decodedPayload = this.decodeSubscriptionRawPayload(text);
     const links = this.extractUriLinesFromDecodedContent(decodedPayload);
     const remoteTitle = this.resolveRemoteSubscriptionTitle(
@@ -335,6 +362,270 @@ export class SubscriptionsService {
       total: connects.length,
       connects,
     };
+  }
+
+  /**
+   * JSON-режим: парсит ответ подписки как JSON и синхронизирует коннекты в БД
+   * по той же логике upsert/delete, что и BASE64-режим.
+   * Поддерживает форматы: массив URI-строк, массив объектов { name, url },
+   * Happ-формат (массив v2ray-конфигов [{ remarks, outbounds }]) и Sing-box ({ outbounds }).
+   */
+  private async fetchConnectsFromJson(
+    subscriptionId: string,
+    rawText: string,
+  ): Promise<{
+    subscriptionId: string;
+    fetchedAt: Date | null;
+    feedMode: string;
+    title: string;
+    fetchedProfileTitle: string | null;
+    fetchedSubscriptionExpiresAt: Date | null;
+    total: number;
+    connects: { id: string; name: string }[];
+  }> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawText.trim());
+    } catch {
+      this.logger.warn(
+        `[JSON-mode] subscriptionId=${subscriptionId}: не удалось разобрать JSON: ${rawText.slice(0, 200)}`,
+      );
+      const sub = await this.prisma.subscription.findUnique({
+        where: { id: subscriptionId },
+        select: { title: true },
+      });
+      return {
+        subscriptionId,
+        fetchedAt: null,
+        feedMode: 'JSON',
+        title: sub?.title ?? '',
+        fetchedProfileTitle: null,
+        fetchedSubscriptionExpiresAt: null,
+        total: 0,
+        connects: [],
+      };
+    }
+
+    // --- Парсинг: собираем { originalName, raw, protocol } ---
+    type RawEntry = { originalName: string; raw: string; protocol: string };
+    const entries: RawEntry[] = [];
+
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        // Массив URI-строк
+        if (typeof item === 'string') {
+          const s = item.trim();
+          if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+            entries.push({
+              originalName: this.extractConnectName(s),
+              raw: s,
+              protocol: this.extractProtocol(s),
+            });
+          }
+          continue;
+        }
+        if (!item || typeof item !== 'object') continue;
+        const obj = item as Record<string, unknown>;
+
+        // Happ/v2ray формат: [{ remarks, outbounds: [{ tag:'proxy', protocol, settings }] }]
+        if ('outbounds' in obj && Array.isArray(obj['outbounds'])) {
+          const remarks = String(obj['remarks'] ?? '').trim();
+          const proxy = (obj['outbounds'] as Record<string, unknown>[]).find(
+            (o) => o['tag'] === 'proxy',
+          );
+          const protocol = proxy ? String(proxy['protocol'] ?? '').trim() : 'unknown';
+          const server = this.extractV2rayServer(proxy);
+          const port = this.extractV2rayPort(proxy);
+          // Синтетический raw: json:// — стабильный ключ для дедупликации
+          const rawKey = `json://${protocol}/${server}${port ? `:${port}` : ''}/${encodeURIComponent(remarks)}`;
+          const displayName = remarks || (server ? `${protocol}:${server}` : protocol);
+          entries.push({ originalName: displayName, raw: rawKey, protocol });
+          continue;
+        }
+
+        // Простой объект: { name/tag/remarks, url/link/address }
+        const rawUri = String(obj['url'] ?? obj['link'] ?? obj['address'] ?? '').trim();
+        const name = String(obj['name'] ?? obj['tag'] ?? obj['remarks'] ?? rawUri).trim();
+        if (rawUri) {
+          entries.push({
+            originalName: name || rawUri,
+            raw: rawUri,
+            protocol: this.extractProtocol(rawUri),
+          });
+        }
+      }
+    // Sing-box: { outbounds: [...] }
+    } else if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const outbounds = Array.isArray(obj['outbounds']) ? obj['outbounds'] : [];
+      for (const ob of outbounds) {
+        if (!ob || typeof ob !== 'object') continue;
+        const o = ob as Record<string, unknown>;
+        const tag = String(o['tag'] ?? '').trim();
+        const type = String(o['type'] ?? o['protocol'] ?? '').trim();
+        if (['selector', 'urltest', 'direct', 'dns', 'block', 'freedom', 'blackhole', ''].includes(type)) continue;
+        const server = this.extractV2rayServer(o);
+        const port = this.extractV2rayPort(o);
+        const rawKey = `json://${type}/${server}${port ? `:${port}` : ''}/${encodeURIComponent(tag)}`;
+        const displayName = tag || (type && server ? `${type}:${server}` : type || server || 'unknown');
+        entries.push({ originalName: displayName, raw: rawKey, protocol: type });
+      }
+    }
+
+    this.logger.log(
+      `[JSON-mode] subscriptionId=${subscriptionId}: найдено ${entries.length} записей`,
+    );
+
+    // --- Sync в БД (та же логика, что в BASE64-режиме) ---
+    const existingConnects = await this.prisma.connect.findMany({
+      where: { subscriptionId },
+      select: {
+        id: true,
+        raw: true,
+        name: true,
+        originalName: true,
+        sortOrder: true,
+        protocol: true,
+        identityKey: true,
+        createdAt: true,
+      },
+    });
+
+    // Дедупликация по raw (последняя запись побеждает)
+    const incomingByRaw = new Map<string, RawEntry>();
+    for (const e of entries) {
+      incomingByRaw.set(e.raw, e);
+    }
+
+    const matchedIds = new Set<string>();
+    const poolSorted = [...existingConnects].sort((a, b) => {
+      const byOrder = a.sortOrder - b.sortOrder;
+      return byOrder !== 0 ? byOrder : a.createdAt.getTime() - b.createdAt.getTime();
+    });
+
+    const globalMaxAgg = await this.prisma.connect.aggregate({
+      _max: { sortOrder: true },
+    });
+    let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
+    const newUngroupedDisplayNames: string[] = [];
+
+    for (const [, incoming] of incomingByRaw) {
+      const existing = poolSorted.find(
+        (c) => !matchedIds.has(c.id) && c.raw === incoming.raw,
+      );
+
+      if (!existing) {
+        nextSortOrder += 1;
+        await this.prisma.connect.create({
+          data: {
+            originalName: incoming.originalName,
+            name: incoming.originalName,
+            raw: incoming.raw,
+            identityKey: incoming.raw,
+            protocol: incoming.protocol,
+            status: 'ACTIVE',
+            hidden: false,
+            tags: [],
+            groupNames: [UNGROUPED_CONNECT_GROUP_NAME],
+            sortOrder: nextSortOrder,
+            subscriptionId,
+          },
+        });
+        newUngroupedDisplayNames.push(incoming.originalName);
+        continue;
+      }
+
+      matchedIds.add(existing.id);
+
+      const data: { originalName?: string; protocol?: string } = {};
+      if (existing.originalName !== incoming.originalName) data.originalName = incoming.originalName;
+      if (existing.protocol !== incoming.protocol) data.protocol = incoming.protocol;
+      if (Object.keys(data).length > 0) {
+        await this.prisma.connect.update({ where: { id: existing.id }, data });
+      }
+    }
+
+    const staleIds = existingConnects.filter((c) => !matchedIds.has(c.id)).map((c) => c.id);
+    if (staleIds.length > 0) {
+      await this.prisma.connect.deleteMany({ where: { id: { in: staleIds } } });
+    }
+
+    const updatedSubscription = await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: { lastFetchedAt: new Date() },
+    });
+
+    if (newUngroupedDisplayNames.length > 0) {
+      await this.notifyTelegramNewUngroupedConnects(
+        updatedSubscription.title,
+        newUngroupedDisplayNames,
+      );
+    }
+
+    const connects = await this.prisma.connect.findMany({
+      where: { subscriptionId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true },
+    });
+
+    return {
+      subscriptionId,
+      fetchedAt: updatedSubscription.lastFetchedAt,
+      feedMode: 'JSON',
+      title: updatedSubscription.title,
+      fetchedProfileTitle: null,
+      fetchedSubscriptionExpiresAt: null,
+      total: connects.length,
+      connects,
+    };
+  }
+
+  /**
+   * Извлекает адрес сервера из v2ray/xray outbound-объекта.
+   * Поддерживает vnext[].address (vless/vmess/trojan) и прямое поле address/server.
+   */
+  private extractV2rayServer(
+    proxy: Record<string, unknown> | null | undefined,
+  ): string {
+    if (!proxy) return '';
+    const settings = proxy['settings'];
+    if (settings && typeof settings === 'object') {
+      const s = settings as Record<string, unknown>;
+      const vnext = s['vnext'];
+      if (Array.isArray(vnext) && vnext.length > 0) {
+        const first = vnext[0] as Record<string, unknown>;
+        return String(first['address'] ?? '').trim();
+      }
+      if (s['address']) return String(s['address']).trim();
+      if (s['server']) return String(s['server']).trim();
+    }
+    if (proxy['server']) return String(proxy['server']).trim();
+    if (proxy['address']) return String(proxy['address']).trim();
+    return '';
+  }
+
+  /**
+   * Извлекает порт из v2ray/xray outbound-объекта.
+   */
+  private extractV2rayPort(
+    proxy: Record<string, unknown> | null | undefined,
+  ): number | null {
+    if (!proxy) return null;
+    const settings = proxy['settings'];
+    if (settings && typeof settings === 'object') {
+      const s = settings as Record<string, unknown>;
+      const vnext = s['vnext'];
+      if (Array.isArray(vnext) && vnext.length > 0) {
+        const first = vnext[0] as Record<string, unknown>;
+        const p = Number(first['port']);
+        if (Number.isFinite(p)) return p;
+      }
+      const p = Number(s['port']);
+      if (Number.isFinite(p)) return p;
+    }
+    const p = Number(proxy['port'] ?? proxy['server_port']);
+    if (Number.isFinite(p)) return p;
+    return null;
   }
 
   /**

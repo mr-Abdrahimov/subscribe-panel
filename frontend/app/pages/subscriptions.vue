@@ -6,6 +6,8 @@ definePageMeta({
   layout: 'dashboard'
 });
 
+type FeedMode = 'BASE64' | 'JSON';
+
 type SubscriptionItem = {
   id: string;
   title: string;
@@ -23,6 +25,7 @@ type SubscriptionItem = {
   fetchIntervalMinutes: number | null;
   userAgent?: string | null;
   hwid?: string | null;
+  feedMode?: FeedMode;
 };
 
 const fetchIntervalInputSchema = yup.string().test(
@@ -46,11 +49,13 @@ const subscriptionHeadersSchema = yup.object({
 });
 
 type FetchedConnect = {
-  id: string;
+  id?: string;
   name: string;
+  raw?: string;
 };
 
 type FetchConnectsResponse = {
+  feedMode?: FeedMode;
   fetchedAt: string;
   title?: string;
   fetchedProfileTitle?: string | null;
@@ -210,11 +215,13 @@ const formSourceUrl = ref('');
 const formFetchIntervalMinutes = ref<string>('');
 const formUserAgent = ref('');
 const formHwid = ref('');
+const formFeedMode = ref<FeedMode>('BASE64');
 const loading = ref(false);
 const subscriptions = ref<SubscriptionItem[]>([]);
 
 const isConnectsModalOpen = ref(false);
 const fetchedConnects = ref<FetchedConnect[]>([]);
+const fetchedConnectsFeedMode = ref<FeedMode>('BASE64');
 /** id подписки, для которой сейчас идёт POST /fetch */
 const fetchingSubscriptionId = ref<string | null>(null);
 const isDeleteConfirmOpen = ref(false);
@@ -253,6 +260,10 @@ const columns: TableColumn<SubscriptionItem>[] = [
     header: 'Получено'
   },
   {
+    id: 'feedMode',
+    header: 'Формат'
+  },
+  {
     id: 'actions',
     header: 'Действия'
   }
@@ -270,6 +281,7 @@ function openCreate() {
   formFetchIntervalMinutes.value = '';
   formUserAgent.value = '';
   formHwid.value = '';
+  formFeedMode.value = 'BASE64';
   isModalOpen.value = true;
 }
 
@@ -282,6 +294,7 @@ function openEdit(row: SubscriptionItem) {
     row.fetchIntervalMinutes != null ? String(row.fetchIntervalMinutes) : '';
   formUserAgent.value = row.userAgent ?? '';
   formHwid.value = row.hwid ?? '';
+  formFeedMode.value = row.feedMode ?? 'BASE64';
   isModalOpen.value = true;
 }
 
@@ -366,6 +379,7 @@ async function submit() {
           fetchIntervalMinutes,
           userAgent,
           hwid,
+          feedMode: formFeedMode.value,
         },
       });
       toast.add({ title: 'Подписка обновлена', color: 'success' });
@@ -379,6 +393,7 @@ async function submit() {
           fetchIntervalMinutes,
           userAgent,
           hwid,
+          feedMode: formFeedMode.value,
         },
       });
       toast.add({ title: 'Подписка добавлена', color: 'success' });
@@ -425,6 +440,7 @@ async function fetchConnects(id: string) {
         method: 'POST',
       },
     );
+    fetchedConnectsFeedMode.value = response.feedMode ?? 'BASE64';
     toast.add({
       title: `Получено коннектов: ${response.total}`,
       color: 'success',
@@ -570,6 +586,16 @@ async function copyToClipboard(text: string) {
           <span v-else class="text-error">Не получили</span>
         </template>
 
+        <template #feedMode-cell="{ row }">
+          <UBadge
+            :color="row.original.feedMode === 'JSON' ? 'info' : 'neutral'"
+            variant="soft"
+            size="sm"
+          >
+            {{ row.original.feedMode === 'JSON' ? 'JSON' : 'Base64' }}
+          </UBadge>
+        </template>
+
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
             <UTooltip
@@ -677,6 +703,31 @@ async function copyToClipboard(text: string) {
               placeholder="Идентификатор устройства"
               autocomplete="off"
             />
+          </UFormField>
+
+          <UFormField
+            label="Режим получения ленты"
+            description="Base64 — стандартный формат (коннекты сохраняются в базу). JSON — ответ парсится как JSON и коннекты также сохраняются в базу."
+            class="w-full"
+          >
+            <div class="flex w-full rounded-md overflow-hidden border border-(--ui-border) divide-x divide-(--ui-border)">
+              <UButton
+                class="flex-1 justify-center rounded-none"
+                :color="formFeedMode === 'BASE64' ? 'primary' : 'neutral'"
+                :variant="formFeedMode === 'BASE64' ? 'solid' : 'ghost'"
+                @click="formFeedMode = 'BASE64'"
+              >
+                Base64
+              </UButton>
+              <UButton
+                class="flex-1 justify-center rounded-none"
+                :color="formFeedMode === 'JSON' ? 'primary' : 'neutral'"
+                :variant="formFeedMode === 'JSON' ? 'solid' : 'ghost'"
+                @click="formFeedMode = 'JSON'"
+              >
+                JSON
+              </UButton>
+            </div>
           </UFormField>
         </div>
       </template>

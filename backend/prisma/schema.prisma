@@ -17,6 +17,11 @@ enum ConnectStatus {
   INACTIVE
 }
 
+enum SubscriptionFeedMode {
+  BASE64
+  JSON
+}
+
 model User {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String   @unique
@@ -51,6 +56,8 @@ model Subscription {
   userAgent    String?
   /// Доп. заголовок X-HWID при GET к url, если задан
   hwid         String?
+  /// Режим получения ленты: BASE64 (стандарт, по умолчанию) или JSON (отдаёт список без сохранения в Коннекты)
+  feedMode     SubscriptionFeedMode @default(BASE64)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   connects     Connect[]
