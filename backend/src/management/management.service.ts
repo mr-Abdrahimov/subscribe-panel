@@ -1921,15 +1921,20 @@ export class ManagementService implements OnModuleInit {
     }
 
     // Добавляем все активные балансировщики независимо от groupNames пользователя
+    // Фильтруем по protocol='balancer' — надёжнее чем balancerId: {not:null} в MongoDB
     const balancerConnects = await this.prisma.connect.findMany({
-      where: { status: 'ACTIVE', balancerId: { not: null } },
+      where: { status: 'ACTIVE', protocol: 'balancer' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       select: { id: true, raw: true, name: true, rawJson: true },
     });
+    this.logger.debug(
+      `buildJsonFeed user=${user.id}: groups=[${includedNames.join(',')}] regularItems=${items.length} balancers=${balancerConnects.length}`,
+    );
     for (const c of balancerConnects) {
       if (seenConnectIds.has(c.id)) continue;
       seenConnectIds.add(c.id);
       const item = processConnect(c);
+      this.logger.debug(`  balancer connect id=${c.id} name="${c.name}" rawJson=${c.rawJson !== null ? 'present' : 'NULL'} item=${item ? 'ok' : 'null'}`);
       if (!item) continue;
       items.push(
         metaBlock

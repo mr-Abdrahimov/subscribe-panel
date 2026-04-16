@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateBalancerDto } from './dto/create-balancer.dto';
 import type { UpdateBalancerDto } from './dto/update-balancer.dto';
@@ -84,7 +85,7 @@ export class BalancersService {
         originalName: dto.name,
         groupNames: [UNGROUPED_CONNECT_GROUP_NAME],
         raw: `${BALANCER_CONNECT_RAW_PREFIX}${balancer.id}`,
-        rawJson: rawJson as unknown as Parameters<typeof this.prisma.connect.create>[0]['data']['rawJson'],
+        rawJson: rawJson as Prisma.InputJsonValue,
         protocol: 'balancer',
         status: 'ACTIVE',
         hidden: false,
@@ -139,7 +140,7 @@ export class BalancersService {
       data: {
         name: newName,
         originalName: newName,
-        rawJson: rawJson as unknown as Parameters<typeof this.prisma.connect.updateMany>[0]['data']['rawJson'],
+        rawJson: rawJson as Prisma.InputJsonValue,
       },
     });
 
