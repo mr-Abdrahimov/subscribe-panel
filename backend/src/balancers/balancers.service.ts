@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { CreateBalancerDto } from './dto/create-balancer.dto';
 import type { UpdateBalancerDto } from './dto/update-balancer.dto';
 import { UNGROUPED_CONNECT_GROUP_NAME } from '../common/ungrouped-connect-group';
+import { uriToOutbound, extractProxyOutbound } from '../subscriptions/uri-to-outbound.util';
 
 /** Префикс raw для коннекта-балансировщика — используется для идентификации */
 const BALANCER_CONNECT_RAW_PREFIX = 'balancer://';
@@ -158,20 +159,70 @@ export class BalancersService {
   }
 
   /**
-   * Строит JSON-объект selector outbound для JSON-ленты пользователя.
-   * Формат совместим с v2ray/Xray selector, который выбирает самый быстрый сервер.
+   * Строит полный v2ray/Xray конфиг с балансировщиком leastLoad.
+   * Каждый коннект из пула — отдельный outbound (proxy, proxy-2, proxy-3...).
+   * routing.balancers выбирает самый быстрый через burstObservatory.
    */
   private buildSelectorOutbound(
     name: string,
     connects: Array<{ id: string; name: string; raw: string; rawJson: unknown }>,
   ): Record<string, unknown> {
-    const selectors = connects.map((c) => c.name);
+    // Строим outbound-объект для каждого коннекта пула
+    const proxyOutbounds: Record<string, unknown>[] = [];
+    for (let i = 0; i < connects.length; i++) {
+      const c = connects[i];
+      const tag = i === 0 ? 'proxy' : `proxy-${i + 1}`;
+
+      // Пытаемся получить outbound из rawJson или из URI
+      let outbound: Record<string, unknown> | null = null;
+      if (c.rawJson && typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
+        outbound = extractProxyOutbound(c.rawJson as Record<string, unknown>);
+      }
+      if (!outbound && c.raw && !c.raw.startsWith('balancer://') && !c.raw.startsWith('json://')) {
+        const parsed = uriToOutbound(c.raw);
+        if (parsed) outbound = parsed as unknown as Record<string, unknown>;
+      }
+
+      if (outbound) {
+        // Убираем tag из outbound (он может быть 'proxy'), заменяем на наш
+        const { tag: _t, ...rest } = outbound as Record<string, unknown>;
+        void _t;
+        proxyOutbounds.push({ ...rest, tag });
+      }
+    }
+
+    // Если не удалось сгенерировать ни одного outbound — пустой конфиг
+    if (proxyOutbounds.length === 0) {
+      this.logger.warn(`buildSelectorOutbound: no valid outbounds for balancer "${name}"`);
+    }
+
+    const proxyTags = proxyOutbounds.map((o) => o['tag'] as string);
+    const balancerTag = 'Super_Balancer';
 
     return {
       remarks: name,
       dns: { servers: ['1.1.1.1', '1.0.0.1'], queryStrategy: 'UseIP' },
       routing: {
-        rules: [{ type: 'field', protocol: ['bittorrent'], outboundTag: 'direct' }],
+        rules: [
+          { type: 'field', protocol: ['bittorrent'], outboundTag: 'direct' },
+          { type: 'field', network: 'tcp,udp', balancerTag },
+        ],
+        balancers: [
+          {
+            tag: balancerTag,
+            selector: proxyTags,
+            strategy: {
+              type: 'leastLoad',
+              settings: {
+                maxRTT: '1s',
+                expected: 2,
+                baselines: ['1s'],
+                tolerance: 0.01,
+              },
+            },
+            fallbackTag: 'direct',
+          },
+        ],
         domainMatcher: 'hybrid',
         domainStrategy: 'IPIfNonMatch',
       },
@@ -194,17 +245,21 @@ export class BalancersService {
         },
       ],
       outbounds: [
-        {
-          tag: 'proxy',
-          protocol: 'selector',
-          settings: {
-            selectors,
-            strategy: 'leastping',
-          },
-        },
+        ...proxyOutbounds,
         { tag: 'direct', protocol: 'freedom' },
         { tag: 'block', protocol: 'blackhole' },
       ],
+      burstObservatory: {
+        pingConfig: {
+          timeout: '3s',
+          interval: '1m',
+          sampling: 1,
+          destination: 'http://www.gstatic.com/generate_204',
+          connectivity: '',
+        },
+        subjectSelector: proxyTags,
+      },
+      // Служебное поле — не отправляется в Happ, используется для обновления при редактировании
       balancerConnectIds: connects.map((c) => c.id),
     };
   }
