@@ -2008,10 +2008,10 @@ export class ManagementService implements OnModuleInit {
       };
     };
 
-    // Все группы пользователя обходим в порядке includedNames, внутри каждой группы — по sortOrder.
-    // Балансировщики обрабатываются наравне с обычными коннектами — их позиция определяется
-    // sortOrder в той группе, куда их переместил администратор.
-    // После групп добавляем балансировщики, которые не попали ни в одну из групп пользователя.
+    // Обходим только включённые пользователем группы в порядке includedNames,
+    // внутри каждой группы — по sortOrder.
+    // Балансировщик показывается только если его группа входит в includedNames.
+    // Если пользователь отключил группу — балансировщики из неё не отображаются.
     for (const gName of includedNames) {
       const batch = await this.prisma.connect.findMany({
         where: { status: 'ACTIVE', groupNames: { has: gName } },
@@ -2029,22 +2029,9 @@ export class ManagementService implements OnModuleInit {
       }
     }
 
-    // Балансировщики, которые не входят ни в одну из групп пользователя — добавляем в конец
-    const balancerConnects = await this.prisma.connect.findMany({
-      where: { status: 'ACTIVE', protocol: 'balancer' },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      select: { id: true, raw: true, name: true, rawJson: true },
-    });
     this.logger.debug(
-      `buildJsonFeed user=${user.id}: groups=[${includedNames.join(',')}] items=${items.length} balancers=${balancerConnects.length}`,
+      `buildJsonFeed user=${user.id}: groups=[${includedNames.join(',')}] items=${items.length}`,
     );
-    for (const c of balancerConnects) {
-      if (seenConnectIds.has(c.id)) continue; // уже добавлен через группу
-      seenConnectIds.add(c.id);
-      const item = await filterBalancerForUser(c);
-      if (!item) continue;
-      items.push(metaBlock ? this.injectMetaBlock(item, metaBlock) : item);
-    }
 
     return {
       jsonBody: JSON.stringify(items),
