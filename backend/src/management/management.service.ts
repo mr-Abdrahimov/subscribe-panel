@@ -1859,6 +1859,10 @@ export class ManagementService implements OnModuleInit {
   }> {
     const entries = this.getEffectiveSubscriptionGroupEntries(user);
     const includedNames = entries.filter((e) => e.include).map((e) => e.name);
+    // Все группы, назначенные пользователю администратором (независимо от того,
+    // включил ли пользователь их сам). Используется для фильтрации пула балансировщика —
+    // пользователь не должен влиять на состав балансировщика своими отключениями групп.
+    const assignedNames = entries.map((e) => e.name);
 
     const profileTitle = (
       await this.resolveSubscriptionProfileTitleForPanelUser(user)
@@ -1872,10 +1876,11 @@ export class ManagementService implements OnModuleInit {
     // Включает: объявление как sub-info-text и ссылку на страницу подписки
     const metaBlock = this.buildJsonFeedMetaBlock(announceText, pageUrl);
 
-    // Сначала собираем ID всех коннектов, доступных пользователю (по его группам),
-    // чтобы потом фильтровать пул балансировщика.
+    // Собираем ID всех коннектов, доступных пользователю по НАЗНАЧЕННЫМ группам
+    // (включая те, что пользователь сам отключил) — для фильтрации пула балансировщика.
+    // Коннекты из групп, не назначенных пользователю, в балансировщик не попадут.
     const accessibleConnectIds = new Set<string>();
-    for (const gName of includedNames) {
+    for (const gName of assignedNames) {
       const ids = await this.prisma.connect.findMany({
         where: { status: 'ACTIVE', groupNames: { has: gName }, protocol: { not: 'balancer' } },
         select: { id: true },
