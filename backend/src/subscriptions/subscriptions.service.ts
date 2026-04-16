@@ -5,6 +5,7 @@ import {
   ensureUngroupedConnectGroupExists,
   UNGROUPED_CONNECT_GROUP_NAME,
 } from '../common/ungrouped-connect-group';
+import { BalancersService } from '../balancers/balancers.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import {
@@ -39,6 +40,7 @@ export class SubscriptionsService {
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
     private readonly config: ConfigService,
+    private readonly balancersService: BalancersService,
   ) {}
 
   findAll() {
@@ -99,6 +101,15 @@ export class SubscriptionsService {
 
   async remove(id: string) {
     await this.ensureExists(id);
+
+    // Перед удалением вычищаем эти коннекты из пулов балансировщиков
+    const connectsToDelete = await this.prisma.connect.findMany({
+      where: { subscriptionId: id },
+      select: { id: true },
+    });
+    for (const { id: cid } of connectsToDelete) {
+      await this.balancersService.removeConnectFromAllBalancers(cid);
+    }
 
     await this.prisma.connect.deleteMany({
       where: { subscriptionId: id },
@@ -323,6 +334,9 @@ export class SubscriptionsService {
       .filter((c) => !matchedIds.has(c.id))
       .map((c) => c.id);
     if (staleIds.length > 0) {
+      for (const staleId of staleIds) {
+        await this.balancersService.removeConnectFromAllBalancers(staleId);
+      }
       await this.prisma.connect.deleteMany({
         where: { id: { in: staleIds } },
       });
@@ -631,6 +645,9 @@ export class SubscriptionsService {
 
     const staleIds = existingConnects.filter((c) => !matchedIds.has(c.id)).map((c) => c.id);
     if (staleIds.length > 0) {
+      for (const staleId of staleIds) {
+        await this.balancersService.removeConnectFromAllBalancers(staleId);
+      }
       await this.prisma.connect.deleteMany({ where: { id: { in: staleIds } } });
     }
 
