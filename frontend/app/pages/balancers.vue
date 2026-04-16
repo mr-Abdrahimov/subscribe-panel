@@ -286,15 +286,14 @@ onMounted(() => {
       </UTable>
     </UCard>
 
-    <!-- Боковая панель создания / редактирования -->
-    <USlideover
+    <!-- Модальное окно создания / редактирования -->
+    <UModal
       v-model:open="isModalOpen"
       :title="editId ? 'Редактировать балансировщик' : 'Добавить балансировщик'"
-      side="right"
-      :ui="{ body: 'flex-1 overflow-y-auto' }"
+      :ui="{ content: 'max-h-[90vh] flex flex-col', body: 'flex-1 overflow-y-auto' }"
     >
       <template #body>
-        <div class="space-y-5 p-4">
+        <div class="space-y-5 p-1">
           <UFormField
             label="Название"
             required
@@ -380,7 +379,7 @@ onMounted(() => {
       </template>
 
       <template #footer>
-        <div class="flex justify-end gap-2 p-4 border-t border-[var(--cosmic-border)]">
+        <div class="flex justify-end gap-2">
           <UButton color="neutral" variant="ghost" @click="isModalOpen = false">
             Отмена
           </UButton>
@@ -393,7 +392,7 @@ onMounted(() => {
           </UButton>
         </div>
       </template>
-    </USlideover>
+    </UModal>
 
     <!-- Подтверждение удаления -->
     <UModal v-model:open="isDeleteConfirmOpen" title="Удалить балансировщик?">
