@@ -1874,6 +1874,31 @@ export class ManagementService implements OnModuleInit {
 
     const seenConnectIds = new Set<string>();
     const items: unknown[] = [];
+
+    const processConnect = (
+      c: { id: string; raw: string; name: string; rawJson: unknown },
+    ): Record<string, unknown> | null => {
+      if (c.rawJson !== null && c.rawJson !== undefined) {
+        if (typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
+          const obj = c.rawJson as Record<string, unknown>;
+          // outbound-объект (от uriToOutbound) — оборачиваем в полный конфиг
+          if (obj['tag'] === 'proxy' && obj['protocol'] && obj['settings']) {
+            return this.outboundToHappConfig(obj, c.name);
+          }
+          // Полный v2ray-конфиг (от JSON-подписки или балансировщика) — обновляем remarks
+          return { ...obj, remarks: c.name };
+        }
+        return null;
+      }
+      if (!c.raw.startsWith('json://') && !c.raw.startsWith('balancer://')) {
+        const outbound = uriToOutbound(c.raw);
+        if (outbound) {
+          return this.outboundToHappConfig(outbound as unknown as Record<string, unknown>, c.name);
+        }
+      }
+      return null;
+    };
+
     for (const gName of includedNames) {
       const batch = await this.prisma.connect.findMany({
         where: { status: 'ACTIVE', groupNames: { has: gName } },
@@ -1883,47 +1908,34 @@ export class ManagementService implements OnModuleInit {
       for (const c of batch) {
         if (seenConnectIds.has(c.id)) continue;
         seenConnectIds.add(c.id);
-
-        let item: Record<string, unknown>;
-
-        if (c.rawJson !== null && c.rawJson !== undefined) {
-          // Полный JSON-конфиг (Happ/v2ray формат) — обновляем remarks именем из панели
-          if (typeof c.rawJson === 'object' && !Array.isArray(c.rawJson)) {
-            const obj = c.rawJson as Record<string, unknown>;
-            // Если это outbound-объект (от uriToOutbound) — оборачиваем в полный конфиг
-            if (obj['tag'] === 'proxy' && obj['protocol'] && obj['settings']) {
-              item = this.outboundToHappConfig(obj, c.name);
-            } else {
-              // Полный v2ray-конфиг от JSON-подписки — обновляем remarks
-              item = { ...obj, remarks: c.name };
-            }
-          } else {
-            items.push(c.rawJson);
-            continue;
-          }
-        } else if (!c.raw.startsWith('json://')) {
-          // URI-коннект без rawJson — конвертируем на лету
-          const outbound = uriToOutbound(c.raw);
-          if (outbound) {
-            item = this.outboundToHappConfig(outbound as unknown as Record<string, unknown>, c.name);
-          } else {
-            continue;
-          }
-        } else {
-          continue;
-        }
-
-        // Добавляем meta-блок с объявлением и ссылкой на страницу в каждый объект
-        if (metaBlock) {
-          const existingMeta =
-            item['meta'] && typeof item['meta'] === 'object' && !Array.isArray(item['meta'])
-              ? (item['meta'] as Record<string, unknown>)
-              : {};
-          item = { ...item, meta: { ...metaBlock, ...existingMeta } };
-        }
-
-        items.push(item);
+        // Балансировщики добавляются отдельным блоком ниже, чтобы всегда быть в ленте
+        if (c.raw.startsWith('balancer://')) continue;
+        const item = processConnect(c);
+        if (!item) continue;
+        items.push(
+          metaBlock
+            ? this.injectMetaBlock(item, metaBlock)
+            : item,
+        );
       }
+    }
+
+    // Добавляем все активные балансировщики независимо от groupNames пользователя
+    const balancerConnects = await this.prisma.connect.findMany({
+      where: { status: 'ACTIVE', balancerId: { not: null } },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      select: { id: true, raw: true, name: true, rawJson: true },
+    });
+    for (const c of balancerConnects) {
+      if (seenConnectIds.has(c.id)) continue;
+      seenConnectIds.add(c.id);
+      const item = processConnect(c);
+      if (!item) continue;
+      items.push(
+        metaBlock
+          ? this.injectMetaBlock(item, metaBlock)
+          : item,
+      );
     }
 
     return {
@@ -1984,6 +1996,17 @@ export class ManagementService implements OnModuleInit {
    * Оборачивает outbound-объект (tag: "proxy") в минимальный Happ-совместимый v2ray конфиг
    * с dns, routing, inbounds и remarks.
    */
+  private injectMetaBlock(
+    item: Record<string, unknown>,
+    metaBlock: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const existingMeta =
+      item['meta'] && typeof item['meta'] === 'object' && !Array.isArray(item['meta'])
+        ? (item['meta'] as Record<string, unknown>)
+        : {};
+    return { ...item, meta: { ...metaBlock, ...existingMeta } };
+  }
+
   private outboundToHappConfig(
     proxy: Record<string, unknown>,
     displayName: string,
