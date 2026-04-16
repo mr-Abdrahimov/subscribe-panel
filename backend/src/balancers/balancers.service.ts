@@ -307,11 +307,12 @@ export class BalancersService {
       ],
       burstObservatory: {
         pingConfig: {
-          timeout: '3s',
+          timeout: '2s',
           interval: '1m',
-          sampling: 1,
+          sampling: 3,
           destination: 'http://www.gstatic.com/generate_204',
-          connectivity: '',
+          // connectivity: '',
+          enableConcurrency: true,
         },
         subjectSelector: proxyTags,
       },

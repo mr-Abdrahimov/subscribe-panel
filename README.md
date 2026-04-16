@@ -209,6 +209,51 @@ cat /opt/subscribe-panel/.env
 
 ---
 
+## Резервное копирование базы данных
+
+### Создать бэкап
+
+```bash
+cd /opt/subscribe-panel
+
+# Создать дамп в виде сжатого архива
+docker compose exec mongodb mongodump \
+  --db subscribe_panel \
+  --archive \
+  --gzip > backup_$(date +%Y%m%d_%H%M%S).gz
+```
+
+Файл `backup_YYYYMMDD_HHMMSS.gz` появится в текущей директории (`/opt/subscribe-panel`).
+
+### Скачать бэкап на локальную машину
+
+```bash
+scp root@ВАШ_ДОМЕН:/opt/subscribe-panel/backup_*.gz ./
+```
+
+### Восстановить из бэкапа
+
+```bash
+cd /opt/subscribe-panel
+
+# Восстановить из архива (заменить имя файла)
+docker compose exec -T mongodb mongorestore \
+  --db subscribe_panel \
+  --archive \
+  --gzip < backup_YYYYMMDD_HHMMSS.gz
+```
+
+> **Внимание:** восстановление перезаписывает текущие данные. Перед восстановлением рекомендуется сделать свежий бэкап.
+
+### Очистка старых бэкапов
+
+```bash
+# Удалить бэкапы старше 7 дней
+find /opt/subscribe-panel -name 'backup_*.gz' -mtime +7 -delete
+```
+
+---
+
 ## Структура проекта
 
 ```
