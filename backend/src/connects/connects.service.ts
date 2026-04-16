@@ -4,13 +4,17 @@ import {
   ensureUngroupedConnectGroupExists,
   UNGROUPED_CONNECT_GROUP_NAME,
 } from '../common/ungrouped-connect-group';
+import { BalancersService } from '../balancers/balancers.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ConnectsService {
   private legacyNormalized = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly balancersService: BalancersService,
+  ) {}
 
   async findAll() {
     await this.normalizeLegacyConnects();
@@ -112,6 +116,9 @@ export class ConnectsService {
   async remove(id: string) {
     await this.normalizeLegacyConnects();
     await this.ensureExists(id);
+
+    // Удаляем коннект из пулов всех балансировщиков до физического удаления
+    await this.balancersService.removeConnectFromAllBalancers(id);
 
     await this.prisma.connect.delete({
       where: { id },

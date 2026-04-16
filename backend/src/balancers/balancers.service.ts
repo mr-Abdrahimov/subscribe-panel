@@ -159,6 +159,62 @@ export class BalancersService {
   }
 
   /**
+   * Удаляет коннект из пула всех балансировщиков, которые на него ссылаются.
+   * Вызывается автоматически при удалении коннекта.
+   * Если после удаления пул балансировщика становится пустым — балансировщик тоже удаляется.
+   */
+  async removeConnectFromAllBalancers(connectId: string): Promise<void> {
+    // Находим все балансировщики, у которых в connectIds есть этот ID
+    const affected = await this.prisma.balancer.findMany({
+      where: { connectIds: { has: connectId } },
+      include: {
+        connects: {
+          where: { balancerId: { not: null } },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (affected.length === 0) return;
+
+    for (const balancer of affected) {
+      const newConnectIds = balancer.connectIds.filter((cid) => cid !== connectId);
+
+      if (newConnectIds.length === 0) {
+        // Пул пуст — удаляем сам балансировщик (коннект удалится каскадно)
+        await this.prisma.balancer.delete({ where: { id: balancer.id } });
+        this.logger.log(
+          `Балансировщик «${balancer.name}» (${balancer.id}) удалён, т.к. все коннекты из его пула были удалены`,
+        );
+        continue;
+      }
+
+      // Обновляем список ID
+      await this.prisma.balancer.update({
+        where: { id: balancer.id },
+        data: { connectIds: newConnectIds },
+      });
+
+      // Перестраиваем rawJson балансировщика без удалённого коннекта
+      const poolConnects = await this.prisma.connect.findMany({
+        where: { id: { in: newConnectIds } },
+        select: { id: true, name: true, raw: true, rawJson: true },
+      });
+
+      const rawJson = this.buildSelectorOutbound(balancer.name, poolConnects);
+
+      await this.prisma.connect.updateMany({
+        where: { balancerId: balancer.id },
+        data: { rawJson: rawJson as Prisma.InputJsonValue },
+      });
+
+      this.logger.log(
+        `Коннект ${connectId} удалён из пула балансировщика «${balancer.name}» (${balancer.id}), осталось коннектов: ${newConnectIds.length}`,
+      );
+    }
+  }
+
+  /**
    * Строит полный v2ray/Xray конфиг с балансировщиком leastLoad.
    * Каждый коннект из пула — отдельный outbound (proxy, proxy-2, proxy-3...).
    * routing.balancers выбирает самый быстрый через burstObservatory.
