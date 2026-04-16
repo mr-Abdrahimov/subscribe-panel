@@ -1899,6 +1899,10 @@ export class ManagementService implements OnModuleInit {
       return null;
     };
 
+    // Все группы пользователя обходим в порядке includedNames, внутри каждой группы — по sortOrder.
+    // Балансировщики обрабатываются наравне с обычными коннектами — их позиция определяется
+    // sortOrder в той группе, куда их переместил администратор.
+    // После групп добавляем балансировщики, которые не попали ни в одну из групп пользователя.
     for (const gName of includedNames) {
       const batch = await this.prisma.connect.findMany({
         where: { status: 'ACTIVE', groupNames: { has: gName } },
@@ -1907,40 +1911,28 @@ export class ManagementService implements OnModuleInit {
       });
       for (const c of batch) {
         if (seenConnectIds.has(c.id)) continue;
-        // Балансировщики добавляются отдельным блоком ниже — не добавляем в seenIds здесь
-        if (c.raw.startsWith('balancer://')) continue;
         seenConnectIds.add(c.id);
         const item = processConnect(c);
         if (!item) continue;
-        items.push(
-          metaBlock
-            ? this.injectMetaBlock(item, metaBlock)
-            : item,
-        );
+        items.push(metaBlock ? this.injectMetaBlock(item, metaBlock) : item);
       }
     }
 
-    // Добавляем все активные балансировщики независимо от groupNames пользователя
-    // Фильтруем по protocol='balancer' — надёжнее чем balancerId: {not:null} в MongoDB
+    // Балансировщики, которые не входят ни в одну из групп пользователя — добавляем в конец
     const balancerConnects = await this.prisma.connect.findMany({
       where: { status: 'ACTIVE', protocol: 'balancer' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       select: { id: true, raw: true, name: true, rawJson: true },
     });
     this.logger.debug(
-      `buildJsonFeed user=${user.id}: groups=[${includedNames.join(',')}] regularItems=${items.length} balancers=${balancerConnects.length}`,
+      `buildJsonFeed user=${user.id}: groups=[${includedNames.join(',')}] items=${items.length} balancers=${balancerConnects.length}`,
     );
     for (const c of balancerConnects) {
-      if (seenConnectIds.has(c.id)) continue;
+      if (seenConnectIds.has(c.id)) continue; // уже добавлен через группу
       seenConnectIds.add(c.id);
       const item = processConnect(c);
-      this.logger.debug(`  balancer connect id=${c.id} name="${c.name}" rawJson=${c.rawJson !== null ? 'present' : 'NULL'} item=${item ? 'ok' : 'null'}`);
       if (!item) continue;
-      items.push(
-        metaBlock
-          ? this.injectMetaBlock(item, metaBlock)
-          : item,
-      );
+      items.push(metaBlock ? this.injectMetaBlock(item, metaBlock) : item);
     }
 
     return {
