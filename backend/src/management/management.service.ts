@@ -1872,6 +1872,17 @@ export class ManagementService implements OnModuleInit {
     // Включает: объявление как sub-info-text и ссылку на страницу подписки
     const metaBlock = this.buildJsonFeedMetaBlock(announceText, pageUrl);
 
+    // Сначала собираем ID всех коннектов, доступных пользователю (по его группам),
+    // чтобы потом фильтровать пул балансировщика.
+    const accessibleConnectIds = new Set<string>();
+    for (const gName of includedNames) {
+      const ids = await this.prisma.connect.findMany({
+        where: { status: 'ACTIVE', groupNames: { has: gName }, protocol: { not: 'balancer' } },
+        select: { id: true },
+      });
+      for (const { id } of ids) accessibleConnectIds.add(id);
+    }
+
     const seenConnectIds = new Set<string>();
     const items: unknown[] = [];
 
@@ -1899,6 +1910,99 @@ export class ManagementService implements OnModuleInit {
       return null;
     };
 
+    /**
+     * Перестраивает rawJson балансировщика, оставляя в пуле только коннекты,
+     * доступные данному пользователю. Возвращает null если доступных коннектов нет.
+     */
+    const filterBalancerForUser = async (
+      c: { id: string; name: string; rawJson: unknown },
+    ): Promise<Record<string, unknown> | null> => {
+      if (!c.rawJson || typeof c.rawJson !== 'object' || Array.isArray(c.rawJson)) return null;
+      const obj = c.rawJson as Record<string, unknown>;
+
+      // Достаём список ID коннектов пула, сохранённый при создании балансировщика
+      const poolIds = Array.isArray(obj['balancerConnectIds'])
+        ? (obj['balancerConnectIds'] as string[])
+        : [];
+
+      // Оставляем только те, что доступны пользователю
+      const allowedIds = poolIds.filter((id) => accessibleConnectIds.has(id));
+
+      if (allowedIds.length === 0) {
+        this.logger.debug(`balancer "${c.name}": no accessible connects for user — skipped`);
+        return null;
+      }
+
+      // Если все коннекты пула доступны — возвращаем как есть
+      if (allowedIds.length === poolIds.length) {
+        return { ...obj, remarks: c.name };
+      }
+
+      // Иначе — перестраиваем конфиг только с доступными outbound'ами
+      const allowedSet = new Set(allowedIds);
+      const allOutbounds = Array.isArray(obj['outbounds'])
+        ? (obj['outbounds'] as Record<string, unknown>[])
+        : [];
+
+      // Системные outbound'ы (direct, block) — всегда оставляем
+      const systemTags = new Set(['direct', 'block']);
+
+      // Получаем теги proxy-outbound'ов, которые нужно убрать
+      // Карта: индекс в пуле → tag outbound'а (proxy, proxy-2, proxy-3...)
+      const originalProxyTags = allOutbounds
+        .map((o) => o['tag'] as string)
+        .filter((t) => t && !systemTags.has(t));
+
+      // Определяем какие proxy-теги оставить: это те, у которых poolIds[i] в allowedSet
+      const keepTags = new Set<string>();
+      for (let i = 0; i < poolIds.length; i++) {
+        if (allowedSet.has(poolIds[i]) && originalProxyTags[i]) {
+          keepTags.add(originalProxyTags[i]);
+        }
+      }
+
+      const filteredOutbounds = allOutbounds.filter(
+        (o) => systemTags.has(o['tag'] as string) || keepTags.has(o['tag'] as string),
+      );
+
+      // Переназначаем теги чтобы не было дырок (proxy, proxy-2, proxy-3...)
+      const proxyOutbounds = filteredOutbounds.filter((o) => !systemTags.has(o['tag'] as string));
+      const renamedProxyOutbounds = proxyOutbounds.map((o, i) => ({
+        ...o,
+        tag: i === 0 ? 'proxy' : `proxy-${i + 1}`,
+      }));
+      const newProxyTags = renamedProxyOutbounds.map((o) => o['tag'] as string);
+      const systemOutbounds = filteredOutbounds.filter((o) => systemTags.has(o['tag'] as string));
+
+      // Обновляем routing.balancers и burstObservatory с новыми тегами
+      const routing = obj['routing'] && typeof obj['routing'] === 'object'
+        ? { ...(obj['routing'] as Record<string, unknown>) }
+        : {};
+      if (Array.isArray(routing['balancers'])) {
+        routing['balancers'] = (routing['balancers'] as Record<string, unknown>[]).map((b) => ({
+          ...b,
+          selector: newProxyTags,
+        }));
+      }
+
+      const burstObservatory = obj['burstObservatory'] && typeof obj['burstObservatory'] === 'object'
+        ? { ...(obj['burstObservatory'] as Record<string, unknown>), subjectSelector: newProxyTags }
+        : obj['burstObservatory'];
+
+      this.logger.debug(
+        `balancer "${c.name}": filtered pool ${poolIds.length}→${allowedIds.length} outbounds`,
+      );
+
+      return {
+        ...obj,
+        remarks: c.name,
+        routing,
+        outbounds: [...renamedProxyOutbounds, ...systemOutbounds],
+        burstObservatory,
+        balancerConnectIds: allowedIds,
+      };
+    };
+
     // Все группы пользователя обходим в порядке includedNames, внутри каждой группы — по sortOrder.
     // Балансировщики обрабатываются наравне с обычными коннектами — их позиция определяется
     // sortOrder в той группе, куда их переместил администратор.
@@ -1912,7 +2016,9 @@ export class ManagementService implements OnModuleInit {
       for (const c of batch) {
         if (seenConnectIds.has(c.id)) continue;
         seenConnectIds.add(c.id);
-        const item = processConnect(c);
+        const item = c.raw.startsWith('balancer://')
+          ? await filterBalancerForUser(c)
+          : processConnect(c);
         if (!item) continue;
         items.push(metaBlock ? this.injectMetaBlock(item, metaBlock) : item);
       }
@@ -1930,7 +2036,7 @@ export class ManagementService implements OnModuleInit {
     for (const c of balancerConnects) {
       if (seenConnectIds.has(c.id)) continue; // уже добавлен через группу
       seenConnectIds.add(c.id);
-      const item = processConnect(c);
+      const item = await filterBalancerForUser(c);
       if (!item) continue;
       items.push(metaBlock ? this.injectMetaBlock(item, metaBlock) : item);
     }
