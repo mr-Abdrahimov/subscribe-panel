@@ -477,13 +477,78 @@ export function vlessStableMatchIdentity(raw: string): string | null {
 }
 
 /**
- * Ключ строки подписки при приёме: для vless — стабильное ядро без UUID/sni/sid (не плодим дубликаты в одном fetch);
+ * Стабильный ключ для протоколов где userinfo — только секрет/UUID (hysteria2, trojan, ss и др.).
+ * Содержит: scheme + host:port + query без userinfo.
+ * Позволяет обновить запись при смене только пароля/UUID провайдером.
+ *
+ * Не применяется для vmess (base64 непрозрачен) и vless (обрабатывается отдельно).
+ */
+function buildServerOnlyStableIdentity(raw: string): string | null {
+  const prepared = prepareConnectUriForParse(raw);
+  const hashIdx = prepared.indexOf('#');
+  const base = hashIdx >= 0 ? prepared.slice(0, hashIdx) : prepared;
+  try {
+    const u = new URL(base);
+    const protocol = u.protocol.replace(/:$/, '').toLowerCase();
+    // Только для протоколов где userinfo = секрет (не для vmess/vless — у них своя логика)
+    if (!['hysteria2', 'hysteria', 'trojan', 'tuic'].includes(protocol)) {
+      return null;
+    }
+    let hostname = u.hostname.toLowerCase();
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1).toLowerCase();
+    }
+    const port = u.port || '';
+    const hostPart = port ? `${hostname}:${port}` : hostname;
+    // query без userinfo (auth/password могут быть в query у hysteria2)
+    const search = canonicalSearchFromUrlSearch(u.search);
+    // Убираем параметры-секреты из query (auth у hysteria2 — это тот же UUID)
+    const cleanSearch = removeAuthParamsFromSearch(search);
+    return `${protocol}://${hostPart}${cleanSearch}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Удаляет параметры, являющиеся секретами/UUID, из канонической query строки.
+ * auth у hysteria2 — это UUID пользователя, при смене саб-ссылки он меняется.
+ */
+function removeAuthParamsFromSearch(search: string): string {
+  if (!search || search === '?') return search;
+  const qs = search.startsWith('?') ? search.slice(1) : search;
+  const SECRET_PARAMS = new Set(['auth', 'password', 'passwd', 'pass']);
+  const pairs = qs.split('&').filter((seg) => {
+    if (!seg) return false;
+    const eq = seg.indexOf('=');
+    const k = eq >= 0 ? decodeURIComponent(seg.slice(0, eq)).toLowerCase() : seg.toLowerCase();
+    return !SECRET_PARAMS.has(k);
+  });
+  return pairs.length ? `?${pairs.join('&')}` : '';
+}
+
+/**
+ * Стабильный матч для любого протокола при синке:
+ * - vless: без UUID/sni/sid (buildVlessCoreIdentityForMatching)
+ * - hysteria2/trojan/tuic: без userinfo и auth-параметров
+ * - остальные: null (нет стабильного ключа)
+ */
+export function stableMatchIdentity(raw: string): string | null {
+  const vless = vlessStableMatchIdentity(raw);
+  if (vless !== null) return vless;
+  return buildServerOnlyStableIdentity(raw);
+}
+
+/**
+ * Ключ строки подписки при приёме: стабильное ядро без секретов (не плодим дубликаты в одном fetch);
  * иначе — {@link normalizedConnectIdentity}.
  */
 export function subscriptionIncomingDedupeKey(raw: string): string {
-  const stable = vlessStableMatchIdentity(raw);
+  const stable = stableMatchIdentity(raw);
   if (stable != null && stable.length > 0) {
-    return `vless|${stable}`;
+    const prepared = prepareConnectUriForParse(raw);
+    const protocol = prepared.split('://')[0]?.toLowerCase() ?? '';
+    return `${protocol}|${stable}`;
   }
   return normalizedConnectIdentity(raw);
 }

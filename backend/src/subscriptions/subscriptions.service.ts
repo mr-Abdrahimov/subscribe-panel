@@ -10,8 +10,8 @@ import { TelegramService } from '../telegram/telegram.service';
 import {
   normalizedConnectIdentity,
   prepareConnectUriForParse,
+  stableMatchIdentity,
   subscriptionIncomingDedupeKey,
-  vlessStableMatchIdentity,
 } from './connect-identity.util';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
@@ -522,7 +522,7 @@ export class SubscriptionsService {
       `[JSON-mode] subscriptionId=${subscriptionId}: найдено ${entries.length} записей`,
     );
 
-    // --- Sync в БД (та же логика, что в BASE64-режиме) ---
+    // --- Sync в БД: та же логика upsert/delete, что в BASE64-режиме ---
     const existingConnects = await this.prisma.connect.findMany({
       where: { subscriptionId },
       select: {
@@ -537,10 +537,19 @@ export class SubscriptionsService {
       },
     });
 
-    // Дедупликация по raw (последняя запись побеждает)
-    const incomingByRaw = new Map<string, RawEntry>();
+    /**
+     * Дедупликация входящих: та же что в BASE64-режиме.
+     * Для vless — по стабильному ядру без UUID/sni/sid; иначе — по normalizedConnectIdentity.
+     * При смене UUID одна нода → одна запись, не дублируется.
+     */
+    const incomingByDedupeKey = new Map<
+      string,
+      { raw: string; originalName: string; protocol: string; fullIdentity: string; rawJson: unknown }
+    >();
     for (const e of entries) {
-      incomingByRaw.set(e.raw, e);
+      const dedupeKey = subscriptionIncomingDedupeKey(e.raw);
+      const fullIdentity = normalizedConnectIdentity(e.raw);
+      incomingByDedupeKey.set(dedupeKey, { ...e, fullIdentity });
     }
 
     const matchedIds = new Set<string>();
@@ -555,10 +564,18 @@ export class SubscriptionsService {
     let nextSortOrder = globalMaxAgg._max.sortOrder ?? 0;
     const newUngroupedDisplayNames: string[] = [];
 
-    for (const [, incoming] of incomingByRaw) {
+    for (const [, incoming] of incomingByDedupeKey) {
+      // Ищем совпадение по тем же трём критериям что в BASE64-режиме:
+      // 1. normalizedConnectIdentity(c.raw) === incoming.fullIdentity
+      // 2. c.identityKey === incoming.fullIdentity
+      // 3. stableMatchIdentity совпадает (смена UUID/SNI/sid/пароля)
       const existing = poolSorted.find(
-        (c) => !matchedIds.has(c.id) && c.raw === incoming.raw,
+        (c) =>
+          !matchedIds.has(c.id) &&
+          this.connectMatchesIdentity(c, incoming.fullIdentity, incoming.raw),
       );
+
+      const rawJsonValue = (incoming.rawJson as Prisma.InputJsonValue | null | undefined) ?? null;
 
       if (!existing) {
         nextSortOrder += 1;
@@ -567,8 +584,8 @@ export class SubscriptionsService {
             originalName: incoming.originalName,
             name: incoming.originalName,
             raw: incoming.raw,
-            rawJson: (incoming.rawJson as Prisma.InputJsonValue | undefined) ?? undefined,
-            identityKey: incoming.raw,
+            rawJson: rawJsonValue ?? undefined,
+            identityKey: incoming.fullIdentity,
             protocol: incoming.protocol,
             status: 'ACTIVE',
             hidden: false,
@@ -584,11 +601,29 @@ export class SubscriptionsService {
 
       matchedIds.add(existing.id);
 
-      const data: { originalName?: string; protocol?: string; rawJson?: Prisma.InputJsonValue | null } = {};
-      if (existing.originalName !== incoming.originalName) data.originalName = incoming.originalName;
-      if (existing.protocol !== incoming.protocol) data.protocol = incoming.protocol;
-      // Обновляем rawJson всегда (конфиг мог измениться)
-      data.rawJson = (incoming.rawJson as Prisma.InputJsonValue | null | undefined) ?? null;
+      const data: {
+        raw?: string;
+        rawJson?: Prisma.InputJsonValue | null;
+        originalName?: string;
+        protocol?: string;
+        identityKey?: string;
+      } = {};
+
+      // Обновляем raw если URI изменился (например сменился UUID)
+      if (existing.raw !== incoming.raw) {
+        data.raw = incoming.raw;
+      }
+      // rawJson всегда обновляем — конфиг мог измениться (новый UUID, параметры и т.д.)
+      data.rawJson = rawJsonValue;
+      if (existing.originalName !== incoming.originalName) {
+        data.originalName = incoming.originalName;
+      }
+      if (existing.protocol !== incoming.protocol) {
+        data.protocol = incoming.protocol;
+      }
+      if ((existing.identityKey ?? '') !== incoming.fullIdentity) {
+        data.identityKey = incoming.fullIdentity;
+      }
       if (Object.keys(data).length > 0) {
         await this.prisma.connect.update({ where: { id: existing.id }, data });
       }
@@ -712,8 +747,8 @@ export class SubscriptionsService {
     if (!!stored && stored === incomingFullIdentity) {
       return true;
     }
-    const stableRow = vlessStableMatchIdentity(c.raw);
-    const stableIn = vlessStableMatchIdentity(incomingRaw);
+    const stableRow = stableMatchIdentity(c.raw);
+    const stableIn = stableMatchIdentity(incomingRaw);
     return (
       stableRow !== null &&
       stableIn !== null &&
