@@ -1907,9 +1907,9 @@ export class ManagementService implements OnModuleInit {
       });
       for (const c of batch) {
         if (seenConnectIds.has(c.id)) continue;
-        seenConnectIds.add(c.id);
-        // Балансировщики добавляются отдельным блоком ниже, чтобы всегда быть в ленте
+        // Балансировщики добавляются отдельным блоком ниже — не добавляем в seenIds здесь
         if (c.raw.startsWith('balancer://')) continue;
+        seenConnectIds.add(c.id);
         const item = processConnect(c);
         if (!item) continue;
         items.push(
