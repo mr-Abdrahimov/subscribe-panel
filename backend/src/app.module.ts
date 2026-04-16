@@ -12,6 +12,7 @@ import { TelegramModule } from './telegram/telegram.module';
 import { RedisModule } from './redis/redis.module';
 import { SubscriptionAccessNotifyModule } from './subscription-access-notify/subscription-access-notify.module';
 import { SubscriptionFetchModule } from './subscription-fetch/subscription-fetch.module';
+import { BalancersModule } from './balancers/balancers.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { SubscriptionFetchModule } from './subscription-fetch/subscription-fetch
     ConnectsModule,
     TelegramModule,
     ManagementModule,
+    BalancersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

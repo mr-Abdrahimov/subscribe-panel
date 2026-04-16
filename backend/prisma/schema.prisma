@@ -79,8 +79,23 @@ model Connect {
   tags           String[]
   sortOrder      Int          @default(0)
   createdAt      DateTime     @default(now())
-  subscriptionId String       @db.ObjectId
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String?      @db.ObjectId
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  /// Если коннект является балансировщиком — ссылка на Balancer; null для обычных коннектов
+  balancerId     String?      @db.ObjectId
+  balancer       Balancer?    @relation(fields: [balancerId], references: [id], onDelete: Cascade)
+}
+
+/// Балансировщик: объединяет несколько коннектов в один «selector» outbound для JSON-ленты
+model Balancer {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  /// ID коннектов, которые входят в пул балансировщика
+  connectIds String[]  @default([]) @db.ObjectId
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  /// Специальный коннект-заглушка в «Без группы» для отображения в списке
+  connects   Connect[]
 }
 
 model Group {

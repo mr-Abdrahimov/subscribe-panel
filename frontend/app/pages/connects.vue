@@ -37,7 +37,7 @@ type ConnectRow = {
   subscription: {
     id: string;
     title: string;
-  };
+  } | null;
 };
 
 type GroupItem = {
@@ -88,6 +88,7 @@ const statusFilterItems = [
 const subscriptionFilterItems = computed(() => {
   const map = new Map<string, string>();
   for (const c of connects.value) {
+    if (!c.subscription) continue;
     map.set(c.subscription.id, c.subscription.title);
   }
   const rest = [...map.entries()]
@@ -157,7 +158,7 @@ function connectMatchesNameSearch(c: ConnectRow, needleLower: string): boolean {
 const filteredConnects = computed(() => {
   let list = connects.value;
   if (filterSubscriptionId.value != null) {
-    list = list.filter((c) => c.subscription.id === filterSubscriptionId.value);
+    list = list.filter((c) => c.subscription?.id === filterSubscriptionId.value);
   }
   if (filterStatus.value !== 'ALL') {
     list = list.filter((c) => c.status === filterStatus.value);
@@ -273,7 +274,7 @@ function sortConnectIdsForBucketMode(
   const rows: Row[] = ids.map((id) => ({ id, c: connectById(id) }));
   const nameKey = (r: Row) =>
     (r.c?.name ?? r.c?.originalName ?? r.id).trim();
-  const subKey = (r: Row) => (r.c?.subscription.title ?? '').trim();
+  const subKey = (r: Row) => (r.c?.subscription?.title ?? '').trim();
 
   const cmpName = (a: Row, b: Row) => connectNameCollator.compare(nameKey(a), nameKey(b));
   const cmpSub = (a: Row, b: Row) => {
@@ -1335,7 +1336,7 @@ async function bulkRemoveGroupsFromSelection() {
                       </div>
                     </div>
                     <p class="text-xs text-muted">
-                      {{ connectById(cid)!.subscription.title }}
+                      {{ connectById(cid)!.subscription?.title ?? 'Балансировщик' }}
                     </p>
                     <p class="truncate text-xs text-muted" :title="connectById(cid)!.originalName">
                       {{ connectById(cid)!.originalName }}

@@ -1805,6 +1805,8 @@ export class ManagementService implements OnModuleInit {
           continue;
         }
         seenConnectIds.add(c.id);
+        // Коннекты-балансировщики не имеют URI-представления — пропускаем в Base64-ленте
+        if (c.raw.startsWith('balancer://')) continue;
         uriLines.push(this.applyCustomNameToUri(c.raw, c.name));
       }
     }
