@@ -10,11 +10,11 @@ const accessToken = useCookie<string | null>('accessToken', {
 });
 
 const menuItems = [
+{ to: '/', label: 'Пользователи', icon: 'i-lucide-users' },
+{ to: '/balancers', label: 'Балансеры', icon: 'i-lucide-git-branch-plus' },
+{ to: '/connects', label: 'Коннекты', icon: 'i-lucide-plug' },
   { to: '/groups', label: 'Группы', icon: 'i-lucide-users-round' },
-  { to: '/', label: 'Пользователи', icon: 'i-lucide-users' },
-  { to: '/connects', label: 'Коннекты', icon: 'i-lucide-plug' },
   { to: '/subscriptions', label: 'Подписки', icon: 'i-lucide-badge-check' },
-  { to: '/balancers', label: 'Балансеры', icon: 'i-lucide-git-branch-plus' },
 ];
 
 async function logout() {

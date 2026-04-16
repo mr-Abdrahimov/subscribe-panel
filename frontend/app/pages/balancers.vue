@@ -39,6 +39,10 @@ const formConnectIds = ref<string[]>([]);
 const formErrors = ref<Record<string, string>>({});
 const saving = ref(false);
 
+// Фильтры в форме
+const filterSearch = ref('');
+const filterGroup = ref<string | null>(null);
+
 const schema = yup.object({
   name: yup
     .string()
@@ -65,9 +69,28 @@ const availableConnects = computed(() =>
   ),
 );
 
-/** Варианты для USelectMenu */
+/** Уникальные группы из доступных коннектов */
+const groupOptions = computed(() => {
+  const groups = new Set<string>();
+  for (const c of availableConnects.value) {
+    for (const g of c.groupNames) groups.add(g);
+  }
+  return Array.from(groups).sort((a, b) => a.localeCompare(b, 'ru'));
+});
+
+/** Отфильтрованные коннекты с учётом поиска и выбранной группы */
+const filteredConnects = computed(() => {
+  const search = filterSearch.value.trim().toLowerCase();
+  return availableConnects.value.filter((c) => {
+    if (filterGroup.value && !c.groupNames.includes(filterGroup.value)) return false;
+    if (search && !c.name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+});
+
+/** Варианты для списка коннектов */
 const connectOptions = computed(() =>
-  availableConnects.value.map((c) => ({
+  filteredConnects.value.map((c) => ({
     value: c.id,
     label: c.name,
     description: [c.protocol, c.groupNames.join(', ')].filter(Boolean).join(' · '),
@@ -108,6 +131,8 @@ function openCreate() {
   formName.value = '';
   formConnectIds.value = [];
   formErrors.value = {};
+  filterSearch.value = '';
+  filterGroup.value = null;
   isModalOpen.value = true;
 }
 
@@ -116,6 +141,8 @@ function openEdit(item: BalancerItem) {
   formName.value = item.name;
   formConnectIds.value = [...item.connectIds];
   formErrors.value = {};
+  filterSearch.value = '';
+  filterGroup.value = null;
   isModalOpen.value = true;
 }
 
@@ -259,13 +286,15 @@ onMounted(() => {
       </UTable>
     </UCard>
 
-    <!-- Модальное окно создания / редактирования -->
-    <UModal
+    <!-- Боковая панель создания / редактирования -->
+    <USlideover
       v-model:open="isModalOpen"
       :title="editId ? 'Редактировать балансировщик' : 'Добавить балансировщик'"
+      side="right"
+      :ui="{ body: 'flex-1 overflow-y-auto' }"
     >
       <template #body>
-        <div class="space-y-4">
+        <div class="space-y-5 p-4">
           <UFormField
             label="Название"
             required
@@ -286,13 +315,40 @@ onMounted(() => {
             :error="formErrors['connectIds']"
           >
             <div class="space-y-2">
+              <!-- Фильтры -->
+              <div class="flex gap-2">
+                <UInput
+                  v-model="filterSearch"
+                  class="flex-1 min-w-0"
+                  placeholder="Поиск по названию..."
+                  icon="i-lucide-search"
+                  size="sm"
+                />
+                <USelectMenu
+                  v-model="filterGroup"
+                  :items="[{ label: 'Все группы', id: null }, ...groupOptions.map(g => ({ label: g, id: g }))]"
+                  value-key="id"
+                  label-key="label"
+                  placeholder="Все группы"
+                  size="sm"
+                  class="w-40 shrink-0"
+                />
+              </div>
+
+              <!-- Список коннектов -->
               <div
-                v-if="connectOptions.length === 0"
+                v-if="availableConnects.length === 0"
                 class="text-sm text-[var(--cosmic-fg-muted)]"
               >
                 Нет доступных коннектов
               </div>
-              <div v-else class="max-h-60 overflow-y-auto space-y-1 rounded-lg border border-[var(--cosmic-border)] p-2">
+              <div v-else class="space-y-1 rounded-lg border border-[var(--cosmic-border)] p-2">
+                <div
+                  v-if="connectOptions.length === 0"
+                  class="py-4 text-center text-sm text-[var(--cosmic-fg-muted)]"
+                >
+                  Ничего не найдено
+                </div>
                 <label
                   v-for="opt in connectOptions"
                   :key="opt.value"
@@ -314,6 +370,9 @@ onMounted(() => {
               </div>
               <p v-if="formConnectIds.length > 0" class="text-xs text-[var(--cosmic-fg-muted)]">
                 Выбрано: {{ formConnectIds.length }}
+                <template v-if="filterSearch || filterGroup">
+                  · показано {{ connectOptions.length }} из {{ availableConnects.length }}
+                </template>
               </p>
             </div>
           </UFormField>
@@ -321,7 +380,7 @@ onMounted(() => {
       </template>
 
       <template #footer>
-        <div class="flex justify-end gap-2">
+        <div class="flex justify-end gap-2 p-4 border-t border-[var(--cosmic-border)]">
           <UButton color="neutral" variant="ghost" @click="isModalOpen = false">
             Отмена
           </UButton>
@@ -334,7 +393,7 @@ onMounted(() => {
           </UButton>
         </div>
       </template>
-    </UModal>
+    </USlideover>
 
     <!-- Подтверждение удаления -->
     <UModal v-model:open="isDeleteConfirmOpen" title="Удалить балансировщик?">
