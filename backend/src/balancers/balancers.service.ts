@@ -105,27 +105,23 @@ export class BalancersService {
     if (!existing) throw new NotFoundException(`Балансировщик ${id} не найден`);
 
     const newName = dto.name ?? existing.name;
-    const newConnectIds = dto.connectIds ?? existing.connectIds;
+    const requestedConnectIds = dto.connectIds ?? existing.connectIds;
 
-    if (newConnectIds.length === 0) {
-      throw new BadRequestException('Необходимо выбрать хотя бы один коннект');
-    }
-
-    const existingConnects = await this.prisma.connect.findMany({
-      where: { id: { in: newConnectIds } },
+    // Загружаем только реально существующие коннекты (остальные молча игнорируем)
+    const foundConnects = await this.prisma.connect.findMany({
+      where: { id: { in: requestedConnectIds } },
       select: { id: true, name: true, raw: true, rawJson: true },
     });
 
-    if (existingConnects.length !== newConnectIds.length) {
-      throw new BadRequestException('Некоторые коннекты не найдены');
-    }
+    // Убираем коннекты-балансировщики из пула
+    const existingConnects = foundConnects.filter(
+      (c) => !c.raw.startsWith(BALANCER_CONNECT_RAW_PREFIX),
+    );
 
-    for (const c of existingConnects) {
-      if (c.raw.startsWith(BALANCER_CONNECT_RAW_PREFIX)) {
-        throw new BadRequestException(
-          `Коннект «${c.name}» является балансировщиком и не может входить в пул`,
-        );
-      }
+    const newConnectIds = existingConnects.map((c) => c.id);
+
+    if (newConnectIds.length === 0) {
+      throw new BadRequestException('Необходимо выбрать хотя бы один коннект');
     }
 
     const balancer = await this.prisma.balancer.update({

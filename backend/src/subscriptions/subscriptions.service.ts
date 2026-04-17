@@ -330,9 +330,9 @@ export class SubscriptionsService {
       }
     }
 
-    const staleIds = existingConnects
-      .filter((c) => !matchedIds.has(c.id))
-      .map((c) => c.id);
+    const staleConnects = existingConnects.filter((c) => !matchedIds.has(c.id));
+    const staleIds = staleConnects.map((c) => c.id);
+    const removedDisplayNames = staleConnects.map((c) => c.name);
     if (staleIds.length > 0) {
       for (const staleId of staleIds) {
         await this.balancersService.removeConnectFromAllBalancers(staleId);
@@ -363,10 +363,11 @@ export class SubscriptionsService {
       },
     });
 
-    if (newUngroupedDisplayNames.length > 0) {
-      await this.notifyTelegramNewUngroupedConnects(
+    if (newUngroupedDisplayNames.length > 0 || removedDisplayNames.length > 0) {
+      await this.notifyTelegramConnectsChanged(
         updatedSubscription.title,
         newUngroupedDisplayNames,
+        removedDisplayNames,
       );
     }
 
@@ -643,7 +644,9 @@ export class SubscriptionsService {
       }
     }
 
-    const staleIds = existingConnects.filter((c) => !matchedIds.has(c.id)).map((c) => c.id);
+    const staleConnects = existingConnects.filter((c) => !matchedIds.has(c.id));
+    const staleIds = staleConnects.map((c) => c.id);
+    const removedDisplayNames = staleConnects.map((c) => c.name);
     if (staleIds.length > 0) {
       for (const staleId of staleIds) {
         await this.balancersService.removeConnectFromAllBalancers(staleId);
@@ -675,10 +678,11 @@ export class SubscriptionsService {
       },
     });
 
-    if (newUngroupedDisplayNames.length > 0) {
-      await this.notifyTelegramNewUngroupedConnects(
+    if (newUngroupedDisplayNames.length > 0 || removedDisplayNames.length > 0) {
+      await this.notifyTelegramConnectsChanged(
         updatedSubscription.title,
         newUngroupedDisplayNames,
+        removedDisplayNames,
       );
     }
 
@@ -1241,14 +1245,15 @@ export class SubscriptionsService {
   }
 
   /**
-   * Уведомление в Telegram при появлении новых коннектов в «Без группы»
-   * (ручной fetch и очередь используют один и тот же fetchConnects).
+   * Уведомление в Telegram об изменениях в подписке:
+   * новые коннекты в «Без группы» и/или удалённые коннекты.
    */
-  private async notifyTelegramNewUngroupedConnects(
+  private async notifyTelegramConnectsChanged(
     subscriptionTitle: string,
-    displayNames: string[],
+    addedNames: string[],
+    removedNames: string[],
   ): Promise<void> {
-    if (displayNames.length === 0) {
+    if (addedNames.length === 0 && removedNames.length === 0) {
       return;
     }
     const row = await this.prisma.panelGlobalSettings.findUnique({
@@ -1261,47 +1266,58 @@ export class SubscriptionsService {
       return;
     }
 
-    const chunks = this.buildTelegramNewConnectsChunks(
+    const chunks = this.buildTelegramConnectsChangedChunks(
       subscriptionTitle,
-      displayNames,
+      addedNames,
+      removedNames,
     );
     for (let i = 0; i < chunks.length; i++) {
-      const r = await this.telegramService.sendMessage(
-        token,
-        chatId,
-        chunks[i],
-      );
+      const r = await this.telegramService.sendMessage(token, chatId, chunks[i]);
       if (!r.ok) {
         this.logger.warn(
-          `Telegram: не удалось отправить уведомление о новых коннектах (часть ${i + 1}/${chunks.length}): ${r.error}`,
+          `Telegram: не удалось отправить уведомление об изменениях коннектов (часть ${i + 1}/${chunks.length}): ${r.error}`,
         );
         break;
       }
     }
   }
 
-  private buildTelegramNewConnectsChunks(
+  private buildTelegramConnectsChangedChunks(
     subscriptionTitle: string,
-    displayNames: string[],
+    addedNames: string[],
+    removedNames: string[],
   ): string[] {
-    const itemLines = displayNames.map((n) => `• ${n}`);
-    const firstHeader = `🔔 Новые коннекты в группе «${UNGROUPED_CONNECT_GROUP_NAME}»\n\nПодписка: ${subscriptionTitle}\nВсего новых: ${displayNames.length}\n\n`;
+    const lines: string[] = [];
+
+    if (addedNames.length > 0) {
+      lines.push(`➕ Добавлено (${addedNames.length}):`);
+      for (const n of addedNames) lines.push(`• ${n}`);
+    }
+
+    if (removedNames.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push(`🗑 Удалено (${removedNames.length}):`);
+      for (const n of removedNames) lines.push(`• ${n}`);
+    }
+
+    const firstHeader =
+      `🔔 Изменения коннектов\n\nПодписка: ${subscriptionTitle}\n\n`;
 
     const chunks: string[] = [];
     let lineIndex = 0;
     let partIdx = 0;
 
-    while (lineIndex < itemLines.length) {
+    while (lineIndex < lines.length) {
       const header =
         partIdx === 0
           ? firstHeader
-          : `… часть ${partIdx + 1}: новые в «${UNGROUPED_CONNECT_GROUP_NAME}», ${subscriptionTitle}\n\n`;
+          : `… продолжение (часть ${partIdx + 1}), подписка: ${subscriptionTitle}\n\n`;
 
       const bodyLines: string[] = [];
       let used = header.length;
 
-      while (lineIndex < itemLines.length) {
-        const line = itemLines[lineIndex];
+      while (lineIndex < lines.length) {
+        const line = lines[lineIndex];
         const sep = bodyLines.length > 0 ? 1 : 0;
         if (used + sep + line.length <= TELEGRAM_MESSAGE_MAX) {
           bodyLines.push(line);

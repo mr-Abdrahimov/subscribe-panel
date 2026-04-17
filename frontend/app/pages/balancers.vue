@@ -139,7 +139,9 @@ function openCreate() {
 function openEdit(item: BalancerItem) {
   editId.value = item.id;
   formName.value = item.name;
-  formConnectIds.value = [...item.connectIds];
+  // Оставляем только те ID, которые реально существуют среди доступных коннектов
+  const existingIds = new Set(availableConnects.value.map((c) => c.id));
+  formConnectIds.value = item.connectIds.filter((id) => existingIds.has(id));
   formErrors.value = {};
   filterSearch.value = '';
   filterGroup.value = null;
