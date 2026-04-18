@@ -27,6 +27,8 @@ type ConnectRow = {
   name: string;
   /** Строка из подписки: vless://, vmess:// и т.д. */
   raw: string;
+  /** JSON из подписки в режиме JSON (иначе null) */
+  rawJson: unknown | null;
   groupNames: string[];
   status: 'ACTIVE' | 'INACTIVE';
   protocol: string;
@@ -37,6 +39,7 @@ type ConnectRow = {
   subscription: {
     id: string;
     title: string;
+    feedMode?: 'BASE64' | 'JSON';
   } | null;
 };
 
@@ -55,14 +58,23 @@ const loading = ref(false);
 const connects = ref<ConnectRow[]>([]);
 const groups = ref<GroupItem[]>([]);
 
-const isGroupModalOpen = ref(false);
-const selectedGroupConnectId = ref<string | null>(null);
 const selectedGroupNames = ref<string[]>([]);
 const isNameModalOpen = ref(false);
 const selectedNameConnectId = ref<string | null>(null);
 const editNameValue = ref('');
 const isDeleteConfirmOpen = ref(false);
 const deleteConnectId = ref<string | null>(null);
+
+const isJsonModalOpen = ref(false);
+const jsonEditConnectId = ref<string | null>(null);
+const jsonEditText = ref('');
+const jsonEditSaving = ref(false);
+const {
+  parseError: jsonParseError,
+  isJsonValid,
+  onKeydown: onJsonKeydown,
+  parseJson: parseJsonFromEditor,
+} = useJsonTextareaTab(jsonEditText);
 
 const rowSelection = ref<RowSelectionState>({});
 const bulkGroupNames = ref<string[]>([]);
@@ -868,14 +880,50 @@ function getConnectGroups(id: string) {
   return connects.value.find(item => item.id === id)?.groupNames ?? [];
 }
 
-function openBindGroups(id: string) {
-  if (groups.value.length === 0) {
-    toast.add({ title: 'Сначала создайте группы', color: 'error' });
+function canEditConnectJson(connect: ConnectRow): boolean {
+  return (
+    connect.subscription?.feedMode === 'JSON' && connect.protocol !== 'balancer'
+  );
+}
+
+function openEditConnectJson(connect: ConnectRow) {
+  if (!canEditConnectJson(connect)) return;
+  jsonEditConnectId.value = connect.id;
+  try {
+    jsonEditText.value =
+      connect.rawJson !== undefined && connect.rawJson !== null
+        ? JSON.stringify(connect.rawJson, null, 2)
+        : '{}';
+  } catch {
+    jsonEditText.value = '{}';
+  }
+  isJsonModalOpen.value = true;
+}
+
+async function saveConnectRawJson() {
+  if (!jsonEditConnectId.value) return;
+  const parsed = parseJsonFromEditor();
+  if (parsed === null) {
+    toast.add({ title: 'Исправьте ошибки в JSON', color: 'error' });
     return;
   }
-  selectedGroupConnectId.value = id;
-  selectedGroupNames.value = [...getConnectGroups(id)];
-  isGroupModalOpen.value = true;
+  jsonEditSaving.value = true;
+  try {
+    await $fetch(`${config.public.apiBaseUrl}/connects/${jsonEditConnectId.value}/raw-json`, {
+      method: 'PATCH',
+      body: { rawJson: parsed },
+    });
+    toast.add({ title: 'JSON коннекта обновлён', color: 'success' });
+    isJsonModalOpen.value = false;
+    await loadConnects();
+  } catch (err: unknown) {
+    toast.add({
+      title: fetchErrorMessage(err, 'Не удалось сохранить JSON'),
+      color: 'error',
+    });
+  } finally {
+    jsonEditSaving.value = false;
+  }
 }
 
 function openEditName(connect: ConnectRow) {
@@ -901,35 +949,6 @@ async function saveConnectName() {
     await loadConnects();
   } catch {
     toast.add({ title: 'Не удалось обновить название', color: 'error' });
-  }
-}
-
-async function saveConnectGroups() {
-  if (!selectedGroupConnectId.value) {
-    return;
-  }
-  if (countMainGroupsInNames(selectedGroupNames.value) > 1) {
-    toast.add({
-      title: 'У коннекта может быть не больше одной главной группы',
-      color: 'error',
-    });
-    return;
-  }
-  try {
-    await $fetch(`${config.public.apiBaseUrl}/connects/${selectedGroupConnectId.value}/groups`, {
-      method: 'PATCH',
-      body: {
-        groupNames: selectedGroupNames.value
-      }
-    });
-    isGroupModalOpen.value = false;
-    toast.add({ title: 'Группы для коннекта обновлены', color: 'success' });
-    await loadConnects();
-  } catch (err: unknown) {
-    toast.add({
-      title: fetchErrorMessage(err, 'Не удалось обновить группы коннекта'),
-      color: 'error',
-    });
   }
 }
 
@@ -1315,13 +1334,17 @@ async function bulkRemoveGroupsFromSelection() {
                             @click="copyConnectShareLink(cid)"
                           />
                         </UTooltip>
-                        <UTooltip text="Привязать к группам">
+                        <UTooltip
+                          v-if="canEditConnectJson(connectById(cid)!)"
+                          text="Редактировать JSON"
+                        >
                           <UButton
                             size="xs"
                             color="neutral"
                             variant="ghost"
-                            icon="i-lucide-users-round"
-                            @click="openBindGroups(cid)"
+                            icon="i-lucide-braces"
+                            aria-label="Редактировать JSON коннекта"
+                            @click="openEditConnectJson(connectById(cid)!)"
                           />
                         </UTooltip>
                         <UTooltip text="Удалить коннект">
@@ -1412,27 +1435,49 @@ async function bulkRemoveGroupsFromSelection() {
       </div>
     </UCard>
 
-    <UModal v-model:open="isGroupModalOpen" title="Привязать коннект к группам">
+    <UModal
+      v-model:open="isJsonModalOpen"
+      title="Редактировать JSON коннекта"
+      :ui="{ content: 'max-h-[90vh] flex flex-col sm:max-w-3xl', body: 'flex-1 overflow-y-auto' }"
+    >
       <template #body>
-        <UFormField
-          label="Группы"
-          description="Группы с меткой «главная» на странице «Группы»: у коннекта не больше одной такой одновременно."
-        >
-          <USelectMenu
-            v-model="selectedGroupNames"
-            :items="groups.map((group) => group.name)"
-            multiple
-            class="w-full"
-            placeholder="Выберите группы"
+        <div class="space-y-3">
+          <p class="text-sm text-muted">
+            Только для коннектов из подписки в режиме JSON. Tab — вставить отступ, Shift+Tab — убрать.
+          </p>
+          <UAlert
+            v-if="jsonEditText.trim() && !isJsonValid"
+            color="error"
+            variant="soft"
+            :title="jsonParseError ? `Ошибка JSON: ${jsonParseError}` : 'Некорректный JSON'"
           />
-        </UFormField>
+          <UAlert
+            v-else-if="jsonEditText.trim() && isJsonValid"
+            color="success"
+            variant="soft"
+            title="JSON синтаксически корректен"
+          />
+          <UTextarea
+            v-model="jsonEditText"
+            class="w-full font-mono text-xs leading-relaxed"
+            :rows="18"
+            autoresize
+            spellcheck="false"
+            @keydown="onJsonKeydown"
+          />
+        </div>
       </template>
       <template #footer>
-        <div class="flex justify-end gap-2 w-full">
-          <UButton color="neutral" variant="ghost" @click="isGroupModalOpen = false">
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="isJsonModalOpen = false">
             Отмена
           </UButton>
-          <UButton @click="saveConnectGroups">
+          <UButton
+            color="primary"
+            :disabled="!isJsonValid"
+            :loading="jsonEditSaving"
+            @click="saveConnectRawJson"
+          >
             Сохранить
           </UButton>
         </div>

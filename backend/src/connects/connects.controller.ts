@@ -12,6 +12,7 @@ import { AddTagDto } from './dto/add-tag.dto';
 import { ConnectsService } from './connects.service';
 import { ReorderConnectsDto } from './dto/reorder-connects.dto';
 import { UpdateConnectNameDto } from './dto/update-connect-name.dto';
+import { UpdateConnectRawJsonDto } from './dto/update-connect-raw-json.dto';
 
 @ApiTags('connects')
 @Controller('connects')
@@ -57,6 +58,22 @@ export class ConnectsController {
   })
   updateName(@Param('id') id: string, @Body() dto: UpdateConnectNameDto) {
     return this.connectsService.updateName(id, dto.name);
+  }
+
+  @Patch(':id/raw-json')
+  @ApiOperation({
+    summary: 'Обновить JSON-конфигурацию коннекта (только для коннектов из JSON-подписки)',
+    description:
+      'Доступно, если подписка в режиме JSON и коннект не является балансировщиком. Тело должно содержать валидный JSON (объект или массив).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Поле rawJson успешно обновлено',
+  })
+  @ApiResponse({ status: 400, description: 'Некорректные данные или коннект не из JSON-подписки' })
+  @ApiResponse({ status: 404, description: 'Коннект не найден' })
+  updateRawJson(@Param('id') id: string, @Body() dto: UpdateConnectRawJsonDto) {
+    return this.connectsService.updateRawJson(id, dto.rawJson);
   }
 
   @Delete(':id')

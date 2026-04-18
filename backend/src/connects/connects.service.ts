@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { ConnectStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConnectStatus, Prisma, SubscriptionFeedMode } from '@prisma/client';
 import {
   ensureUngroupedConnectGroupExists,
   UNGROUPED_CONNECT_GROUP_NAME,
@@ -26,6 +30,7 @@ export class ConnectsService {
           select: {
             id: true,
             title: true,
+            feedMode: true,
           },
         },
       },
@@ -111,6 +116,69 @@ export class ConnectsService {
         name: name.trim(),
       },
     });
+  }
+
+  /**
+   * Редактирование rawJson вручную — только для коннектов, пришедших из подписки в режиме JSON.
+   */
+  async updateRawJson(id: string, rawJson: unknown) {
+    await this.normalizeLegacyConnects();
+
+    const connect = await this.prisma.connect.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        protocol: true,
+        subscription: { select: { feedMode: true } },
+      },
+    });
+
+    if (!connect) {
+      throw new NotFoundException('Коннект не найден');
+    }
+
+    if (connect.protocol === 'balancer') {
+      throw new BadRequestException(
+        'Редактирование JSON недоступно для коннекта-балансировщика',
+      );
+    }
+
+    if (
+      !connect.subscription ||
+      connect.subscription.feedMode !== SubscriptionFeedMode.JSON
+    ) {
+      throw new BadRequestException(
+        'Редактирование JSON доступно только для коннектов из подписки в режиме JSON',
+      );
+    }
+
+    const value = this.assertPrismaJsonInput(rawJson);
+
+    return this.prisma.connect.update({
+      where: { id },
+      data: { rawJson: value },
+      include: {
+        subscription: {
+          select: { id: true, title: true, feedMode: true },
+        },
+      },
+    });
+  }
+
+  private assertPrismaJsonInput(raw: unknown): Prisma.InputJsonValue {
+    if (raw === null || raw === undefined) {
+      throw new BadRequestException('Укажите валидный JSON (объект или массив)');
+    }
+    const kind = typeof raw;
+    if (kind !== 'object') {
+      throw new BadRequestException('rawJson должен быть объектом или массивом JSON');
+    }
+    try {
+      JSON.parse(JSON.stringify(raw));
+    } catch {
+      throw new BadRequestException('Не удалось сериализовать rawJson в JSON');
+    }
+    return raw as Prisma.InputJsonValue;
   }
 
   async remove(id: string) {
