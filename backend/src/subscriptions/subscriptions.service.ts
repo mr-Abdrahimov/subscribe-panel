@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import {
@@ -28,6 +33,10 @@ const SUBSCRIPTION_FETCH_HWID_HEADER = 'X-HWID';
 const SUBSCRIPTION_TITLE_MAX_LEN = 200;
 
 const TELEGRAM_MESSAGE_MAX = 3900;
+
+/** Не удалять имеющиеся коннекты, если пришёл пустой список (ошибка/обрыв у провайдера). */
+const EMPTY_REMOTE_LIST_MESSAGE =
+  'Получен пустой список коннектов при наличии ранее загруженных. Синхронизация отменена, чтобы не удалить существующие коннекты.';
 
 /** Предупреждение в Telegram, если до окончания подписки меньше этого интервала */
 const SUBSCRIPTION_EXPIRY_TELEGRAM_WARN_MS = 10 * 60 * 60 * 1000;
@@ -171,6 +180,12 @@ export class SubscriptionsService {
     });
     const text = await response.text();
 
+    if (!response.ok) {
+      throw new BadGatewayException(
+        `Сервер подписки ответил с ошибкой: HTTP ${response.status} ${response.statusText}`.trim(),
+      );
+    }
+
     // JSON-режим: парсим JSON-ответ и синхронизируем коннекты в БД
     if (isJsonMode) {
       return await this.fetchConnectsFromJson(id, response, text);
@@ -208,6 +223,13 @@ export class SubscriptionsService {
         createdAt: true,
       },
     });
+
+    if (links.length === 0 && existingConnects.length > 0) {
+      this.logger.warn(
+        `[fetchConnects] subscriptionId=${id}: пустой список при непустой БД — пропуск синхронизации`,
+      );
+      throw new BadGatewayException(EMPTY_REMOTE_LIST_MESSAGE);
+    }
 
     /**
      * Одна запись на стабильный ключ (для vless — без UUID в userinfo, sni/sid): дубликаты и «та же нода,
@@ -426,20 +448,9 @@ export class SubscriptionsService {
       this.logger.warn(
         `[JSON-mode] subscriptionId=${subscriptionId}: не удалось разобрать JSON: ${rawText.slice(0, 200)}`,
       );
-      const sub = await this.prisma.subscription.findUnique({
-        where: { id: subscriptionId },
-        select: { title: true },
-      });
-      return {
-        subscriptionId,
-        fetchedAt: null,
-        feedMode: 'JSON',
-        title: sub?.title ?? '',
-        fetchedProfileTitle: remoteTitle,
-        fetchedSubscriptionExpiresAt: remoteExpiresAt,
-        total: 0,
-        connects: [],
-      };
+      throw new BadGatewayException(
+        'Ответ подписки не является валидным JSON, существующие коннекты не изменены',
+      );
     }
 
     // --- Парсинг: собираем { originalName, raw, protocol, rawJson } ---
@@ -551,6 +562,13 @@ export class SubscriptionsService {
         createdAt: true,
       },
     });
+
+    if (entries.length === 0 && existingConnects.length > 0) {
+      this.logger.warn(
+        `[JSON-mode] subscriptionId=${subscriptionId}: пустой список при непустой БД — пропуск синхронизации`,
+      );
+      throw new BadGatewayException(EMPTY_REMOTE_LIST_MESSAGE);
+    }
 
     /**
      * Дедупликация входящих: та же что в BASE64-режиме.
