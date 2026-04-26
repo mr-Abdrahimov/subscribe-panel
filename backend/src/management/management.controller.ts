@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import {
   Body,
   Controller,
@@ -21,6 +22,11 @@ import {
   setAllSubscriptionProfileHeaders,
 } from '../common/profile-title-header';
 import {
+  buildSubscriptionIncomingRequestSnapshot,
+  isSubscriptionIncomingHttpLogEnabled,
+  type BuildSubscriptionSnapshotContext,
+} from '../common/subscription-incoming-request-log.util';
+import {
   extractSubscriptionAccessMeta,
   hasSubscriptionHwid,
 } from '../common/subscription-client-meta';
@@ -42,7 +48,23 @@ import { ManagementService } from './management.service';
 export class ManagementController {
   private readonly logger = new Logger(ManagementController.name);
 
-  constructor(private readonly managementService: ManagementService) {}
+  constructor(
+    private readonly managementService: ManagementService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** Подробный JSON в лог (заголовки, query, IP): SUBSCRIPTION_INCOMING_HTTP_LOG=false — отключить */
+  private logPublicSubscriptionIncoming(
+    req: Request,
+    code: string,
+    ctx: BuildSubscriptionSnapshotContext,
+  ) {
+    if (!isSubscriptionIncomingHttpLogEnabled((k) => this.config.get(k))) {
+      return;
+    }
+    const snap = buildSubscriptionIncomingRequestSnapshot(req, code, ctx);
+    this.logger.log(`subscription_incoming ${JSON.stringify(snap)}`);
+  }
 
   @Get('panel-global-settings')
   @ApiOperation({
@@ -411,6 +433,11 @@ export class ManagementController {
   ) {
     const user = await this.managementService.findPanelUserByCode(code);
 
+    const rawVia = req.query['via'];
+    const viaCryptoPage =
+      rawVia === 'crypto-page' ||
+      (Array.isArray(rawVia) && rawVia[0] === 'crypto-page');
+
     if (user) {
       const accessToken =
         await this.managementService.ensureSubscriptionAccessToken(user.id);
@@ -429,6 +456,14 @@ export class ManagementController {
           accessToken,
         )
       ) {
+        this.logPublicSubscriptionIncoming(req, code, {
+          viaCryptoPage,
+          httpStatus: 403,
+          tokenMismatch403: true,
+          userFound: true,
+          userEnabled: user.enabled,
+          feedFormat: 'n/a',
+        });
         res.status(403);
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader(
@@ -441,11 +476,6 @@ export class ManagementController {
         );
       }
     }
-
-    const rawVia = req.query['via'];
-    const viaCryptoPage =
-      rawVia === 'crypto-page' ||
-      (Array.isArray(rawVia) && rawVia[0] === 'crypto-page');
 
     const uaHeader = req.headers['user-agent'];
     const ua =
@@ -586,6 +616,15 @@ export class ManagementController {
         );
       }
     }
+
+    this.logPublicSubscriptionIncoming(req, code, {
+      viaCryptoPage,
+      httpStatus: 200,
+      userFound: Boolean(user),
+      userEnabled: user ? user.enabled : undefined,
+      subscriptionDelivered: payload.subscriptionDelivered,
+      feedFormat: payload.jsonBody !== undefined ? 'json' : 'base64',
+    });
 
     res.status(200);
     res.setHeader(
