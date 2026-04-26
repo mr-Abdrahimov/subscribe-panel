@@ -1,4 +1,4 @@
-const url = 'https://sub.avtlk.ru/sub/fz9f6s9TBopou2eJS86N0xMRX';
+const url = 'https://challenge.sendly.one/crypt/PP92VxtFZTkZRjZIvy/HXMyJoOsi1ykq9aU';
 
 function looksLikeBase64(str) {
   const s = str.trim();
@@ -14,9 +14,9 @@ async function main() {
       'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
-      'User-Agent': 'Happ/4.7.0/ios/2604011943588',
-      'HWID': '8aa65da1baf4f23a',
-      'X-HWID': '8aa65da1baf4f23a',
+      'User-Agent': 'Happ/4.8.1/macos catalyst/2604210130624',
+      'HWID': '8aa65da1baf4f22a',
+      'X-HWID': '8aa65da1baf4f22a',
       'Connection': 'keep-alive'
     },
     signal: AbortSignal.timeout(15000)
