@@ -1,4 +1,6 @@
 import type { Request } from 'express';
+import type { Socket } from 'net';
+import type { TLSSocket } from 'tls';
 
 const SENSITIVE_HEADER_NAMES = new Set([
   'authorization',
@@ -32,22 +34,230 @@ function normalizeQuery(q: Request['query']): Record<string, unknown> {
   return out;
 }
 
+function isSensitiveHeaderName(lower: string): boolean {
+  return SENSITIVE_HEADER_NAMES.has(lower);
+}
+
+function maskHeaderValue(
+  nameLower: string,
+  value: string,
+): { value: string; redacted: boolean } {
+  if (isSensitiveHeaderName(nameLower)) {
+    return { value: '[скрыто]', redacted: true };
+  }
+  return { value: truncate(value, MAX_HEADER_VALUE_LEN), redacted: false };
+}
+
 function collectHeaders(req: Request): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;
     const lower = name.toLowerCase();
-    if (SENSITIVE_HEADER_NAMES.has(lower)) {
-      out[name] = '[скрыто]';
-      continue;
-    }
     if (typeof value === 'string') {
-      out[name] = truncate(value, MAX_HEADER_VALUE_LEN);
+      out[name] = maskHeaderValue(lower, value).value;
     } else {
-      out[name] = value.map((v) => truncate(String(v), MAX_HEADER_VALUE_LEN));
+      out[name] = value.map((v) =>
+        maskHeaderValue(lower, String(v)).value,
+      );
     }
   }
   return out;
+}
+
+/**
+ * Node `rawHeaders` — пары как пришли от клиента/прокси (дубликаты имён, порядок, регистр).
+ * Для сервисов-аналитик это ближайший аналог «полного сырого» HTTP-заголовка.
+ */
+function collectRawHeaderPairs(
+  req: Request,
+): Array<{ name: string; value: string; redacted: boolean }> {
+  const raw = (req as Request & { rawHeaders?: string[] }).rawHeaders;
+  if (!raw || !Array.isArray(raw)) {
+    return [];
+  }
+  const out: Array<{ name: string; value: string; redacted: boolean }> = [];
+  for (let i = 0; i < raw.length; i += 2) {
+    const name = raw[i] ?? '';
+    const value = raw[i + 1] ?? '';
+    const lower = name.toLowerCase();
+    const m = maskHeaderValue(lower, value);
+    out.push({ name, value: m.value, redacted: m.redacted });
+  }
+  return out;
+}
+
+/** sec-ch-*, device-memory, dpr, viewport-width и т.п. (Client Hints) */
+function collectClientHints(
+  req: Request,
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    const lower = name.toLowerCase();
+    const isCh =
+      lower.startsWith('sec-ch-') ||
+      lower === 'device-memory' ||
+      lower === 'dpr' ||
+      lower === 'viewport-width' ||
+      lower === 'ect' ||
+      lower === 'rtt' ||
+      lower === 'downlink' ||
+      lower === 'save-data';
+    if (!isCh) {
+      continue;
+    }
+    const str = Array.isArray(value) ? value.join(', ') : String(value);
+    if (isSensitiveHeaderName(lower)) {
+      out[name] = '[скрыто]';
+    } else {
+      out[name] = truncate(str, MAX_HEADER_VALUE_LEN);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseUserAgentForLog(
+  req: Request,
+): {
+  raw: string | null;
+  segments: string[];
+  /** Если похоже на Happ/.../.../... */
+  happLike: {
+    app: string;
+    version: string;
+    platformLine: string | null;
+    buildOrTail: string | null;
+  } | null;
+  /** Кратко: из типичного UA Happ (часто уже видно os / catalyst / build) */
+  note: string;
+} {
+  const ua = req.headers['user-agent'];
+  const raw =
+    typeof ua === 'string'
+      ? ua
+      : Array.isArray(ua) && ua[0]
+        ? String(ua[0])
+        : null;
+  if (!raw?.trim()) {
+    return {
+      raw: null,
+      segments: [],
+      happLike: null,
+      note: 'User-Agent пуст',
+    };
+  }
+  const segments = raw.split('/').map((s) => s.trim());
+  const happLike =
+    segments[0]?.toLowerCase() === 'happ' && segments.length >= 2
+      ? {
+          app: segments[0]!,
+          version: segments[1] ?? '',
+          platformLine: segments[2] ?? null,
+          buildOrTail: segments[3] ?? null,
+        }
+      : null;
+  const n = raw.toLowerCase();
+  const bits: string[] = [];
+  if (n.includes('macos') || n.includes('mac os')) {
+    bits.push('в строке UA явно macOS (часто выводят как «macOS / Mac» без знания модели MacBook)');
+  }
+  if (n.includes('catalyst')) {
+    bits.push('Catalyst = приложение iOS, собранное для Mac; «MacBook» в UI сервиса часто — обобщение для Mac, не данные датчика');
+  }
+  if (n.includes('ios') || n.includes('iphone') || n.includes('ipad')) {
+    bits.push('iOS-стек в UA');
+  }
+  if (n.includes('android')) {
+    bits.push('Android в UA');
+  }
+  if (n.includes('windows')) {
+    bits.push('Windows в UA');
+  }
+  if (bits.length === 0) {
+    bits.push('модель ОС/устройства в UA не по типовым токенам; смотрите segments / Client Hints');
+  }
+  return {
+    raw,
+    segments,
+    happLike,
+    note: bits.join('; '),
+  };
+}
+
+function isTlsSocketLike(
+  s: Socket,
+): s is TLSSocket & { getProtocol?: () => string | null } {
+  return typeof (s as TLSSocket).getCipher === 'function';
+}
+
+function collectSocketAndTls(
+  req: Request,
+): {
+  socket: {
+    remoteAddress: string | undefined;
+    remotePort: number | undefined;
+    remoteFamily: string | undefined;
+    localAddress: string | undefined;
+    localPort: number | undefined;
+    readyState?: string;
+  } | null;
+  /** Заполняется только если TLS окончен на Node (часто за nginx пусто) */
+  tls: {
+    secureProtocol?: string | null;
+    alpnProtocol?: string | null | false;
+    cipher?: { name: string; version: string } | null;
+  } | null;
+} {
+  const sock = req.socket as Socket | undefined;
+  if (!sock) {
+    return { socket: null, tls: null };
+  }
+  const socket = {
+    remoteAddress: sock.remoteAddress,
+    remotePort: sock.remotePort,
+    remoteFamily: sock.remoteFamily,
+    localAddress: sock.localAddress,
+    localPort: sock.localPort,
+    readyState: (sock as { readyState?: string }).readyState,
+  };
+  if (!isTlsSocketLike(sock)) {
+    return { socket, tls: null };
+  }
+  let cipher: { name: string; version: string } | null = null;
+  try {
+    const c = sock.getCipher();
+    if (c && typeof c === 'object' && 'name' in c) {
+      cipher = { name: c.name, version: c.version };
+    }
+  } catch {
+    cipher = null;
+  }
+  const tls = {
+    secureProtocol:
+      typeof sock.getProtocol === 'function' ? sock.getProtocol() : null,
+    alpnProtocol: sock.alpnProtocol,
+    cipher,
+  };
+  return { socket, tls: Object.values(tls).some(Boolean) ? tls : null };
+}
+
+function collectHttpMessageMeta(req: Request): {
+  httpVersion: string;
+  httpVersionMajor?: number;
+  httpVersionMinor?: number;
+  complete: boolean;
+} {
+  const m = req as Request & {
+    httpVersionMajor?: number;
+    httpVersionMinor?: number;
+    complete?: boolean;
+  };
+  return {
+    httpVersion: req.httpVersion,
+    httpVersionMajor: m.httpVersionMajor,
+    httpVersionMinor: m.httpVersionMinor,
+    complete: m.complete === true,
+  };
 }
 
 export type SubscriptionIncomingRequestSnapshot = {
@@ -72,6 +282,32 @@ export type SubscriptionIncomingRequestSnapshot = {
   remotePort: number | undefined;
   query: Record<string, unknown>;
   headers: Record<string, unknown>;
+  /**
+   * Все пары сырьевых заголовков (как в Node), с маскировкой чувствительных.
+   * Сервисы вне панели часто смотрят тот же набор, что и `headers`, плюс порядок/дубли.
+   */
+  rawHeaderPairs: Array<{ name: string; value: string; redacted: boolean }>;
+  /** Уникальные имена заголовков (для обзора) */
+  headerNames: string[];
+  clientHints: Record<string, string> | undefined;
+  userAgent: ReturnType<typeof parseUserAgentForLog>;
+  /** Парам маршрута Express/Nest, если уже заполнены */
+  routeParams: Record<string, string>;
+  subdomains: string[] | undefined;
+  secure: boolean;
+  httpMessage: ReturnType<typeof collectHttpMessageMeta>;
+  connectionMeta: {
+    secure: boolean;
+    expressTrustProxy: unknown;
+    socket: ReturnType<typeof collectSocketAndTls>['socket'];
+    tls: ReturnType<typeof collectSocketAndTls>['tls'];
+  };
+  /**
+   * Почему внешние сервисы пишут «macOS (MacBook)» без магии: обычно
+   * разбор `User-Agent` (у Happ — `…/macos catalyst/…`), Client Hints (`sec-ch-ua-model`),
+   * IP/Geo; TLS/JA3 — на стороне терминирующего прокси, в Node за nginx чаще недоступно.
+   */
+  howDeviceMayBeInferred: string;
   /** Тело запроса (обычно пустое у GET); если включён body-parser — как есть */
   body: unknown;
   /** Сырое тело, если middleware его положил в req */
@@ -121,6 +357,10 @@ export function buildSubscriptionIncomingRequestSnapshot(
     rawBodyPreview = truncate(rawBody.toString('utf8'), MAX_BODY_PREVIEW_LEN);
   }
 
+  const { socket, tls } = collectSocketAndTls(req);
+  const st = (req as { secure?: boolean }).secure === true;
+  const ch = collectClientHints(req);
+  const appGet = (req as { app?: { get?: (k: string) => unknown } }).app?.get;
   return {
     at: new Date().toISOString(),
     route: 'GET /public/sub/:code',
@@ -141,6 +381,33 @@ export function buildSubscriptionIncomingRequestSnapshot(
     remotePort: req.socket?.remotePort,
     query: normalizeQuery(req.query),
     headers: collectHeaders(req),
+    rawHeaderPairs: collectRawHeaderPairs(req),
+    headerNames: Object.keys(req.headers)
+      .map((k) => k.toLowerCase())
+      .sort(),
+    clientHints: ch,
+    userAgent: parseUserAgentForLog(req),
+    routeParams: {
+      ...((req as Request & { params?: Record<string, string> }).params ?? {}),
+    },
+    subdomains: req.subdomains,
+    secure: st,
+    httpMessage: collectHttpMessageMeta(req),
+    connectionMeta: {
+      secure: st,
+      expressTrustProxy: appGet ? appGet('trust proxy') : undefined,
+      socket,
+      tls,
+    },
+    howDeviceMayBeInferred: [
+      'User-Agent: у Happ в UA часто явно macos, catalyst, build (см. userAgent).',
+      ch
+        ? 'Client Hints: есть sec-ch-* — могут дать platform/model; Happ иногда шлёт мало CH.'
+        : 'Client Hints: в запросе нет sec-ch-*/typical — только обычные заголовки.',
+      tls
+        ? 'TLS сокета Node: шифрование видно (иначе трафик TLS до nginx, до Node — plain HTTP).'
+        : 'TLS сокета Node не виден (типично за reverse proxy) — деталей рукопожатия в этом процессе нет.',
+    ].join(' '),
     body:
       req.body !== undefined && req.body !== null
         ? typeof req.body === 'object'
