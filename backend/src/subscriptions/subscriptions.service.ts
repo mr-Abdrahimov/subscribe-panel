@@ -165,6 +165,14 @@ export class SubscriptionsService {
       headers.set('Cache-Control', 'no-cache');
       headers.set('Pragma', 'no-cache');
       headers.set('Connection', 'keep-alive');
+      headers.set('X-Device-OS', 'macOS');
+      headers.set('X-Device-Locale', 'ru');
+      headers.set('If-None-Match', 'W/"2927-1xES5jfyaL7GcApf4JC529f24Gg"');
+      headers.set('X-Ver-OS', '26.4.1');
+      headers.set('X-App-Version', '4.8.2');
+      headers.set('X-Device-model', 'MacBook');
+      // 'X-HWID': '8aa65da1baf4f22a',
+      // 'User-Agent': 'Happ/4.8.2/macos catalyst/2604241624661',
     }
 
     const rawTimeout = Number(

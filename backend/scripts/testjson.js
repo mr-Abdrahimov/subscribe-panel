@@ -1,4 +1,4 @@
-const url = 'https://challenge.sendly.one/crypt/PP92VxtFZTkZRjZIvy/HXMyJoOsi1ykq9aU';
+const url = 'https://challenge.sendly.one/crypt/PP92VxtFZTkZRjZIvy/HXMyJoOsi1ykq9aU?key=key09';
 
 function looksLikeBase64(str) {
   const s = str.trim();
@@ -10,14 +10,19 @@ async function main() {
     method: 'GET',
     headers: {
       'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-      'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
-      'User-Agent': 'Happ/4.8.1/macos catalyst/2604210130624',
-      'HWID': '8aa65da1baf4f22a',
       'X-HWID': '8aa65da1baf4f22a',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'X-Device-OS': 'macOS',
+      'X-Device-Locale': 'ru',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'If-None-Match': 'W/"2927-1xES5jfyaL7GcApf4JC529f24Gg"',
+      'Accept-Language': 'ru',
+      'User-Agent': 'Happ/4.8.2/macos catalyst/2604241624661',
+      'X-Ver-OS': '26.4.1',
+      'X-App-Version': '4.8.2',
+      'X-Device-model': 'MacBook',
     },
     signal: AbortSignal.timeout(15000)
   });
