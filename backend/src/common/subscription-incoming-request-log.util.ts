@@ -360,7 +360,7 @@ export function buildSubscriptionIncomingRequestSnapshot(
   const { socket, tls } = collectSocketAndTls(req);
   const st = (req as { secure?: boolean }).secure === true;
   const ch = collectClientHints(req);
-  const appGet = (req as { app?: { get?: (k: string) => unknown } }).app?.get;
+  const expressApp = (req as { app?: { get: (key: string) => unknown } }).app;
   return {
     at: new Date().toISOString(),
     route: 'GET /public/sub/:code',
@@ -395,7 +395,7 @@ export function buildSubscriptionIncomingRequestSnapshot(
     httpMessage: collectHttpMessageMeta(req),
     connectionMeta: {
       secure: st,
-      expressTrustProxy: appGet ? appGet('trust proxy') : undefined,
+      expressTrustProxy: expressApp?.get('trust proxy'),
       socket,
       tls,
     },
