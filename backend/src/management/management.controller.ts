@@ -432,6 +432,7 @@ export class ManagementController {
     @Res() res: Response,
   ) {
     const user = await this.managementService.findPanelUserByCode(code);
+    console.log('req', req);
 
     const rawVia = req.query['via'];
     const viaCryptoPage =
