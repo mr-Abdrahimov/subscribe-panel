@@ -1,4 +1,4 @@
-const url = 'https://challenge.sendly.one/crypt/PP92VxtFZTkZRjZIvy/HXMyJoOsi1ykq9aU?key=key09';
+const url = 'https://challenge.sendly.one/crypt/PP92VxtFZTkZRjZIvy/HXMyJoOsi1ykq9aU?key=key06';
 
 function looksLikeBase64(str) {
   const s = str.trim();
@@ -9,7 +9,7 @@ async function main() {
   const res = await fetch(url, {
     method: 'GET',
     headers: {
-      'Accept': 'application/json, text/plain, */*',
+      'Accept': 'application/json',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
       'X-HWID': '8aa65da1baf4f22a',
@@ -19,9 +19,9 @@ async function main() {
       'Accept-Encoding': 'gzip, deflate, br',
       'If-None-Match': 'W/"2927-1xES5jfyaL7GcApf4JC529f24Gg"',
       'Accept-Language': 'ru',
-      'User-Agent': 'Happ/4.8.2/macos catalyst/2604241624661',
+      'User-Agent': 'Happ/4.6.1/macos catalyst/2604011945641',
       'X-Ver-OS': '26.4.1',
-      'X-App-Version': '4.8.2',
+      'X-App-Version': '4.6.1',
       'X-Device-model': 'MacBook',
     },
     signal: AbortSignal.timeout(15000)
@@ -41,6 +41,11 @@ async function main() {
 
 
   console.log(raw);
+  // const buf = Buffer.from(raw, 'base64');
+  // console.log(buf.toString('utf8'));
+
+// console.log(buf.slice(0, 32));
+// console.log(buf.toString('hex').slice(0, 64));
 }
 
 main().catch(console.error);
